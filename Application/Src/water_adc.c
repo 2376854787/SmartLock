@@ -16,8 +16,9 @@
 #define ADC_FULL_SCALE     4095.0f
 
 static volatile uint32_t raw;
-
-/* 单次采样指定通道，轮询方式 */
+/**
+ *@brief  单次采样指定通道，轮询方式
+ */
 static uint32_t read_adc_single(uint32_t channel, uint32_t sample_time) {
     ADC_ChannelConfTypeDef sConfig = {0};
     sConfig.Channel = channel;
@@ -32,7 +33,9 @@ static uint32_t read_adc_single(uint32_t channel, uint32_t sample_time) {
     return HAL_ADC_GetValue(&hadc1);
 }
 
-/* 通过VREFINT换算当前VDDA（mV） */
+/**
+ * @brief 通过VREFINT换算当前VDDA（mV）
+ */
 static uint32_t measure_vdda_mv(void) {
     uint32_t vref_raw = read_adc_single(ADC_CHANNEL_VREFINT, ADC_SAMPLETIME_480CYCLES);
     if (vref_raw == 0) return 3300U; // 兜底返回3.3V
