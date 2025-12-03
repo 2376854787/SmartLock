@@ -73,6 +73,8 @@ void Error_Handler(void);
 #define LED1_GPIO_Port GPIOF
 #define wake_up_Pin GPIO_PIN_0
 #define wake_up_GPIO_Port GPIOA
+#define Water_Sensor_Pin GPIO_PIN_1
+#define Water_Sensor_GPIO_Port GPIOA
 #define LCD_BL_Pin GPIO_PIN_15
 #define LCD_BL_GPIO_Port GPIOB
 

@@ -38,6 +38,7 @@
 #include "tim.h"
 #include "wifi_mqtt_task.h"
 #include "mqtt_at_task.h"
+#include "water_adc.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -94,6 +95,8 @@ const osThreadAttr_t lcdTask_attributes = {
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
+
+/* ESP01s MQTT 任务 */
 osThreadId_t MqttTaskHandle;
 const osThreadAttr_t MqttTask_attributes = {
     .name = "MqttTask",
@@ -101,9 +104,19 @@ const osThreadAttr_t MqttTask_attributes = {
     .priority = (osPriority_t) osPriorityNormal,
 };
 osThreadId_t LightSensor_TaskHandle;
+
+/* 光敏传感器任务 */
 const osThreadAttr_t LightSensor_Task_attributes = {
     .name = "LightSensor_Task",
-  .stack_size = 256 * 4,
+    .stack_size = 256 * 4,
+    .priority = (osPriority_t) osPriorityNormal,
+};
+
+/* 水滴传感器ADC采集 逻辑处理任务 */
+osThreadId_t Water_Sensor_TaskHandle;
+const osThreadAttr_t Water_Sensor_attributes = {
+    .name = "Water_Sensor_Task",
+    .stack_size = 256 * 4,
     .priority = (osPriority_t) osPriorityNormal,
 };
 /* USER CODE END FunctionPrototypes */
@@ -134,54 +147,55 @@ __weak unsigned long getRunTimeCounterValue(void) {
 /* USER CODE END 1 */
 
 /* USER CODE BEGIN 2 */
-void vApplicationIdleHook( void )
-{
-   /* vApplicationIdleHook() will only be called if configUSE_IDLE_HOOK is set
-   to 1 in FreeRTOSConfig.h. It will be called on each iteration of the idle
-   task. It is essential that code added to this hook function never attempts
-   to block in any way (for example, call xQueueReceive() with a block time
-   specified, or call vTaskDelay()). If the application makes use of the
-   vTaskDelete() API function (as this demo application does) then it is also
-   important that vApplicationIdleHook() is permitted to return to its calling
-   function, because it is the responsibility of the idle task to clean up
-   memory allocated by the kernel to any task that has since been deleted. */
+void vApplicationIdleHook(void) {
+    /* vApplicationIdleHook() will only be called if configUSE_IDLE_HOOK is set
+    to 1 in FreeRTOSConfig.h. It will be called on each iteration of the idle
+    task. It is essential that code added to this hook function never attempts
+    to block in any way (for example, call xQueueReceive() with a block time
+    specified, or call vTaskDelay()). If the application makes use of the
+    vTaskDelete() API function (as this demo application does) then it is also
+    important that vApplicationIdleHook() is permitted to return to its calling
+    function, because it is the responsibility of the idle task to clean up
+    memory allocated by the kernel to any task that has since been deleted. */
 }
+
 /* USER CODE END 2 */
 
 /* USER CODE BEGIN 3 */
-void vApplicationTickHook( void )
-{
-   /* This function will be called by each tick interrupt if
-   configUSE_TICK_HOOK is set to 1 in FreeRTOSConfig.h. User code can be
-   added here, but the tick hook is called from an interrupt context, so
-   code must not attempt to block, and only the interrupt safe FreeRTOS API
-   functions can be used (those that end in FromISR()). */
+void vApplicationTickHook(void) {
+    /* This function will be called by each tick interrupt if
+    configUSE_TICK_HOOK is set to 1 in FreeRTOSConfig.h. User code can be
+    added here, but the tick hook is called from an interrupt context, so
+    code must not attempt to block, and only the interrupt safe FreeRTOS API
+    functions can be used (those that end in FromISR()). */
 }
+
 /* USER CODE END 3 */
 
 /* USER CODE BEGIN 4 */
-void vApplicationStackOverflowHook(xTaskHandle xTask, signed char *pcTaskName)
-{
+void vApplicationStackOverflowHook(xTaskHandle xTask, signed char *pcTaskName) {
     printf("Stack overflow in task: %s\r\n", pcTaskName);
     taskDISABLE_INTERRUPTS();
-    for (;;) {}
+    for (;;) {
+    }
 }
+
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN 5 */
-void vApplicationMallocFailedHook(void)
-{
-   /* vApplicationMallocFailedHook() will only be called if
-   configUSE_MALLOC_FAILED_HOOK is set to 1 in FreeRTOSConfig.h. It is a hook
-   function that will get called if a call to pvPortMalloc() fails.
-   pvPortMalloc() is called internally by the kernel whenever a task, queue,
-   timer or semaphore is created. It is also called by various parts of the
-   demo application. If heap_1.c or heap_2.c are used, then the size of the
-   heap available to pvPortMalloc() is defined by configTOTAL_HEAP_SIZE in
-   FreeRTOSConfig.h, and the xPortGetFreeHeapSize() API function can be used
-   to query the size of free heap space that remains (although it does not
-   provide information on how the remaining heap might be fragmented). */
+void vApplicationMallocFailedHook(void) {
+    /* vApplicationMallocFailedHook() will only be called if
+    configUSE_MALLOC_FAILED_HOOK is set to 1 in FreeRTOSConfig.h. It is a hook
+    function that will get called if a call to pvPortMalloc() fails.
+    pvPortMalloc() is called internally by the kernel whenever a task, queue,
+    timer or semaphore is created. It is also called by various parts of the
+    demo application. If heap_1.c or heap_2.c are used, then the size of the
+    heap available to pvPortMalloc() is defined by configTOTAL_HEAP_SIZE in
+    FreeRTOSConfig.h, and the xPortGetFreeHeapSize() API function can be used
+    to query the size of free heap space that remains (although it does not
+    provide information on how the remaining heap might be fragmented). */
 }
+
 /* USER CODE END 5 */
 
 /**
@@ -224,9 +238,14 @@ void MX_FREERTOS_Init(void) {
     /* add threads, ... */
 
     // Create MQTT task using AT+MQTT extended commands (firmware supports MQTT)
-    LightSensor_TaskHandle = osThreadNew(StartLightSensorTask, NULL, &LightSensor_Task_attributes);
-   // MqttTaskHandle = osThreadNew(StartMqttAtTask, NULL, &MqttTask_attributes);
 
+    /* 光敏传感器 */
+    LightSensor_TaskHandle = osThreadNew(StartLightSensorTask, NULL, &LightSensor_Task_attributes);
+    /* ESP01s */
+    // MqttTaskHandle = osThreadNew(StartMqttAtTask, NULL, &MqttTask_attributes);
+
+    /* 水滴传感器 任务*/
+    Water_Sensor_TaskHandle = osThreadNew(waterSensor_task, NULL, &Water_Sensor_attributes);
 
   /* USER CODE END RTOS_THREADS */
 
@@ -253,7 +272,7 @@ void StartDefaultTask(void *argument)
         HAL_GPIO_TogglePin(LED1_GPIO_Port,LED1_Pin);
         KEY_Tasks();
         UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
-        printf("keyscanTask high watermark = %lu\r\n", (unsigned long)watermark);
+        printf("keyscanTask high watermark = %lu\r\n", (unsigned long) watermark);
         osDelay(30);
     }
   /* USER CODE END StartDefaultTask */
@@ -307,7 +326,7 @@ void StartTask_LCD(void *argument)
         lcd_show_string(50, 300, 240, 32, 32, buffer, BLACK);
 
         UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
-        printf("lcdTask high watermark = %lu\r\n", (unsigned long)watermark);
+        printf("lcdTask high watermark = %lu\r\n", (unsigned long) watermark);
 
         osDelay(20);
     }
@@ -361,8 +380,7 @@ void process_dma_data(void) {
 }
 
 
-void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
-{
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
     if (huart->Instance == USART1) {
         // 你原来的 USART1 环形缓冲处理
         process_dma_data();
@@ -402,7 +420,6 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
         HAL_UART_Receive_DMA(huart, DmaBuffer, DMA_BUFFER_SIZE);
     }
 }
-
 
 
 /* USER CODE END Application */

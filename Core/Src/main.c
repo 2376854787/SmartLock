@@ -146,6 +146,7 @@ int main(void)
   MX_TIM12_Init();
   MX_USART3_UART_Init();
   MX_ADC3_Init();
+  MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
     dma_logger_init(&huart1);
     lcd_init();
