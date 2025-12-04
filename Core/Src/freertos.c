@@ -39,6 +39,7 @@
 #include "wifi_mqtt_task.h"
 #include "mqtt_at_task.h"
 #include "Usart1_manage.h"
+#include "water_adc.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -87,6 +88,8 @@ const osThreadAttr_t lcdTask_attributes = {
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
+
+/* ESP01s MQTT 任务 */
 osThreadId_t MqttTaskHandle;
 const osThreadAttr_t MqttTask_attributes = {
     .name = "MqttTask",
@@ -94,8 +97,17 @@ const osThreadAttr_t MqttTask_attributes = {
     .priority = (osPriority_t) osPriorityNormal,
 };
 osThreadId_t LightSensor_TaskHandle;
+/* 光敏传感器任务 */
 const osThreadAttr_t LightSensor_Task_attributes = {
     .name = "LightSensor_Task",
+    .stack_size = 256 * 4,
+    .priority = (osPriority_t) osPriorityNormal,
+};
+
+/* 水滴传感器ADC采集 逻辑处理任务 */
+osThreadId_t Water_Sensor_TaskHandle;
+const osThreadAttr_t Water_Sensor_attributes = {
+    .name = "Water_Sensor_Task",
     .stack_size = 256 * 4,
     .priority = (osPriority_t) osPriorityNormal,
 };
@@ -224,10 +236,13 @@ void MX_FREERTOS_Init(void) {
     /* USER CODE BEGIN RTOS_THREADS */
     /* add threads, ... */
 
-    // Create MQTT task using AT+MQTT extended commands (firmware supports MQTT)
+    /* 光敏传感器 */
     LightSensor_TaskHandle = osThreadNew(StartLightSensorTask, NULL, &LightSensor_Task_attributes);
+    /* ESP01s */
     // MqttTaskHandle = osThreadNew(StartMqttAtTask, NULL, &MqttTask_attributes);
 
+    /* 水滴传感器 任务*/
+    Water_Sensor_TaskHandle = osThreadNew(waterSensor_task, NULL, &Water_Sensor_attributes);
 
     /* USER CODE END RTOS_THREADS */
 
