@@ -49,7 +49,7 @@ add_executable(${CMAKE_PROJECT_NAME}
         Application/Src/Light_Sensor_task.c
         Drivers/System/Src/My_delay.c
         Application/Src/water_adc.c
-        Application/Inc/water_adc.h
+        Application/Src/Usart1_manage.c
 
 )
 
