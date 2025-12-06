@@ -11,10 +11,10 @@
 #define DEFAULT_ALIGNMENT 4
 
 typedef struct {
-    char * name;
+    char *name;
     volatile uint16_t rear_index; //表示可以添加数据的头地址
     volatile uint16_t front_index; //表示可以被删除的头地址
-    uint16_t size; //缓冲区大小
+    volatile uint16_t size; //缓冲区大小
     uint8_t *buffer; //缓冲区头地址
     bool isPowerOfTwo_Size;
 } RingBuffer;
