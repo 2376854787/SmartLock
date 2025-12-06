@@ -50,6 +50,7 @@ add_executable(${CMAKE_PROJECT_NAME}
         Drivers/System/Src/My_delay.c
         Application/Src/water_adc.c
         Application/Src/Usart1_manage.c
+        components/log/log.c
 
 )
 
@@ -80,6 +81,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         Drivers/BSP/Beep
         Drivers/BSP/Light_Sensor
         Drivers/System/Inc
+        components/log
 
 
 
