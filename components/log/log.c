@@ -205,8 +205,8 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
         /* 尝试写入 RingBuffer */
         uint16_t write_len = total_len;
 
-        /* 这里的 true 表示如果空间不足，丢弃新数据(或根据 RingBuffer 实现策略) */
-        if (WriteRingBuffer(&s_logRB, (uint8_t *) log_buf, &write_len, true)) {
+        /* 这里的 false 表示如果空间不足不写入全部丢弃 (或根据 RingBuffer 实现策略) */
+        if (WriteRingBuffer(&s_logRB, (uint8_t *) log_buf, &write_len, false)) {
             /* 写入成功，设置标志位唤醒后台任务 */
             if (s_logTaskHandle != NULL) {
                 /* osThreadFlagsSet 在 CMSIS-OS2 (STM32实现) 中通常是 ISR 安全的 */
