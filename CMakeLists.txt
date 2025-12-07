@@ -51,6 +51,7 @@ add_executable(${CMAKE_PROJECT_NAME}
         Application/Src/water_adc.c
         Application/Src/Usart1_manage.c
         components/log/log.c
+        components/AT/AT.c
 
 )
 
