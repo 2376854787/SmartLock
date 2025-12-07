@@ -2,10 +2,22 @@
 #define __KEY_H__
 #include  "main.h"
 #include "HFSM.h"
+struct KEY_TypedefHandle; /* 向前声明按键结构体 */
+typedef struct KEY_TypedefHandle KEY_TypedefHandle;
+
+/* 按键回调事件 */
+typedef enum {
+    KEY_ACTION_SINGLE_CLICK,
+    KEY_ACTION_DOUBLE_CLICK,
+    KEY_ACTION_TRIPLE_CLICK,
+    KEY_ACTION_LONG_PRESS,
+} KEY_ActionType;
+
+/* 按键事件回调 */
+typedef void (*KEY_Callback)(KEY_TypedefHandle *key, KEY_ActionType action);
 
 /*按键外部触发事件*/
 typedef enum {
-    KEY_Event_Idle,
     KEY_Event_Pressed,
     KEY_Event_up,
     KEY_Event_OverTime,
@@ -18,22 +30,28 @@ typedef struct {
 } KeyInfo;
 
 /*按键句柄*/
-typedef struct {
-    const char *Key_name;            /*按键名称*/
-    KeyInfo *keyinfo;                /*按键信息*/
-    bool active_level;               /*有效电平*/
-    uint8_t click_count;             /*点击次数*/
-    bool last_key_state;             /*上次按键状态*/
-    bool overtime_flag;              /*超时标志*/
+typedef struct KEY_TypedefHandle {
+    const char *Key_name; /*按键名称*/
+    KeyInfo *keyinfo; /*按键信息*/
+    const bool active_level; /*有效电平*/
+    uint8_t click_count; /*点击次数*/
+    volatile bool last_key_state; /*上次按键状态*/
+    volatile bool overtime_flag; /*超时标志*/
     volatile uint32_t timer_counter; /*时间阈值*/
-    StateMachine fsm;               /*状态机*/
-    EventFunc callback;              /*回调函数指针*/
+    StateMachine fsm; /*状态机*/
+    KEY_Callback callback; /*回调函数指针*/
 } KEY_TypedefHandle;
+
 void KEY_Init(KEY_TypedefHandle *key);
+
 void Key_Timer_Start(KEY_TypedefHandle *key, uint32_t timeout_ms);
+
 void Key_Timer_Stop(KEY_TypedefHandle *key);
+
 void KEY_Tasks(void);
+
 void KEY_Tick_Handler(void);
+
 // 外部声明
 extern State IDLE;
 extern State ELIMINATE_DITHERING;
