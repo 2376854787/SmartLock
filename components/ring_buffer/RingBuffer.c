@@ -14,12 +14,10 @@
 
 // 2. 进入临界区的宏
 // --- 修改你的宏定义为这样 ---
-
-
-#define RB_ENTER_CRITICAL()   // UBaseType_t uxSavedInterruptStatus = taskENTER_CRITICAL_FROM_ISR()
+#define RB_ENTER_CRITICAL()    UBaseType_t uxSavedInterruptStatus = taskENTER_CRITICAL_FROM_ISR()
 
 // 3. 退出临界区的宏
-#define RB_EXIT_CRITICAL()    // taskEXIT_CRITICAL_FROM_ISR(uxSavedInterruptStatus)
+#define RB_EXIT_CRITICAL()     taskEXIT_CRITICAL_FROM_ISR(uxSavedInterruptStatus)
 /**
  * @brief  创建一个指定大小的环形缓冲区
  * @param rb 环形缓冲区句柄

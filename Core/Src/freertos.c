@@ -34,11 +34,13 @@
 #include "KEY.h"
 #include "lcd.h"
 #include "Light_Sensor_task.h"
+#include "log.h"
 #include "MyPrintf.h"
 #include "tim.h"
 #include "wifi_mqtt_task.h"
 #include "mqtt_at_task.h"
 #include "Usart1_manage.h"
+#include "water_adc.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -54,7 +56,7 @@
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
 
-extern UART_HandleTypeDef ;
+extern UART_HandleTypeDef;
 
 /* USER CODE END PM */
 
@@ -66,27 +68,29 @@ extern UART_HandleTypeDef ;
 /* Definitions for KeyScanTask */
 osThreadId_t KeyScanTaskHandle;
 const osThreadAttr_t KeyScanTask_attributes = {
-    .name = "KeyScanTask",
-    .stack_size = 256 * 4,
-    .priority = (osPriority_t) osPriorityNormal,
+  .name = "KeyScanTask",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for uartTask */
 osThreadId_t uartTaskHandle;
 const osThreadAttr_t uartTask_attributes = {
-    .name = "uartTask",
-    .stack_size = 128 * 4,
-    .priority = (osPriority_t) osPriorityLow,
+  .name = "uartTask",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityLow,
 };
 /* Definitions for lcdTask */
 osThreadId_t lcdTaskHandle;
 const osThreadAttr_t lcdTask_attributes = {
-    .name = "lcdTask",
-    .stack_size = 256 * 4,
-    .priority = (osPriority_t) osPriorityLow,
+  .name = "lcdTask",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t) osPriorityLow,
 };
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
+
+/* ESP01s MQTT 任务 */
 osThreadId_t MqttTaskHandle;
 const osThreadAttr_t MqttTask_attributes = {
     .name = "MqttTask",
@@ -94,32 +98,34 @@ const osThreadAttr_t MqttTask_attributes = {
     .priority = (osPriority_t) osPriorityNormal,
 };
 osThreadId_t LightSensor_TaskHandle;
+/* 光敏传感器任务 */
 const osThreadAttr_t LightSensor_Task_attributes = {
     .name = "LightSensor_Task",
+    .stack_size = 256 * 4,
+    .priority = (osPriority_t) osPriorityNormal,
+};
+
+/* 水滴传感器ADC采集 逻辑处理任务 */
+osThreadId_t Water_Sensor_TaskHandle;
+const osThreadAttr_t Water_Sensor_attributes = {
+    .name = "Water_Sensor_Task",
     .stack_size = 256 * 4,
     .priority = (osPriority_t) osPriorityNormal,
 };
 /* USER CODE END FunctionPrototypes */
 
 void StartDefaultTask(void *argument);
-
 void StartTask02(void *argument);
-
 void StartTask_LCD(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
 /* Hook prototypes */
 void configureTimerForRunTimeStats(void);
-
 unsigned long getRunTimeCounterValue(void);
-
 void vApplicationIdleHook(void);
-
 void vApplicationTickHook(void);
-
 void vApplicationStackOverflowHook(xTaskHandle xTask, signed char *pcTaskName);
-
 void vApplicationMallocFailedHook(void);
 
 /* USER CODE BEGIN 1 */
@@ -191,50 +197,57 @@ void vApplicationMallocFailedHook(void) {
   * @retval None
   */
 void MX_FREERTOS_Init(void) {
-    /* USER CODE BEGIN Init */
+  /* USER CODE BEGIN Init */
 
-    /* USER CODE END Init */
+  /* USER CODE END Init */
 
-    /* USER CODE BEGIN RTOS_MUTEX */
+  /* USER CODE BEGIN RTOS_MUTEX */
     /* add mutexes, ... */
-    /* USER CODE END RTOS_MUTEX */
+  /* USER CODE END RTOS_MUTEX */
 
-    /* USER CODE BEGIN RTOS_SEMAPHORES */
+  /* USER CODE BEGIN RTOS_SEMAPHORES */
     /* add semaphores, ... */
-    /* USER CODE END RTOS_SEMAPHORES */
+  /* USER CODE END RTOS_SEMAPHORES */
 
-    /* USER CODE BEGIN RTOS_TIMERS */
+  /* USER CODE BEGIN RTOS_TIMERS */
     /* start timers, add new ones, ... */
-    /* USER CODE END RTOS_TIMERS */
+  /* USER CODE END RTOS_TIMERS */
 
-    /* USER CODE BEGIN RTOS_QUEUES */
+  /* USER CODE BEGIN RTOS_QUEUES */
     /* add queues, ... */
-    /* USER CODE END RTOS_QUEUES */
+  /* USER CODE END RTOS_QUEUES */
 
-    /* Create the thread(s) */
-    /* creation of KeyScanTask */
-    KeyScanTaskHandle = osThreadNew(StartDefaultTask, NULL, &KeyScanTask_attributes);
+  /* Create the thread(s) */
+  /* creation of KeyScanTask */
+  KeyScanTaskHandle = osThreadNew(StartDefaultTask, NULL, &KeyScanTask_attributes);
 
-    /* creation of uartTask */
-    uartTaskHandle = osThreadNew(StartTask02, NULL, &uartTask_attributes);
+  /* creation of uartTask */
+  uartTaskHandle = osThreadNew(StartTask02, NULL, &uartTask_attributes);
 
-    /* creation of lcdTask */
-    lcdTaskHandle = osThreadNew(StartTask_LCD, NULL, &lcdTask_attributes);
+  /* creation of lcdTask */
+  lcdTaskHandle = osThreadNew(StartTask_LCD, NULL, &lcdTask_attributes);
 
-    /* USER CODE BEGIN RTOS_THREADS */
+  /* USER CODE BEGIN RTOS_THREADS */
     /* add threads, ... */
 
-    // Create MQTT task using AT+MQTT extended commands (firmware supports MQTT)
+    /* 光敏传感器 */
     LightSensor_TaskHandle = osThreadNew(StartLightSensorTask, NULL, &LightSensor_Task_attributes);
+    /* ESP01s */
     // MqttTaskHandle = osThreadNew(StartMqttAtTask, NULL, &MqttTask_attributes);
 
+    /* 水滴传感器 任务*/
+    Water_Sensor_TaskHandle = osThreadNew(waterSensor_task, NULL, &Water_Sensor_attributes);
+    /* 日志任务 创建信号量、创建任务 */
+    Log_Init();
 
-    /* USER CODE END RTOS_THREADS */
 
-    /* USER CODE BEGIN RTOS_EVENTS */
+  /* USER CODE END RTOS_THREADS */
+
+  /* USER CODE BEGIN RTOS_EVENTS */
     /* add events, ... */
 
-    /* USER CODE END RTOS_EVENTS */
+  /* USER CODE END RTOS_EVENTS */
+
 }
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -244,17 +257,19 @@ void MX_FREERTOS_Init(void) {
   * @retval None
   */
 /* USER CODE END Header_StartDefaultTask */
-void StartDefaultTask(void *argument) {
-    /* USER CODE BEGIN StartDefaultTask */
+void StartDefaultTask(void *argument)
+{
+  /* USER CODE BEGIN StartDefaultTask */
     /* Infinite loop */
     for (;;) {
+        //LED 1翻转
         HAL_GPIO_TogglePin(LED1_GPIO_Port,LED1_Pin);
         KEY_Tasks();
         UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
-       // printf("keyscanTask high watermark = %lu\r\n", (unsigned long) watermark);
+        // printf("keyscanTask high watermark = %lu\r\n", (unsigned long) watermark);
         osDelay(30);
     }
-    /* USER CODE END StartDefaultTask */
+  /* USER CODE END StartDefaultTask */
 }
 
 /* USER CODE BEGIN Header_StartTask02 */
@@ -264,8 +279,9 @@ void StartDefaultTask(void *argument) {
 * @retval None
 */
 /* USER CODE END Header_StartTask02 */
-void StartTask02(void *argument) {
-    /* USER CODE BEGIN StartTask02 */
+void StartTask02(void *argument)
+{
+  /* USER CODE BEGIN StartTask02 */
     char buffer[128];
     /* Infinite loop */
     for (;;) {
@@ -274,7 +290,8 @@ void StartTask02(void *argument) {
             if (read_size > 127) read_size = 127;
             if (ReadRingBuffer(&g_rb_uart1, (uint8_t *) buffer, &read_size, 0)) {
                 buffer[read_size] = '\0';
-                printf("%s\n", buffer);
+                // printf("%s\n", buffer);
+                HAL_UART_Transmit(&huart3, (const uint8_t *) buffer, strlen((char *) buffer), HAL_MAX_DELAY);
             } else {
                 printf("读取失败\n");
             }
@@ -283,7 +300,7 @@ void StartTask02(void *argument) {
         HAL_GPIO_TogglePin(LED0_GPIO_Port,LED0_Pin);
         osDelay(1000);
     }
-    /* USER CODE END StartTask02 */
+  /* USER CODE END StartTask02 */
 }
 
 /* USER CODE BEGIN Header_StartTask_LCD */
@@ -293,33 +310,33 @@ void StartTask02(void *argument) {
 * @retval None
 */
 /* USER CODE END Header_StartTask_LCD */
-void StartTask_LCD(void *argument) {
-    /* USER CODE BEGIN StartTask_LCD */
+void StartTask_LCD(void *argument)
+{
+  /* USER CODE BEGIN StartTask_LCD */
     /* Infinite loop */
     char buffer[128];
-    osDelay(1000);
+    osDelay(2000);
     esp01s_Init(&huart3, 2048);
+    LOG_I("StartTask_LCD", "启动完成");
+    LOG_I("111", "启动完成");
     for (;;) {
         snprintf(buffer, 128, "Time:%lu", HAL_GetTick());
         lcd_show_string(50, 300, 240, 32, 32, buffer, BLACK);
 
         UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
-       // printf("lcdTask high watermark = %lu\r\n", (unsigned long) watermark);
-
+        // printf("lcdTask high watermark = %lu\r\n", (unsigned long) watermark);
         osDelay(20);
     }
-    /* USER CODE END StartTask_LCD */
+  /* USER CODE END StartTask_LCD */
 }
 
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
 
 
-
-
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
     if (huart->Instance == USART1) {
-        // ??? USART1 ??????
+        // 串口1任务 维护一个指针在IDLE 以及半满全满中断中处理
         process_dma_data();
         return;
     }
@@ -330,6 +347,8 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
             if ((g_esp01_handle.rx_len + Size) >= (sizeof(g_esp01_handle.rx_buffer) - 1)) {
                 // 丢弃
                 g_esp01_handle.rx_len = 0;
+                printf("数据太多 丢弃！\n");
+                return;
             }
 
             //维护当前指针
@@ -340,7 +359,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
             //写入缓冲区
             uint16_t write_size = Size;
             if (!WriteRingBuffer(&g_esp01_handle.rb, &g_esp01_handle.rx_buffer[cur_pos], &write_size, 0)) {
-                printf("Write Error of RingBuffer\n");
+                LOG_E("USART3_esp01s", "Write Error of RingBuffer");
             }
 
             //通知新数据到来
@@ -350,14 +369,24 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
         }
 
         //预留一个字节的空间 放置'\0'
-        uint16_t remain = sizeof(g_esp01_handle.rx_buffer) - g_esp01_handle.rx_len - 1;
+
+        g_esp01_handle.rx_len = 0;
+        uint16_t remain = sizeof(g_esp01_handle.rx_buffer) - 1;
+        // uint16_t remain = sizeof(g_esp01_handle.rx_buffer) - g_esp01_handle.rx_len - 1;
         if (remain == 0) {
             g_esp01_handle.rx_len = 0;
             remain = sizeof(g_esp01_handle.rx_buffer) - 1;
         }
 
-        //重新设置新的DMA起点和容量
-        HAL_UARTEx_ReceiveToIdle_DMA(&huart3, g_esp01_handle.rx_buffer + g_esp01_handle.rx_len, remain);
+        // //重新设置新的DMA起点和容量
+        // if (HAL_UARTEx_ReceiveToIdle_DMA(&huart3, g_esp01_handle.rx_buffer + g_esp01_handle.rx_len, remain)!= HAL_OK) {
+        //     printf("串口3 繁忙！\n");
+        // }
+
+        if (HAL_UARTEx_ReceiveToIdle_DMA(&huart3,
+                                         g_esp01_handle.rx_buffer, remain) != HAL_OK) {
+            printf("串口3 繁忙！\n");
+        }
         __HAL_DMA_DISABLE_IT((&huart3)->hdmarx, DMA_IT_HT);
         return;
     }
@@ -378,3 +407,4 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
 
 
 /* USER CODE END Application */
+

@@ -35,6 +35,7 @@
 #include "ESP01S.h"
 #include "lcd.h"
 #include "LightSensor.h"
+#include "log.h"
 #include "MyPrintf.h"
 #include "wifi_mqtt_task.h"
 /* USER CODE END Includes */
@@ -57,13 +58,31 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
+void keyCallback(KEY_TypedefHandle *key, KEY_ActionType action) {
+    switch (action) {
+        case KEY_ACTION_SINGLE_CLICK:
+            LOG_I("key1", "单击回调函数触发");
+            break;
+        case KEY_ACTION_DOUBLE_CLICK:
+            LOG_I("key1", "双击回调函数触发");
+            break;
+        case KEY_ACTION_TRIPLE_CLICK:
+            LOG_I("key1", "三击回调函数触发");
+            break;
+        case KEY_ACTION_LONG_PRESS:
+            LOG_I("key1", "长按回调函数触发");
+            break;
+    }
+}
+
 KeyInfo key0_info = {KEY0_GPIO_Port, KEY0_Pin};
 KeyInfo key1_info = {KEY1_GPIO_Port, KEY1_Pin};
 KeyInfo key2_info = {KEY2_GPIO_Port, KEY2_Pin};
+
 KEY_TypedefHandle key0 = {
     .Key_name = "KEY0",
     .active_level = 0,
-    .callback = NULL,
+    .callback = keyCallback,
     .click_count = 0,
     .keyinfo = &key0_info,
     .overtime_flag = false,
@@ -88,6 +107,8 @@ KEY_TypedefHandle key2 = {
     .overtime_flag = false,
     .timer_counter = 0
 };
+
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -146,6 +167,7 @@ int main(void) {
     MX_TIM12_Init();
     MX_USART3_UART_Init();
     MX_ADC3_Init();
+    MX_ADC1_Init();
     /* USER CODE BEGIN 2 */
     dma_logger_init(&huart1);
     lcd_init();
