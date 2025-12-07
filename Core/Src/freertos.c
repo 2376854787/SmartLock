@@ -267,7 +267,7 @@ void StartDefaultTask(void *argument)
         KEY_Tasks();
         UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
         // printf("keyscanTask high watermark = %lu\r\n", (unsigned long) watermark);
-        osDelay(30);
+        osDelay(10);
     }
   /* USER CODE END StartDefaultTask */
 }
