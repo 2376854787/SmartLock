@@ -178,7 +178,8 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
     short_file = short_file ? short_file + 1 : file;
 
     /* 3. 拼装日志头: [Tick] L/TAG: */
-    const int head_len = snprintf(log_buf, LOG_LINE_MAX, "%s[%lu] %c/%s: ", color, tick, level_char, tag);
+    const int head_len = snprintf(log_buf, LOG_LINE_MAX,
+                                  "%s[%lu] %c/%s %s:%d: ", color, tick, level_char, tag, short_file, line);
 
     /* 4. 拼装用户内容 (处理可变参数) */
     va_list args;
