@@ -16,9 +16,9 @@ set(CMAKE_OBJCOPY arm-none-eabi-objcopy)
 
 
 # Define the build type
-if(NOT CMAKE_BUILD_TYPE)
+if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Debug")
-endif()
+endif ()
 
 # Set the project name
 set(CMAKE_PROJECT_NAME SmartLock)
@@ -60,17 +60,17 @@ add_subdirectory(cmake/stm32cubemx)
 
 # Link directories setup
 target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
-    # Add user defined library search paths
+        # Add user defined library search paths
 )
 
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
-    # Add user sources here
+        # Add user sources here
 )
 
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
-    # Add user defined include paths
+        # Add user defined include paths
         components/hfsm
         components/memory_allocation
         components/ring_buffer
@@ -85,12 +85,11 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         components/log
 
 
-
 )
 
 # Add project symbols (macros)
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
-    # Add user defined symbols
+        # Add user defined symbols
 )
 
 # Remove wrong libob.a library dependency when using cpp files
@@ -98,9 +97,9 @@ list(REMOVE_ITEM CMAKE_C_IMPLICIT_LINK_LIBRARIES ob)
 
 # Add linked libraries
 target_link_libraries(${CMAKE_PROJECT_NAME}
-    stm32cubemx
+        stm32cubemx
 
-    # Add user defined libraries
+        # Add user defined libraries
 )
 # 启用浮点数打印
 target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
@@ -109,7 +108,7 @@ target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
 )
 
 # --- 生成 .bin 和 .hex 文件 ---
-if(CMAKE_OBJCOPY)
+if (CMAKE_OBJCOPY)
     message(STATUS "Found objcopy: ${CMAKE_OBJCOPY}")
     add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD
             # 使用 ${CMAKE_PROJECT_NAME} 作为目标名
@@ -123,6 +122,6 @@ if(CMAKE_OBJCOPY)
     add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD
             COMMAND ${CMAKE_SIZE} $<TARGET_FILE:${CMAKE_PROJECT_NAME}>
             COMMENT "Printing size information")
-else()
+else ()
     message(WARNING "CMAKE_OBJCOPY is not set. .bin and .hex files will not be generated.")
-endif()
+endif ()

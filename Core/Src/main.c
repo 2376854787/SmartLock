@@ -71,6 +71,8 @@ void keyCallback(KEY_TypedefHandle *key, KEY_ActionType action) {
             break;
         case KEY_ACTION_LONG_PRESS:
             LOG_I("key1", "长按回调函数触发");
+        case KEY_ACTION_LONG_PRESS_REPEAT:
+            LOG_I("key1", "长按回调函数触发");
             break;
     }
 }
@@ -78,35 +80,40 @@ void keyCallback(KEY_TypedefHandle *key, KEY_ActionType action) {
 KeyInfo key0_info = {KEY0_GPIO_Port, KEY0_Pin};
 KeyInfo key1_info = {KEY1_GPIO_Port, KEY1_Pin};
 KeyInfo key2_info = {KEY2_GPIO_Port, KEY2_Pin};
-
-KEY_TypedefHandle key0 = {
-    .Key_name = "KEY0",
+KEY_Config_t key0_config = {
+    .name = "KEY0",
     .active_level = 0,
     .callback = keyCallback,
-    .click_count = 0,
     .keyinfo = &key0_info,
-    .overtime_flag = false,
-    .timer_counter = 0,
-
+    .debounce_ms = 20,
+    .long_press_ms = 800,
+    .multi_click_ms = 300,
+    .user_data = NULL,
 };
-KEY_TypedefHandle key1 = {
-    .Key_name = "KEY1",
+KEY_Config_t key1_config = {
+    .name = "KEY1",
     .active_level = 0,
     .callback = NULL,
-    .click_count = 0,
     .keyinfo = &key1_info,
-    .overtime_flag = false,
-    .timer_counter = 0
+    .debounce_ms = 20,
+    .long_press_ms = 800,
+    .multi_click_ms = 300,
+    .user_data = NULL,
 };
-KEY_TypedefHandle key2 = {
-    .Key_name = "KEY2",
+KEY_Config_t key2_config = {
+    .name = "KEY2",
     .active_level = 0,
     .callback = NULL,
-    .click_count = 0,
     .keyinfo = &key2_info,
-    .overtime_flag = false,
-    .timer_counter = 0
+    .debounce_ms = 20,
+    .long_press_ms = 800,
+    .multi_click_ms = 300,
+    .user_data = NULL,
 };
+
+KEY_TypedefHandle key0;
+KEY_TypedefHandle key1;
+KEY_TypedefHandle key2;
 
 
 /* USER CODE END PV */
@@ -171,7 +178,7 @@ int main(void) {
     /* USER CODE BEGIN 2 */
     dma_logger_init(&huart1);
     lcd_init();
-
+    LOG_E("cu","ssss");
     // bsp_esp8266_Init();
 
     lcd_show_string(10, 40, 240, 32, 32, "STM32", RED);
@@ -180,9 +187,9 @@ int main(void) {
 
     lcd_show_string(10, 110, 240, 16, 16, "ATOM@ALIENTEK", CYAN);
     MyUart_Init();
-    KEY_Init(&key0);
-    KEY_Init(&key1);
-    KEY_Init(&key2);
+    KEY_Init(&key0, &key0_config);
+    KEY_Init(&key1, &key1_config);
+    KEY_Init(&key2, &key2_config);
 
     /* USER CODE END 2 */
 
