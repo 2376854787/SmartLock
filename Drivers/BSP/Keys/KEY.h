@@ -2,6 +2,44 @@
 #define __KEY_H__
 #include  "main.h"
 #include "HFSM.h"
+
+/* 默认 TAG，可以按需改 */
+#ifndef KEY_LOG_TAG
+#define KEY_LOG_TAG  "KEY"
+#endif
+#define  LOG_ENABLE
+/* 情况一：工程使用的日志系统 */
+#if defined(LOG_ENABLE)
+
+#include "log.h"   /* 日志头文件 */
+
+#ifdef  LOG_ENABLE   /* LOG_ENABLE != 0：日志系统开启 */
+
+#define KEY_LOGE(fmt, ...)  LOG_E(KEY_LOG_TAG, fmt, ##__VA_ARGS__)
+#define KEY_LOGW(fmt, ...)  LOG_W(KEY_LOG_TAG, fmt, ##__VA_ARGS__)
+#define KEY_LOGI(fmt, ...)  LOG_I(KEY_LOG_TAG, fmt, ##__VA_ARGS__)
+#define KEY_LOGD(fmt, ...)  LOG_D(KEY_LOG_TAG, fmt, ##__VA_ARGS__)
+
+#else               /* LOG_ENABLE == 0：全局关闭日志 → KEY 也安静 */
+
+#define KEY_LOGE(fmt, ...)
+#define KEY_LOGW(fmt, ...)
+#define KEY_LOGI(fmt, ...)
+#define KEY_LOGD(fmt, ...)
+
+#endif
+
+/* 情况二：工程没用LOG日志系统 → 回退到普通 printf */
+#else
+
+#include <stdio.h>
+
+#define KEY_LOGE(fmt, ...)  printf("[E][%s] " fmt "\r\n", KEY_LOG_TAG, ##__VA_ARGS__)
+#define KEY_LOGW(fmt, ...)  printf("[W][%s] " fmt "\r\n", KEY_LOG_TAG, ##__VA_ARGS__)
+#define KEY_LOGI(fmt, ...)  printf("[I][%s] " fmt "\r\n", KEY_LOG_TAG, ##__VA_ARGS__)
+#define KEY_LOGD(fmt, ...)  printf("[D][%s] " fmt "\r\n", KEY_LOG_TAG, ##__VA_ARGS__)
+
+#endif
 struct KEY_TypedefHandle; /* 向前声明按键结构体 */
 typedef struct KEY_TypedefHandle KEY_TypedefHandle;
 
@@ -11,6 +49,7 @@ typedef enum {
     KEY_ACTION_DOUBLE_CLICK,
     KEY_ACTION_TRIPLE_CLICK,
     KEY_ACTION_LONG_PRESS,
+    KEY_ACTION_LONG_PRESS_REPEAT, // 长按保持过程中的重复触发
 } KEY_ActionType;
 
 /* 按键事件回调 */
@@ -23,45 +62,51 @@ typedef enum {
     KEY_Event_OverTime,
 } KEY_Event;
 
+
 /*端口结构体*/
 typedef struct {
     GPIO_TypeDef *GPIOx;
     uint16_t GPIO_Pin;
 } KeyInfo;
 
+
+/* 按键配置 */
+typedef struct {
+    const char *name;
+    KeyInfo *keyinfo;
+    bool active_level;
+
+    uint16_t debounce_ms; // 消抖时间
+    uint16_t long_press_ms; // 长按时间
+    uint16_t multi_click_ms; // 连击超时时间
+    KEY_Callback callback;
+    void *user_data;
+} KEY_Config_t;
+
 /*按键句柄*/
 typedef struct KEY_TypedefHandle {
     const char *Key_name; /*按键名称*/
     KeyInfo *keyinfo; /*按键信息*/
-    const bool active_level; /*有效电平*/
+    bool active_level; /*有效电平*/
+    uint16_t debounce_ms; /* 消抖时间 */
+    uint16_t long_press_ms; /* 长按时间 */
+    uint16_t multi_click_ms; /* 多击间隔时间设置 */
     uint8_t click_count; /*点击次数*/
     volatile bool last_key_state; /*上次按键状态*/
-    volatile bool overtime_flag; /*超时标志*/
     volatile uint32_t timer_counter; /*时间阈值*/
     StateMachine fsm; /*状态机*/
     KEY_Callback callback; /*回调函数指针*/
+    void *user_data;
 } KEY_TypedefHandle;
 
-void KEY_Init(KEY_TypedefHandle *key);
-
-void Key_Timer_Start(KEY_TypedefHandle *key, uint32_t timeout_ms);
-
-void Key_Timer_Stop(KEY_TypedefHandle *key);
+void KEY_Init(KEY_TypedefHandle *key, const KEY_Config_t *cfg);
 
 void KEY_Tasks(void);
 
 void KEY_Tick_Handler(void);
 
 // 外部声明
-extern State IDLE;
-extern State ELIMINATE_DITHERING;
-extern State WAITING_RELEASE;
-extern State WAITING_NEXTCLICK;
-extern State SING_CLICK;
-extern State DOUBLE_CLICK;
-extern State TRIPLE_CLICK;
-extern State LONGPRESS;
-extern uint8_t overtime_flag;
+
 /*状态机定时器变量*/
 
 #endif
