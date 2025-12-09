@@ -4,18 +4,17 @@
 
 #ifndef SMARTCLOCK_LOG_H
 #define SMARTCLOCK_LOG_H
+#include "APP_config.h" /* 全局配置开关 */
 
 /* ================= 配置区域 ================= */
 /* 日志控制宏可以控制调试信息的输出 全局*/
-#define LOG_ENABLE          1
+#define G_LOG_ENABLE          1
 /* 日志输出颜色使能 */
 #define LOG_COLOR_ENABLE    1
 /*  启用异步缓冲(RTOS Task发送)  0: 使用阻塞发送 */
 #define LOG_ASYNC_ENABLE    1
 /* 定义日志缓冲区的总大小 (仅在异步模式下有效) */
 #define LOG_RB_SIZE         2048
-
-
 
 
 /* 日志等级定义 */
@@ -38,12 +37,13 @@ typedef enum {
 
 /* 核心日志输出文件 */
 void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, const char *fmt, ...);
+
 /* 初始化日志系统 (RTOS模式下必须先调用) */
 void Log_Init(void);
 
 /* ================= 宏定义封装 (用户主要用这些) ================= */
 
-#if (LOG_ENABLE)
+#if (G_LOG_ENABLE)
 
 // ERROR: 严重错误
 #define LOG_E(tag, fmt, ...) \
