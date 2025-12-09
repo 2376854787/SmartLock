@@ -1,6 +1,9 @@
 #ifndef __HFMS_H__
 #define __HFMS_H__
 #include <stdbool.h>
+#include "log.h"
+
+
 struct StateMachine; // 提前声明
 struct State;
 struct Event;

@@ -2,36 +2,39 @@
 #define __KEY_H__
 #include  "main.h"
 #include "HFSM.h"
-
+#include "log.h"
 /* 默认 TAG，可以按需改 */
 #ifndef KEY_LOG_TAG
 #define KEY_LOG_TAG  "KEY"
 #endif
+
+/**************************************************************************/
+/*                            日志配置区域                                 */
+/**************************************************************************/
+
+/* 局部开关：取消注释则开启本模块日志，注释掉则本模块完全静默 */
 #define  LOG_ENABLE
-/* 情况一：工程使用的日志系统 */
-#if defined(LOG_ENABLE)
 
-#include "log.h"   /* 日志头文件 */
+/*
+ * 逻辑说明：
+ * 1. 优先级最高：如果 局部开关(LOG_ENABLE) 和 总开关(ENABLE_LOG_SYSTEM) 都开启 -> 使用日志系统 (log.h)
+ * 2. 优先级中等：如果 只有局部开关，但没有总开关 -> 回退使用 printf (方便调试)
+ * 3. 优先级最低：如果 局部开关没开 -> 所有日志宏定义为空 (不占空间)
+ */
 
-#ifdef  LOG_ENABLE   /* LOG_ENABLE != 0：日志系统开启 */
+#if defined(ENABLE_LOG_SYSTEM) && defined(LOG_ENABLE)
+
+/* --- 情况一：双开关同时开启 -> 使用工程日志系统  可能在中断中执行代码时不要使用工程日志--- */
+#include "log.h"
 
 #define KEY_LOGE(fmt, ...)  LOG_E(KEY_LOG_TAG, fmt, ##__VA_ARGS__)
 #define KEY_LOGW(fmt, ...)  LOG_W(KEY_LOG_TAG, fmt, ##__VA_ARGS__)
 #define KEY_LOGI(fmt, ...)  LOG_I(KEY_LOG_TAG, fmt, ##__VA_ARGS__)
 #define KEY_LOGD(fmt, ...)  LOG_D(KEY_LOG_TAG, fmt, ##__VA_ARGS__)
 
-#else               /* LOG_ENABLE == 0：全局关闭日志 → KEY 也安静 */
+#elif defined(LOG_ENABLE)
 
-#define KEY_LOGE(fmt, ...)
-#define KEY_LOGW(fmt, ...)
-#define KEY_LOGI(fmt, ...)
-#define KEY_LOGD(fmt, ...)
-
-#endif
-
-/* 情况二：工程没用LOG日志系统 → 回退到普通 printf */
-#else
-
+/* --- 情况二：只有局部开关，无总日志系统 -> 回退到 printf --- */
 #include <stdio.h>
 
 #define KEY_LOGE(fmt, ...)  printf("[E][%s] " fmt "\r\n", KEY_LOG_TAG, ##__VA_ARGS__)
@@ -39,7 +42,16 @@
 #define KEY_LOGI(fmt, ...)  printf("[I][%s] " fmt "\r\n", KEY_LOG_TAG, ##__VA_ARGS__)
 #define KEY_LOGD(fmt, ...)  printf("[D][%s] " fmt "\r\n", KEY_LOG_TAG, ##__VA_ARGS__)
 
+#else
+
+/* --- 情况三：局部开关关闭 -> 全部定义为空 (无代码生成) --- */
+#define KEY_LOGE(fmt, ...)
+#define KEY_LOGW(fmt, ...)
+#define KEY_LOGI(fmt, ...)
+#define KEY_LOGD(fmt, ...)
+
 #endif
+/**************************************************************************/
 struct KEY_TypedefHandle; /* 向前声明按键结构体 */
 typedef struct KEY_TypedefHandle KEY_TypedefHandle;
 

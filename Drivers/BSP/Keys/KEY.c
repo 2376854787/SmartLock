@@ -372,7 +372,9 @@ static void LONG_PRESS_entry(StateMachine *fsm) {
 static void LONG_PRESS_HOLD_entry(StateMachine *fsm) {
     KEY_TypedefHandle *key = (KEY_TypedefHandle *) (fsm->customizeHandle);
     KEY_LOGI("按键：%s->进入长按保持状态\n", ((KEY_TypedefHandle *) (fsm->customizeHandle))->Key_name);
-
+    if (key->callback) {
+        key->callback(key, KEY_ACTION_LONG_PRESS_REPEAT);
+    }
     // 进入休闲状态
     Key_Timer_Start(key, key->multi_click_ms); // 例如 100ms
 }
