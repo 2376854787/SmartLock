@@ -41,6 +41,7 @@
 #include "mqtt_at_task.h"
 #include "Usart1_manage.h"
 #include "water_adc.h"
+#include "AT.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -316,7 +317,7 @@ void StartTask_LCD(void *argument)
     /* Infinite loop */
     char buffer[128];
     osDelay(2000);
-    esp01s_Init(&huart3, 2048);
+    //esp01s_Init(&huart3, 1024);
     LOG_I("StartTask_LCD", "启动完成");
     LOG_I("111", "启动完成");
     for (;;) {
@@ -342,61 +343,14 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
     }
 
     if (huart->Instance == USART3) {
+        AT_Core_RxCallback(huart, Size);
         if (Size > 0) {
-            //如果一次性太多
-            if ((g_esp01_handle.rx_len + Size) >= (sizeof(g_esp01_handle.rx_buffer) - 1)) {
-                // 丢弃
-                g_esp01_handle.rx_len = 0;
-                printf("数据太多 丢弃！\n");
-                return;
-            }
-
-            //维护当前指针
-            const uint16_t cur_pos = g_esp01_handle.rx_len;
-            g_esp01_handle.rx_len += Size;
-            g_esp01_handle.rx_buffer[g_esp01_handle.rx_len] = '\0';
-
-            //写入缓冲区
-            uint16_t write_size = Size;
-            if (!WriteRingBuffer(&g_esp01_handle.rb, &g_esp01_handle.rx_buffer[cur_pos], &write_size, 0)) {
-                LOG_E("USART3_esp01s", "Write Error of RingBuffer");
-            }
-
-            //通知新数据到来
-            g_esp01s_flag = 1;
-            printf("[DEBUG] USART3 RX Event! Size=%u, rx_len=%u\n", Size, g_esp01_handle.rx_len);
-            printf("%s\n", (char *) g_esp01_handle.rx_buffer);
         }
-
-        //预留一个字节的空间 放置'\0'
-
-        g_esp01_handle.rx_len = 0;
-        uint16_t remain = sizeof(g_esp01_handle.rx_buffer) - 1;
-        // uint16_t remain = sizeof(g_esp01_handle.rx_buffer) - g_esp01_handle.rx_len - 1;
-        if (remain == 0) {
-            g_esp01_handle.rx_len = 0;
-            remain = sizeof(g_esp01_handle.rx_buffer) - 1;
-        }
-
-        // //重新设置新的DMA起点和容量
-        // if (HAL_UARTEx_ReceiveToIdle_DMA(&huart3, g_esp01_handle.rx_buffer + g_esp01_handle.rx_len, remain)!= HAL_OK) {
-        //     printf("串口3 繁忙！\n");
-        // }
-
-        if (HAL_UARTEx_ReceiveToIdle_DMA(&huart3,
-                                         g_esp01_handle.rx_buffer, remain) != HAL_OK) {
-            printf("串口3 繁忙！\n");
-        }
-        __HAL_DMA_DISABLE_IT((&huart3)->hdmarx, DMA_IT_HT);
-        __HAL_DMA_DISABLE_IT((&huart3)->hdmarx, DMA_IT_TC);
 
         /* 1、获取接收到的数据写入rb */
 
 
         /* 2、通知任务 暂时用同步代码 待实现任务事件列表*/
-
-
-
     }
 }
 
