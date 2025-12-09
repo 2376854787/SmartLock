@@ -31,4 +31,8 @@ bool WriteRingBuffer(RingBuffer *rb, const uint8_t *add, uint16_t *size, uint8_t
 bool ReadRingBuffer(RingBuffer *rb, uint8_t *add, uint16_t *size, uint8_t isForceRead);
 
 bool PeekRingBuffer(RingBuffer *rb, uint8_t *add, uint16_t *size, const uint8_t isForcePeek);
+
+bool WriteRingBufferFromISR(RingBuffer *rb, const uint8_t *add, uint16_t *size, const uint8_t isForceWrite);
+
+bool ReadRingBufferFromISR(RingBuffer *rb, uint8_t *add, uint16_t *size, const uint8_t isForceRead) ;
 #endif //TEST_RINGBUFFER_H
