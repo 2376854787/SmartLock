@@ -6,6 +6,7 @@
 
 /* 引入 CMSIS-OS2 和 RingBuffer */
 #include "cmsis_os2.h"
+#include "MemoryAllocation.h"
 #include "RingBuffer.h"
 /* 宏开关 */
 #ifdef ENABLE_LOG_SYSTEM
@@ -114,8 +115,10 @@ void Log_Init(void) {
 #if LOG_ASYNC_ENABLE
     /* 2. 初始化 RingBuffer */
     /* 假设 CreateRingBuffer 内部使用了 static_alloc 或 malloc */
-    CreateRingBuffer(&s_logRB, LOG_RB_SIZE);
-
+    if (!CreateRingBuffer(&s_logRB, LOG_RB_SIZE)) {
+        LOG_E("AT", "s_logRB 环形缓冲区分配失败");
+    }
+    LOG_W("heap", "%uKB- %u空间还剩余 %u", MEMORY_POND_MAX_SIZE, LOG_RB_SIZE, query_remain_size());
     /* 3. 创建后台发送任务 */
     const osThreadAttr_t logTask_attributes = {
         .name = "LogTask",
