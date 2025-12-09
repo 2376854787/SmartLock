@@ -83,6 +83,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         Drivers/BSP/Light_Sensor
         Drivers/System/Inc
         components/log
+        components/AT
 
 
 )
