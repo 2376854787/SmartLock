@@ -7,6 +7,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include "FreeRTOS.h"
+#include "log.h"
 #include "MemoryAllocation.h"
 #include "task.h"
 
