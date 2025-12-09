@@ -4,12 +4,14 @@
 
 #ifndef SMARTCLOCK_AT_H
 #define SMARTCLOCK_AT_H
-
+#include "stm32f4xx_hal.h"
+#include "stm32f4xx_hal_uart.h"
 /* 1: 启用RTOS模式(信号量/互斥锁)  0: 启用裸机模式(轮询) */
 #ifndef AT_RTOS_ENABLE
 #define AT_RTOS_ENABLE      1    /*是否启用了RTOS*/
 #include "HFSM.h"
 #include "RingBuffer.h"
+
 #endif
 
 /* AT指令超时设置 */
@@ -41,6 +43,7 @@ typedef enum {
     AT_EVT_TIMEOUT, /* [Tick] 定时器超时 */
 } AT_EventID_t;
 
+extern  RingBuffer AT_dma_rx_rb;
 /* ================= 核心结构体 ================= */
 /**
  * @brief AT指令对象 (通常由调用者在栈上临时创建)
@@ -70,6 +73,7 @@ typedef struct {
     RingBuffer rx_rb; /* 接收环形缓冲区 */
     /* 如果 RingBuffer 需要静态内存，可以在此定义，或外部注入 */
     void (*hw_send)(uint8_t *data, uint16_t len); /* 硬件发送函数指针 */
+    UART_HandleTypeDef* uart;
 
     /* --- 3. 解析缓存 --- */
     char line_buf[AT_LINE_MAX_LEN]; /* 线性缓存，存放当前正在解析的一行 */
@@ -92,15 +96,16 @@ typedef struct {
 
 /**
  * @brief 初始化 AT 核心框架
+ * @param uart 串口句柄
  * @param send_func 硬件串口发送函数指针
  */
-void AT_Core_Init(void (*send_func)(uint8_t *, uint16_t));
+void AT_Core_Init(UART_HandleTypeDef* uart, void (*send_func)(uint8_t *, uint16_t));
 
 /**
  * @brief 接收数据回调 (放入串口接收中断)
  * @param byte 收到的单个字节
  */
-void AT_Core_RxCallback(uint8_t byte);
+void AT_Core_RxCallback(UART_HandleTypeDef *huart, uint16_t Size);
 
 /**
  * @brief 核心轮询/处理函数
