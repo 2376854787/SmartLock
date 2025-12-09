@@ -8,11 +8,20 @@
 
 
     ************************************************ KEY状态机相关变量定义 ************************************************
-    使用本模块必须实现超时事件的获取，即通过定时器中断获取标志位 overtime_flag 产生超时事件
-
-
+    使用本模块必须实现超时事件的获取
  */
 
+
+/* 内部宏定义 */
+#define KEY_DEBOUNCE_MS         20u
+#define KEY_LONG_PRESS_MS       800u
+#define KEY_MULTI_CLICK_MS      300u
+
+
+/* 函数声明 */
+static void Key_Timer_Start(KEY_TypedefHandle *key, uint32_t timeout_ms);
+
+static void Key_Timer_Stop(KEY_TypedefHandle *key);
 
 void IDLE_entry(StateMachine *fsm);
 
@@ -38,77 +47,89 @@ static void TRIPLE_CLICK_entry(StateMachine *fsm);
 
 static void LONG_PRESS_entry(StateMachine *fsm);
 
+static void LONG_PRESS_HOLD_entry(StateMachine *fsm);
 
+static bool LONGPRESS_HOLD_EventHandle(StateMachine *fsm, const Event *event);
+
+/* 事件和回调函数映射表设置 */
 /* 空闲状态的事件和函数绑定 */
-const EventAction_t IDLE_Event_Action[] = {
+const static EventAction_t IDLE_Event_Action[] = {
     {KEY_Event_Pressed, IDLE_Eventhandle},
     {-1, NULL}
 };
-const EventAction_t ELIMINATE_DITHERING_Event_Action[] = {
+const static EventAction_t ELIMINATE_DITHERING_Event_Action[] = {
     {KEY_Event_OverTime, ELIMINATE_DITHERING_EventHandle},
     {-1, NULL}
 };
-const EventAction_t WAITING_RELEASE_Event_Action[] = {
+const static EventAction_t WAITING_RELEASE_Event_Action[] = {
     {KEY_Event_up, WAITING_RELEASE_EventHandle},
     {KEY_Event_OverTime, WAITING_RELEASE_EventHandle},
     {-1, NULL}
 };
-const EventAction_t WAITING_NEXTCLICK_Event_Action[] = {
+const static EventAction_t WAITING_NEXTCLICK_Event_Action[] = {
     {KEY_Event_Pressed, WAITING_NEXTCLICK_EventHandle},
     {KEY_Event_OverTime, WAITING_NEXTCLICK_EventHandle},
     {-1, NULL}
 };
+static const EventAction_t LONGPRESS_HOLD_Event_Action[] = {
+    {KEY_Event_OverTime, LONGPRESS_HOLD_EventHandle},
+    {KEY_Event_up, LONGPRESS_HOLD_EventHandle},
+    {-1, NULL}
+};
 
 /*创建状态实例*/
-State IDLE = {"空闲状态", IDLE_entry, NULL, IDLE_Event_Action, NULL};
-State ELIMINATE_DITHERING = {
+static State IDLE = {"空闲状态", IDLE_entry, NULL, IDLE_Event_Action, NULL};
+static State ELIMINATE_DITHERING = {
     "消抖状态", ELIMINATE_DITHERING_entry, NULL, ELIMINATE_DITHERING_Event_Action, NULL
 };
-State WAITING_RELEASE = {
+static State WAITING_RELEASE = {
     "等待释放状态", WAITING_RELEASE_entry, NULL, WAITING_RELEASE_Event_Action, NULL
 };
-State WAITING_NEXTCLICK = {
+static State WAITING_NEXTCLICK = {
     "等待下一次点击状态", WAITING_NEXTCLICK_entry, NULL, WAITING_NEXTCLICK_Event_Action, NULL
 };
 
 /* 最终结算的按键状态 */
-State SINGLE_CLICK = {"单击状态", SING_CLICK_entry, NULL, NULL, NULL};
-State DOUBLE_CLICK = {"双击状态", DOUBLE_CLICK_entry, NULL, NULL, NULL};
-State TRIPLE_CLICK = {"三击状态", TRIPLE_CLICK_entry, NULL, NULL, NULL};
-State LONGPRESS = {"长按状态", LONG_PRESS_entry, NULL, NULL, NULL};
-
+static State SINGLE_CLICK = {"单击状态", SING_CLICK_entry, NULL, NULL, NULL};
+static State DOUBLE_CLICK = {"双击状态", DOUBLE_CLICK_entry, NULL, NULL, NULL};
+static State TRIPLE_CLICK = {"三击状态", TRIPLE_CLICK_entry, NULL, NULL, NULL};
+static State LONGPRESS = {"长按状态", LONG_PRESS_entry, NULL, NULL, NULL};
+static State LONGPRESS_HOLD = {"长按保持", LONG_PRESS_HOLD_entry, NULL, LONGPRESS_HOLD_Event_Action, NULL};
 /*按键数组 存储用于初始化的按键和 状态信息*/
 static KEY_TypedefHandle *registered_keys[5] = {NULL};
-uint8_t registered_key_count = 0;
-uint8_t MAX_REGISTERED_KEYS = sizeof(registered_keys) / sizeof(registered_keys[0]);
+static uint8_t registered_key_count = 0;
+static const uint8_t MAX_REGISTERED_KEYS = sizeof(registered_keys) / sizeof(registered_keys[0]);
 
 
 /************************************************ GPIO内部操作函数 ************************************************/
 /**
  * @brief 向指定引脚写入电平
  */
-static void KEY_Pin_Write(KeyInfo *dht_pin, bool state) {
+static void KEY_Pin_Write(KeyInfo *pin, bool state) {
 #ifdef USE_HAL_DRIVER
-    HAL_GPIO_WritePin(dht_pin->GPIOx, dht_pin->GPIO_Pin, (state ? GPIO_PIN_SET : GPIO_PIN_RESET));
+    HAL_GPIO_WritePin(pin->GPIOx, pin->GPIO_Pin,
+                      state ? GPIO_PIN_SET : GPIO_PIN_RESET);
 #else // 使用标准库 SPL
     if (state) {
-        GPIO_SetBits(dht_pin->GPIOx, dht_pin->GPIO_Pin);
+        GPIO_SetBits(pin->GPIOx, pin->GPIO_Pin);
     } else {
-        GPIO_ResetBits(dht_pin->GPIOx, dht_pin->GPIO_Pin);
+        GPIO_ResetBits(pin->GPIOx, pin->GPIO_Pin);
     }
 #endif
 }
 
+
 /**
  * @brief 读取指定引脚的电平
  */
-static bool KEY_Pin_Read(KeyInfo *dht_pin) {
+static bool KEY_Pin_Read(KeyInfo *pin) {
 #ifdef USE_HAL_DRIVER
-    return (HAL_GPIO_ReadPin(dht_pin->GPIOx, dht_pin->GPIO_Pin) == GPIO_PIN_SET);
+    return (HAL_GPIO_ReadPin(pin->GPIOx, pin->GPIO_Pin) == GPIO_PIN_SET);
 #else // 使用标准库 SPL
-    return (GPIO_ReadInputDataBit(dht_pin->port, dht_pin->pin) == Bit_SET);
+    return (GPIO_ReadInputDataBit(pin->GPIOx, pin->GPIO_Pin) == Bit_SET);
 #endif
 }
+
 
 /************************************************ KEY状态函数定义 ************************************************/
 /**
@@ -117,11 +138,14 @@ static bool KEY_Pin_Read(KeyInfo *dht_pin) {
  */
 void IDLE_entry(StateMachine *fsm) {
     KEY_TypedefHandle *key = (KEY_TypedefHandle *) fsm->customizeHandle;
-    printf("按键：%s->进入空闲状态\n", key->Key_name);
-
-    if (key) {
-        key->click_count = 0; // 清零点击计数
+    if (!key) {
+        KEY_LOGE("KEY指针为NULL！");
+        return;
     }
+    KEY_LOGI("按键：%s->进入空闲状态\n", key->Key_name);
+
+
+    key->click_count = 0; // 清零点击计数
 }
 
 /**
@@ -144,8 +168,13 @@ static bool IDLE_Eventhandle(StateMachine *fsm, const Event *event) {
  */
 static void ELIMINATE_DITHERING_entry(StateMachine *fsm) {
     KEY_TypedefHandle *key = (KEY_TypedefHandle *) fsm->customizeHandle;
-    printf("按键：%s->进入消抖状态\n", key->Key_name);
-    Key_Timer_Start(key, 20); // 启动20ms消抖定时
+    if (!key) {
+        //打印
+        KEY_LOGE("KEY指针为NULL！");
+        return;
+    }
+    KEY_LOGI("按键：%s->进入消抖状态\n", key->Key_name);
+    Key_Timer_Start(key, KEY_DEBOUNCE_MS); // 启动消抖定时（默认20ms）
 }
 
 /**
@@ -179,8 +208,13 @@ static bool ELIMINATE_DITHERING_EventHandle(StateMachine *fsm, const Event *even
  */
 static void WAITING_RELEASE_entry(StateMachine *fsm) {
     KEY_TypedefHandle *key = (KEY_TypedefHandle *) fsm->customizeHandle;
-    printf("按键：%s->进入等待按键释放状态\n", key->Key_name);
-    Key_Timer_Start(key, 800); // 启动1000ms长按定时
+    if (!key) {
+        //打印
+        KEY_LOGE("KEY指针为NULL！");
+        return;
+    }
+    KEY_LOGI("按键：%s->进入等待按键释放状态\n", key->Key_name);
+    Key_Timer_Start(key, KEY_LONG_PRESS_MS); // 启动800（默认）ms长按定时
 }
 
 /**
@@ -213,9 +247,14 @@ static bool WAITING_RELEASE_EventHandle(StateMachine *fsm, const Event *event) {
  */
 static void WAITING_NEXTCLICK_entry(StateMachine *fsm) {
     KEY_TypedefHandle *key = (KEY_TypedefHandle *) fsm->customizeHandle;
-    printf("按键：%s->进入等待下一次点击状态\n", key->Key_name);
+    if (!key) {
+        //打印
+        KEY_LOGE("KEY指针为NULL！");
+        return;
+    }
+    KEY_LOGI("按键：%s->进入等待下一次点击状态\n", key->Key_name);
     // 开始计时
-    Key_Timer_Start(key, 300); // 启动300ms连击超时定时
+    Key_Timer_Start(key, key->multi_click_ms); // 启动300ms（默认）连击超时定时
 }
 
 /**
@@ -244,19 +283,50 @@ static bool WAITING_NEXTCLICK_EventHandle(StateMachine *fsm, const Event *event)
                     HFSM_Transition(fsm, (State *) &TRIPLE_CLICK);
                     return true;
                 default:
-                    printf("出现异常\n");
+                    KEY_LOGE("出现异常\n");
                     HFSM_Transition(fsm, (State *) &IDLE);
             }
             break;
-        default: printf("出现未定义行为\n");;
+        default: KEY_LOGE("出现未定义行为\n");;
     }
     return false;
+}
+
+
+/**
+ * @brief 判断长按保持状态下对事件的处理
+ * @param fsm 状态机句柄
+ * @param event 发生的事件
+ * @return 返回是否成功
+ */
+static bool LONGPRESS_HOLD_EventHandle(StateMachine *fsm, const Event *event) {
+    KEY_TypedefHandle *key = (KEY_TypedefHandle *) fsm->customizeHandle;
+    if (!key) return false;
+
+    switch (event->event_id) {
+        case KEY_Event_OverTime:
+            /* 每次超时，触发一次 repeat */
+            if (key->callback) {
+                key->callback(key, KEY_ACTION_LONG_PRESS_REPEAT);
+            }
+            Key_Timer_Start(key, key->multi_click_ms);
+            return true;
+
+        case KEY_Event_up:
+            /* 松手，退出长按保持，回 IDLE */
+            Key_Timer_Stop(key);
+            HFSM_Transition(fsm, &IDLE);
+            return true;
+
+        default:
+            return false;
+    }
 }
 
 /****************************** 最终状态的处理函数 *******************************/
 static void SING_CLICK_entry(StateMachine *fsm) {
     KEY_TypedefHandle *key = (KEY_TypedefHandle *) (fsm->customizeHandle);
-    printf("按键：%s->进入单击状态\n", ((KEY_TypedefHandle *) (fsm->customizeHandle))->Key_name);
+    KEY_LOGI("按键：%s->进入单击状态\n", ((KEY_TypedefHandle *) (fsm->customizeHandle))->Key_name);
     // 执行逻辑
     if (key->callback) {
         key->callback(key, KEY_ACTION_SINGLE_CLICK);
@@ -267,7 +337,7 @@ static void SING_CLICK_entry(StateMachine *fsm) {
 
 static void DOUBLE_CLICK_entry(StateMachine *fsm) {
     KEY_TypedefHandle *key = (KEY_TypedefHandle *) (fsm->customizeHandle);
-    printf("按键：%s->进入双击状态\n", ((KEY_TypedefHandle *) (fsm->customizeHandle))->Key_name);
+    KEY_LOGI("按键：%s->进入双击状态\n", ((KEY_TypedefHandle *) (fsm->customizeHandle))->Key_name);
     // 执行逻辑
     if (key->callback) {
         key->callback(key, KEY_ACTION_DOUBLE_CLICK);
@@ -278,7 +348,7 @@ static void DOUBLE_CLICK_entry(StateMachine *fsm) {
 
 static void TRIPLE_CLICK_entry(StateMachine *fsm) {
     KEY_TypedefHandle *key = (KEY_TypedefHandle *) (fsm->customizeHandle);
-    printf("按键：%s->进入三击状态\n", ((KEY_TypedefHandle *) (fsm->customizeHandle))->Key_name);
+    KEY_LOGI("按键：%s->进入三击状态\n", ((KEY_TypedefHandle *) (fsm->customizeHandle))->Key_name);
     // 执行逻辑
     if (key->callback) {
         key->callback(key, KEY_ACTION_TRIPLE_CLICK);
@@ -288,14 +358,25 @@ static void TRIPLE_CLICK_entry(StateMachine *fsm) {
 }
 
 static void LONG_PRESS_entry(StateMachine *fsm) {
-    KEY_TypedefHandle *key = (KEY_TypedefHandle *) (fsm->customizeHandle);
-    printf("按键：%s->进入长按状态\n", ((KEY_TypedefHandle *) (fsm->customizeHandle))->Key_name);
-    // 执行逻辑
+    KEY_TypedefHandle *key = (KEY_TypedefHandle *) fsm->customizeHandle;
+    if (!key) return;
+
+    KEY_LOGI("按键：%s -> 长按触发", key->Key_name);
     if (key->callback) {
         key->callback(key, KEY_ACTION_LONG_PRESS);
     }
+    // 进入“长按保持”状态
+    HFSM_Transition(fsm, &LONGPRESS_HOLD);
+}
+
+static void LONG_PRESS_HOLD_entry(StateMachine *fsm) {
+    KEY_TypedefHandle *key = (KEY_TypedefHandle *) (fsm->customizeHandle);
+    KEY_LOGI("按键：%s->进入长按保持状态\n", ((KEY_TypedefHandle *) (fsm->customizeHandle))->Key_name);
+    if (key->callback) {
+        key->callback(key, KEY_ACTION_LONG_PRESS_REPEAT);
+    }
     // 进入休闲状态
-    HFSM_Transition(fsm, (State *) &IDLE);
+    Key_Timer_Start(key, key->multi_click_ms); // 例如 100ms
 }
 
 /**************************提供给外部的函数*************************/
@@ -305,7 +386,7 @@ static void LONG_PRESS_entry(StateMachine *fsm) {
  * @param key           指向调用此定时器的按键句柄
  * @param timeout_ms    超时时间 (毫秒)
  */
-void Key_Timer_Start(KEY_TypedefHandle *key, uint32_t timeout_ms) {
+static void Key_Timer_Start(KEY_TypedefHandle *key, uint32_t timeout_ms) {
     __disable_irq();
     key->timer_counter = timeout_ms;
     __enable_irq();
@@ -315,16 +396,25 @@ void Key_Timer_Start(KEY_TypedefHandle *key, uint32_t timeout_ms) {
  * @brief 停止按键状态机定时器
  * @param key           指向要停止定时器的按键句柄
  */
-void Key_Timer_Stop(KEY_TypedefHandle *key) {
+static void Key_Timer_Stop(KEY_TypedefHandle *key) {
     key->timer_counter = 0;
 }
 
-
 /**
- * @brief 状态机和 按键句柄的初始化
- * @param key 指向要初始化的按键句柄
+ * @brief 通过一个按键配置结构体，简化按键初始化
+ * @param key 按键句柄
+ * @param cfg 按键配置结构体
  */
-void KEY_Init(KEY_TypedefHandle *key) {
+void KEY_Init(KEY_TypedefHandle *key, const KEY_Config_t *cfg) {
+    key->Key_name = cfg->name;
+    key->keyinfo = cfg->keyinfo;
+    key->active_level = cfg->active_level;
+    key->debounce_ms = cfg->debounce_ms;
+    key->long_press_ms = cfg->long_press_ms;
+    key->multi_click_ms = cfg->multi_click_ms;
+    key->callback = cfg->callback;
+    key->user_data = cfg->user_data;
+
     // 1、让状态机内部的自定义指针指回其容器（key句柄），以便在状态函数中访问
     key->fsm.customizeHandle = key;
     key->fsm.fsm_name = key->Key_name;
@@ -336,7 +426,7 @@ void KEY_Init(KEY_TypedefHandle *key) {
     if (registered_key_count < MAX_REGISTERED_KEYS) {
         registered_keys[registered_key_count++] = key;
     } else {
-        printf("KEY_Init: 按键注册数组已满，无法添加新按键\n");
+        KEY_LOGW("KEY_Init: 按键注册数组已满，无法添加新按键\n");
     }
 
 #ifdef USE_HAL_DRIVER
@@ -354,9 +444,8 @@ void KEY_Init(KEY_TypedefHandle *key) {
     key->last_key_state = (KEY_Pin_Read(key->keyinfo) != key->active_level);
 #endif
 
-    printf("KEY_Init: 按键 %s 初始化完成，初始状态: %d\r\n", key->Key_name, key->last_key_state);
+    KEY_LOGI("KEY_Init: 按键 %s 初始化完成，初始状态: %d\r\n", key->Key_name, key->last_key_state);
 }
-
 
 /**
  * @brief 按键定时器滴答处理函数
@@ -387,10 +476,10 @@ void KEY_Tasks(void) {
         KEY_TypedefHandle *key = registered_keys[i];
         StateMachine *fsm = &key->fsm; // 获取当前按键对应的状态机指针
 
-        const uint8_t current_key_state = KEY_Pin_Read(key->keyinfo);
+        const bool current_key_state = KEY_Pin_Read(key->keyinfo);
         // 检测按键状态变化
         if (current_key_state != key->last_key_state) {
-            printf("!!! 按键 %s 电平变化: 从 %d 变为 %d !!!\r\n", key->Key_name, key->last_key_state, current_key_state);
+            KEY_LOGD("!!! 按键 %s 电平变化: 从 %d 变为 %d !!!\r\n", key->Key_name, key->last_key_state, current_key_state);
 
             if (current_key_state == key->active_level) {
                 Event press_event = {KEY_Event_Pressed, NULL};

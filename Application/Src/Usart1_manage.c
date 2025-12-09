@@ -6,6 +6,8 @@
 
 #include <stdio.h>
 
+#include "log.h"
+#include "MemoryAllocation.h"
 #include "usart.h"
 extern DMA_HandleTypeDef hdma_usart1_rx;
 extern DMA_HandleTypeDef hdma_usart1_tx;
@@ -20,6 +22,7 @@ bool MyUart_Init(void) {
         printf("环形缓冲区初始化失败");
         return false;
     }
+    LOG_W("heap", "%uKB- %u空间还剩余 %u", MEMORY_POND_MAX_SIZE, RINGBUFFER_SIZE, query_remain_size());
     HAL_UARTEx_ReceiveToIdle_DMA(&huart1, DmaBuffer, DMA_BUFFER_SIZE);
     printf("环形缓冲区初始化成功 %p\n", &g_rb_uart1);
     return true;

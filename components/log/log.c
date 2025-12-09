@@ -6,8 +6,10 @@
 
 /* 引入 CMSIS-OS2 和 RingBuffer */
 #include "cmsis_os2.h"
+#include "MemoryAllocation.h"
 #include "RingBuffer.h"
-
+/* 宏开关 */
+#ifdef ENABLE_LOG_SYSTEM
 /* ================= 宏定义与配置 ================= */
 
 /* 颜色代码 (ANSI Escape Code) - 用于串口终端显示颜色 */
@@ -113,8 +115,10 @@ void Log_Init(void) {
 #if LOG_ASYNC_ENABLE
     /* 2. 初始化 RingBuffer */
     /* 假设 CreateRingBuffer 内部使用了 static_alloc 或 malloc */
-    CreateRingBuffer(&s_logRB, LOG_RB_SIZE);
-
+    if (!CreateRingBuffer(&s_logRB, LOG_RB_SIZE)) {
+        LOG_E("AT", "s_logRB 环形缓冲区分配失败");
+    }
+    LOG_W("heap", "%uKB- %u空间还剩余 %u", MEMORY_POND_MAX_SIZE, LOG_RB_SIZE, query_remain_size());
     /* 3. 创建后台发送任务 */
     const osThreadAttr_t logTask_attributes = {
         .name = "LogTask",
@@ -178,7 +182,8 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
     short_file = short_file ? short_file + 1 : file;
 
     /* 3. 拼装日志头: [Tick] L/TAG: */
-    const int head_len = snprintf(log_buf, LOG_LINE_MAX, "%s[%lu] %c/%s: ", color, tick, level_char, tag);
+    const int head_len = snprintf(log_buf, LOG_LINE_MAX,
+                                  "%s[%lu] %c/%s %s:%d: ", color, tick, level_char, tag, short_file, line);
 
     /* 4. 拼装用户内容 (处理可变参数) */
     va_list args;
@@ -201,23 +206,35 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
 
 #if LOG_ASYNC_ENABLE
     /* 异步模式：判断内核是否正在运行 */
-    if (osKernelGetState() == osKernelRunning) {
-        /* 尝试写入 RingBuffer */
-        uint16_t write_len = total_len;
+    if (__get_IPSR() == 0) {
+        if (osKernelGetState() == osKernelRunning) {
+            /* 尝试写入 RingBuffer */
+            uint16_t write_len = total_len;
 
-        /* 这里的 false 表示如果空间不足不写入全部丢弃 (或根据 RingBuffer 实现策略) */
-        if (WriteRingBuffer(&s_logRB, (uint8_t *) log_buf, &write_len, false)) {
-            /* 写入成功，设置标志位唤醒后台任务 */
-            if (s_logTaskHandle != NULL) {
-                /* osThreadFlagsSet 在 CMSIS-OS2 (STM32实现) 中通常是 ISR 安全的 */
-                /* 它内部会自动判断是否在中断中，并调用对应的 FreeRTOS FromISR 函数 */
-                osThreadFlagsSet(s_logTaskHandle, LOG_TASK_FLAG);
+            /* 这里的 false 表示如果空间不足不写入全部丢弃 (或根据 RingBuffer 实现策略) */
+            if (WriteRingBuffer(&s_logRB, (uint8_t *) log_buf, &write_len, false)) {
+                /* 写入成功，设置标志位唤醒后台任务 */
+                if (s_logTaskHandle != NULL) {
+                    /* osThreadFlagsSet 在 CMSIS-OS2 (STM32实现) 中通常是 ISR 安全的 */
+                    /* 它内部会自动判断是否在中断中，并调用对应的 FreeRTOS FromISR 函数 */
+                    osThreadFlagsSet(s_logTaskHandle, LOG_TASK_FLAG);
+                }
+            } else {
+                /* 缓冲区已满：可以选择丢弃，或者在此处强制改为阻塞发送(会影响实时性) */
             }
         } else {
-            /* 缓冲区已满：可以选择丢弃，或者在此处强制改为阻塞发送(会影响实时性) */
+            /* 如果调度器没启动 (例如在 Log_Init 前使用)，强制使用同步发送 */
+            Hardware_Send((uint8_t *) log_buf, total_len);
         }
-    } else {
-        /* 如果调度器没启动 (例如在 Log_Init 前使用)，强制使用同步发送 */
+    } /* if (__get_IPSR() == 0) */
+    else {
+        /* 警告需要锁/阻塞代码 被上层尝试调用 */
+        char buffer[128];
+        const int t_len = snprintf(buffer, 128,
+                                   "%s[%lu] %c/%s %s:%d:  %s \r\n %s", COLOR_RED, tick, 'E', "LOG", short_file, line
+                                   , "该代码尝试在中断调用有锁的代码！", COLOR_RESET);
+        Hardware_Send((uint8_t *) buffer, t_len);
+        /* 采用阻塞式的代码发生 */
         Hardware_Send((uint8_t *) log_buf, total_len);
     }
 
@@ -233,3 +250,6 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
         }
     }
 }
+
+
+#endif

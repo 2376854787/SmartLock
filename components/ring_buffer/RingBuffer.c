@@ -7,17 +7,19 @@
 #include <stdbool.h>
 #include <string.h>
 #include "FreeRTOS.h"
+#include "log.h"
 #include "MemoryAllocation.h"
 #include "task.h"
 
 
+/* 任务中进入临界区的宏 */
+#define RB_ENTER_CRITICAL()   taskENTER_CRITICAL()
+#define RB_EXIT_CRITICAL()    taskEXIT_CRITICAL()
 
-// 2. 进入临界区的宏
-// --- 修改你的宏定义为这样 ---
-#define RB_ENTER_CRITICAL()    UBaseType_t uxSavedInterruptStatus = taskENTER_CRITICAL_FROM_ISR()
+/* 中断中可以使用的临界区 */
+#define RB_ENTER_CRITICAL_FROM_ISR()   UBaseType_t uxSavedInterruptStatus = taskENTER_CRITICAL_FROM_ISR()
+#define RB_EXIT_CRITICAL_FROM_ISR()    taskEXIT_CRITICAL_FROM_ISR(uxSavedInterruptStatus)
 
-// 3. 退出临界区的宏
-#define RB_EXIT_CRITICAL()     taskEXIT_CRITICAL_FROM_ISR(uxSavedInterruptStatus)
 /**
  * @brief  创建一个指定大小的环形缓冲区
  * @param rb 环形缓冲区句柄
@@ -63,7 +65,7 @@ uint16_t RingBuffer_GetUsedSize(const RingBuffer *rb) {
         used_size = (rb->rear_index - rb->front_index + rb->size) % rb->size;
     }
     //退出临界区
-    RB_EXIT_CRITICAL() ;
+    RB_EXIT_CRITICAL();
 
     return used_size;
 }
@@ -100,7 +102,7 @@ uint16_t RingBuffer_GetRemainSize(const RingBuffer *rb) {
     RB_ENTER_CRITICAL();
     uint16_t size = rb->size - RingBuffer_GetUsedSize_Internal(rb) - 1;
     //退出临界区
-    RB_EXIT_CRITICAL() ;
+    RB_EXIT_CRITICAL();
     // 未可使用空间
     return size;
 }
@@ -139,7 +141,7 @@ bool WriteRingBuffer(RingBuffer *rb, const uint8_t *add, uint16_t *size, const u
             *size = RingBuffer_GetRemainSize_Internal(rb);
         } else {
             // --- 在返回前，退出临界区 ---
-            RB_EXIT_CRITICAL() ;
+            RB_EXIT_CRITICAL();
             return false;
         }
     }
@@ -161,7 +163,7 @@ bool WriteRingBuffer(RingBuffer *rb, const uint8_t *add, uint16_t *size, const u
     }
 
     // --- 在返回前，退出临界区 ---
-    RB_EXIT_CRITICAL() ;
+    RB_EXIT_CRITICAL();
     return true;
 }
 
@@ -186,7 +188,7 @@ bool ReadRingBuffer(RingBuffer *rb, uint8_t *add, uint16_t *size, const uint8_t 
             *size = usedSize;
         } else {
             // --- 在返回前，退出临界区 ---
-            RB_EXIT_CRITICAL() ;
+            RB_EXIT_CRITICAL();
             //不强制读取当前数据不足就不读取
             return false;
         }
@@ -209,7 +211,7 @@ bool ReadRingBuffer(RingBuffer *rb, uint8_t *add, uint16_t *size, const uint8_t 
     }
 
     // --- 在返回前，退出临界区 ---
-    RB_EXIT_CRITICAL() ;
+    RB_EXIT_CRITICAL();
     return true;
 }
 
@@ -226,7 +228,7 @@ bool PeekRingBuffer(RingBuffer *rb, uint8_t *add, uint16_t *size, const uint8_t 
     if (rb == NULL || add == NULL || *size == 0) return false;
 
     // --- 进入临界区，保护所有对 rb 成员的访问 ---
-   RB_ENTER_CRITICAL(); // 注意：如果是在任务中调用，应使用 taskENTER_CRITICAL()
+    RB_ENTER_CRITICAL(); // 注意：如果是在任务中调用，应使用 taskENTER_CRITICAL()
 
     const uint16_t usedSize = RingBuffer_GetUsedSize_Internal(rb);
 
@@ -237,7 +239,7 @@ bool PeekRingBuffer(RingBuffer *rb, uint8_t *add, uint16_t *size, const uint8_t 
             *size = usedSize;
         } else {
             // --- 在返回前，退出临界区 ---
-            RB_EXIT_CRITICAL() ;
+            RB_EXIT_CRITICAL();
             // 不强制窥视，且数据不足，则操作失败
             return false;
         }
@@ -245,7 +247,7 @@ bool PeekRingBuffer(RingBuffer *rb, uint8_t *add, uint16_t *size, const uint8_t 
 
     // 如果窥视大小为0（可能在isForcePeek后发生），则直接成功返回
     if (*size == 0) {
-        RB_EXIT_CRITICAL() ;
+        RB_EXIT_CRITICAL();
         return true;
     }
 
@@ -261,6 +263,100 @@ bool PeekRingBuffer(RingBuffer *rb, uint8_t *add, uint16_t *size, const uint8_t 
     }
 
     // --- 在返回前，退出临界区 ---
-    RB_EXIT_CRITICAL() ;
+    RB_EXIT_CRITICAL();
+    return true;
+}
+
+/**
+ * @brief  添加数据到环形缓冲区 中断版本
+ * @param rb 环形缓冲区指针
+ * @param add 数据源地址
+ * @param size 添加的数据大小（字节）
+ * @param isForceWrite 是否强制写入可写入得长度数据剩余丢弃
+ * @return 返回是否成功
+ */
+bool WriteRingBufferFromISR(RingBuffer *rb, const uint8_t *add, uint16_t *size, const uint8_t isForceWrite) {
+    //1、参数合法性检查
+    if (rb == NULL || add == NULL || *size == 0)return false;
+    // --- 进入临界区，保护所有对 rb 成员的访问 ---
+    RB_ENTER_CRITICAL_FROM_ISR();
+    //2、检查当前缓冲区的大小是否能够装入
+
+    if (RingBuffer_GetRemainSize_Internal(rb) < *size) {
+        if (isForceWrite) {
+            *size = RingBuffer_GetRemainSize_Internal(rb);
+        } else {
+            // --- 在返回前，退出临界区 ---
+            RB_EXIT_CRITICAL_FROM_ISR();
+            return false;
+        }
+    }
+    //3、写入缓冲区
+    //判断当前的空间是否足够一次性写入
+    const uint16_t end_size = rb->size - rb->rear_index;
+    if (end_size >= *size) {
+        memcpy(rb->buffer + rb->rear_index, add, *size);
+    } else {
+        //分两段分别写入
+        memcpy(rb->buffer + rb->rear_index, add, end_size);
+        memcpy(rb->buffer, add + end_size, *size - end_size);
+    }
+    //幂运算优化取余运算
+    if (rb->isPowerOfTwo_Size) {
+        rb->rear_index = (rb->rear_index + *size) & (rb->size - 1);
+    } else {
+        rb->rear_index = (rb->rear_index + *size) % rb->size;
+    }
+
+    // --- 在返回前，退出临界区 ---
+    RB_EXIT_CRITICAL_FROM_ISR();
+    return true;
+}
+
+/**
+ *
+ * @param rb 环形缓冲区指针中断版本
+ * @param add 接收数据的地址
+ * @param size 要获取的数据大小（字节
+ * @param isForceRead 是否在数据不足 @param size 大小时候强制读取已有的全部数据
+ * @return 返回是否读取成功
+ */
+bool ReadRingBufferFromISR(RingBuffer *rb, uint8_t *add, uint16_t *size, const uint8_t isForceRead) {
+    //1、参数合法性检查
+    if (rb == NULL || add == NULL || *size == 0)return false;
+    // --- 进入临界区，保护所有对 rb 成员的访问 ---
+    RB_ENTER_CRITICAL_FROM_ISR();
+    const uint16_t usedSize = RingBuffer_GetUsedSize_Internal(rb);
+    //2、检查当前缓冲区的大小是否能够装入
+    if (usedSize < *size) {
+        //强制读取剩余的
+        if (isForceRead) {
+            *size = usedSize;
+        } else {
+            // --- 在返回前，退出临界区 ---
+            RB_EXIT_CRITICAL_FROM_ISR();
+            //不强制读取当前数据不足就不读取
+            return false;
+        }
+    }
+    //3、写入缓冲区
+    //判断当前的空间是否足够一次性读取
+    const uint16_t end_size = rb->size - rb->front_index;
+    if (end_size >= *size) {
+        memcpy(add, rb->buffer + rb->front_index, *size);
+    } else {
+        //分两段分别读取写入
+        memcpy(add, rb->buffer + rb->front_index, end_size);
+        memcpy(add + end_size, rb->buffer, *size - end_size);
+    }
+    //幂运算优化取余运算
+    if (rb->isPowerOfTwo_Size) {
+        rb->front_index = (rb->front_index + *size) & (rb->size - 1);
+    } else {
+        rb->front_index = (rb->front_index + *size) % rb->size;
+    }
+
+    // --- 在返回前，退出临界区 ---
+    RB_EXIT_CRITICAL_FROM_ISR();
     return true;
 }

@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "FreeRTOS.h"
+#include "log.h"
 #include "task.h"
 
 /* --------------------------- 模块配置和私有变量 --------------------------- */
@@ -21,8 +22,10 @@ static uint8_t g_dma_chunk_buffer[LOG_TEMP_BUFFER_SIZE];
 
 /* --------------------------- 内部函数声明 --------------------------- */
 static void try_start_dma_transfer(void);
+
 static uint16_t Log_ReadMessage(RingBuffer *rb, uint8_t *buffer, uint16_t buffer_size);
-UART_HandleTypeDef array_of_uart_handles[4] ={NULL};
+
+UART_HandleTypeDef array_of_uart_handles[4] = {NULL};
 
 /* --------------------------- 公共函数实现 --------------------------- */
 
@@ -35,6 +38,7 @@ bool dma_logger_init(UART_HandleTypeDef *huart) {
     if (!CreateRingBuffer(&g_log_ring_buffer, LOG_RING_BUFFER_SIZE)) {
         return false;
     }
+    LOG_W("heap", "%uKB- %u空间还剩余 %u", MEMORY_POND_MAX_SIZE, LOG_RING_BUFFER_SIZE, query_remain_size());
 
     g_dma_tx_busy = false;
     return true;
@@ -44,7 +48,7 @@ void dma_printf(const char *format, ...) {
     if (g_log_uart == NULL) return;
 
     char temp_buffer[LOG_TEMP_BUFFER_SIZE];
-    
+
     va_list args;
     va_start(args, format);
     int len = vsnprintf(temp_buffer, sizeof(temp_buffer), format, args);
@@ -52,30 +56,23 @@ void dma_printf(const char *format, ...) {
 
     if (len <= 0) return;
 
-    uint16_t msg_len = (uint16_t)len;
+    uint16_t msg_len = (uint16_t) len;
     uint16_t header_len = sizeof(uint16_t);
-    
-
 
 
     if (RingBuffer_GetRemainSize(&g_log_ring_buffer) >= header_len + msg_len) {
-        WriteRingBuffer(&g_log_ring_buffer, (uint8_t*)&msg_len, &header_len, false);
-        WriteRingBuffer(&g_log_ring_buffer, (uint8_t*)temp_buffer, &msg_len, false);
+        WriteRingBuffer(&g_log_ring_buffer, (uint8_t *) &msg_len, &header_len, false);
+        WriteRingBuffer(&g_log_ring_buffer, (uint8_t *) temp_buffer, &msg_len, false);
     }
 
 
-    
     try_start_dma_transfer();
 }
 
 /* --------------------------- 内部辅助和回调函数 --------------------------- */
 
 static void try_start_dma_transfer(void) {
-
-
-
     if (g_dma_tx_busy || RingBuffer_GetUsedSize(&g_log_ring_buffer) == 0) {
-
         return;
     }
 
@@ -83,7 +80,6 @@ static void try_start_dma_transfer(void) {
 
 
     uint16_t read_len = Log_ReadMessage(&g_log_ring_buffer, g_dma_chunk_buffer, sizeof(g_dma_chunk_buffer));
-    
 
 
     if (read_len > 0) {
@@ -109,14 +105,14 @@ static uint16_t Log_ReadMessage(RingBuffer *rb, uint8_t *buffer, uint16_t buffer
     uint16_t header_len = sizeof(uint16_t);
 
 
-    if (!PeekRingBuffer(rb, (uint8_t *)&msg_len, &header_len, false)) {
+    if (!PeekRingBuffer(rb, (uint8_t *) &msg_len, &header_len, false)) {
         return 0;
     }
 
 
     if (msg_len > buffer_size) {
         // 消息太长，清空缓冲区以恢复
-        while(RingBuffer_GetUsedSize(rb) > 0) {
+        while (RingBuffer_GetUsedSize(rb) > 0) {
             uint16_t dummy_len = 1;
             uint8_t dummy_byte;
             ReadRingBuffer(rb, &dummy_byte, &dummy_len, false);
@@ -127,7 +123,7 @@ static uint16_t Log_ReadMessage(RingBuffer *rb, uint8_t *buffer, uint16_t buffer
     if (RingBuffer_GetUsedSize(rb) < header_len + msg_len) {
         return 0;
     }
-    
+
     uint8_t dummy_header_buffer[2];
     ReadRingBuffer(rb, dummy_header_buffer, &header_len, false);
     ReadRingBuffer(rb, buffer, &msg_len, false);

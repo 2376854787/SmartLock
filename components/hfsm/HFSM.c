@@ -2,7 +2,56 @@
 #include <stddef.h>
 #include <stdio.h> // 用于 printf 调试
 
-#include "MyPrintf.h"
+#include "log.h"
+
+/* 默认 TAG，可以按需改 */
+#ifndef HFSM_LOG_TAG
+#define HFSM_LOG_TAG  "HFSM"
+#endif
+
+/**************************************************************************/
+/*                            日志配置区域                                 */
+/**************************************************************************/
+
+/* 局部开关：取消注释则开启本模块日志，注释掉则本模块完全静默 */
+#define  LOG_ENABLE
+
+/*
+ * 逻辑说明：
+ * 1. 优先级最高：如果 局部开关(LOG_ENABLE) 和 总开关(ENABLE_LOG_SYSTEM) 都开启 -> 使用日志系统 (log.h)
+ * 2. 优先级中等：如果 只有局部开关，但没有总开关 -> 回退使用 printf (方便调试)
+ * 3. 优先级最低：如果 局部开关没开 -> 所有日志宏定义为空 (不占空间)
+ */
+
+#if defined(ENABLE_LOG_SYSTEM) && defined(LOG_ENABLE)
+
+/* --- 情况一：双开关同时开启 -> 使用工程日志系统 --- */
+#include "log.h"
+
+#define HFSM_LOGE(fmt, ...)  LOG_E(HFSM_LOG_TAG, fmt, ##__VA_ARGS__)
+#define HFSM_LOGW(fmt, ...)  LOG_W(HFSM_LOG_TAG, fmt, ##__VA_ARGS__)
+#define HFSM_LOGI(fmt, ...)  LOG_I(HFSM_LOG_TAG, fmt, ##__VA_ARGS__)
+#define HFSM_LOGD(fmt, ...)  LOG_D(HFSM_LOG_TAG, fmt, ##__VA_ARGS__)
+
+#elif defined(LOG_ENABLE)
+
+/* --- 情况二：只有局部开关，无总日志系统 -> 回退到 printf --- */
+#include <stdio.h>
+
+#define HFSM_LOGE(fmt, ...)  printf("[E][%s] " fmt "\r\n", KEY_LOG_TAG, ##__VA_ARGS__)
+#define HFSM_LOGW(fmt, ...)  printf("[W][%s] " fmt "\r\n", KEY_LOG_TAG, ##__VA_ARGS__)
+#define HFSM_LOGI(fmt, ...)  printf("[I][%s] " fmt "\r\n", KEY_LOG_TAG, ##__VA_ARGS__)
+#define HFSM_LOGD(fmt, ...)  printf("[D][%s] " fmt "\r\n", KEY_LOG_TAG, ##__VA_ARGS__)
+
+#else
+
+/* --- 情况三：局部开关关闭 -> 全部定义为空 (无代码生成) --- */
+#define HFSM_LOGE(fmt, ...)
+#define HFSM_LOGW(fmt, ...)
+#define HFSM_LOGI(fmt, ...)
+#define HFSM_LOGD(fmt, ...)
+
+#endif
 /**
  * @brief 初始化状态机
  * @param fsm 指向状态机实例的指针
@@ -10,7 +59,7 @@
  */
 void HFSM_Init(StateMachine *fsm, State *initial_state) {
     if (fsm == NULL || initial_state == NULL) {
-        printf("HFSM_Init: Invalid parameters\n");
+        HFSM_LOGI("HFSM_Init: Invalid parameters");
         return;
     }
     fsm->current_state = NULL;
@@ -24,9 +73,9 @@ void HFSM_Init(StateMachine *fsm, State *initial_state) {
  */
 void HFSM_Transition(StateMachine *fsm, State *new_state) {
     if (fsm == NULL || new_state == NULL) return;
-    printf("HFSM_Transition: Transitioning from %s to %s\n",
-           fsm->current_state ? fsm->current_state->state_name : "NULL",
-           new_state->state_name);
+    HFSM_LOGD("HFSM_Transition: Transitioning from %s to %s",
+              fsm->current_state ? fsm->current_state->state_name : "NULL",
+              new_state->state_name);
     // 转换到新的状态、
     const State *s = fsm->current_state;
     while (s && s != new_state && s != new_state->parent) {
@@ -50,7 +99,7 @@ void HFSM_Transition(StateMachine *fsm, State *new_state) {
  * @param event 指向事件的指针
  */
 void HFSM_HandleEvent(StateMachine *fsm, Event *event) {
-    printf("\n>>> Handling event: %d...\n", event->event_id);
+    HFSM_LOGD("\n>>> Handling event: %d...", event->event_id);
     const State *s = fsm->current_state;
 
     while (s) {
@@ -60,10 +109,10 @@ void HFSM_HandleEvent(StateMachine *fsm, Event *event) {
             for (int i = 0; s->event_actions[i].handler != NULL; i++) {
                 const EventAction_t *act = &s->event_actions[i];
                 if (act->event_id == event->event_id) {
-                    bool handled = act->handler(fsm, event);
+                    const bool handled = act->handler(fsm, event);
                     if (handled) {
-                        printf("Event %d handled by state: %s\n",
-                               event->event_id, s->state_name);
+                        HFSM_LOGI("Event %d handled by state: %s",
+                                  event->event_id, s->state_name);
                         return;
                     }
                     // 没处理完，继续父状态

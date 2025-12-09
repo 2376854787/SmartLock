@@ -3,11 +3,10 @@
 //
 #include "MemoryAllocation.h"
 
-#include <stdbool.h>
-#include <stddef.h>
+
 #include <stdlib.h>
-uint8_t MemoryPond[MEMORY_POND_MAX_SIZE];
-uint16_t MemoryPondIndex = 0; //指向还没有被分配的空间的第一个地址
+static uint8_t MemoryPond[MEMORY_POND_MAX_SIZE];
+volatile uint16_t MemoryPondIndex = 0; //指向还没有被分配的空间的第一个地址
 
 
 /**
