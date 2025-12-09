@@ -388,7 +388,15 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
             printf("串口3 繁忙！\n");
         }
         __HAL_DMA_DISABLE_IT((&huart3)->hdmarx, DMA_IT_HT);
-        return;
+        __HAL_DMA_DISABLE_IT((&huart3)->hdmarx, DMA_IT_TC);
+
+        /* 1、获取接收到的数据写入rb */
+
+
+        /* 2、通知任务 暂时用同步代码 待实现任务事件列表*/
+
+
+
     }
 }
 

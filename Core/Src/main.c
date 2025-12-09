@@ -71,8 +71,9 @@ void keyCallback(KEY_TypedefHandle *key, KEY_ActionType action) {
             break;
         case KEY_ACTION_LONG_PRESS:
             LOG_I("key1", "长按回调函数触发");
+            break;
         case KEY_ACTION_LONG_PRESS_REPEAT:
-            LOG_I("key1", "长按回调函数触发");
+            LOG_I("key1", "长按1回调函数触发");
             break;
     }
 }
