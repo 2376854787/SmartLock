@@ -85,7 +85,7 @@ typedef struct {
 /* 按键配置 */
 typedef struct {
     const char *name;
-    KeyInfo *keyinfo;
+    const KeyInfo *keyinfo;
     bool active_level;
 
     uint16_t debounce_ms; // 消抖时间
@@ -98,7 +98,7 @@ typedef struct {
 /*按键句柄*/
 typedef struct KEY_TypedefHandle {
     const char *Key_name; /*按键名称*/
-    KeyInfo *keyinfo; /*按键信息*/
+    const KeyInfo *keyinfo; /*按键信息*/
     bool active_level; /*有效电平*/
     uint16_t debounce_ms; /* 消抖时间 */
     uint16_t long_press_ms; /* 长按时间 */
