@@ -19,7 +19,7 @@ void StartLightSensorTask(void *argument) {
         LightSensor_Data = LightSensor_Read();
         // if (LightSensor_Data<2000) Beep_control(1);
         // else Beep_control(0);
-       char buffer[64];
+       //char buffer[64];
         //sniprintf(buffer, sizeof(buffer), "当前光敏电阻值为 %u\r\n", (unsigned)LightSensor_Data);
        // HAL_UART_Transmit_DMA(&huart1, (uint8_t *)buffer, sizeof(LightSensor_Data));
         printf("当前光敏电阻值为 %u\r\n", (unsigned)LightSensor_Data);
