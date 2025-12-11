@@ -16,6 +16,8 @@
 
 /* AT指令超时设置 */
 #define AT_RX_RB_SIZE       1024        /* AT接收环形缓冲区大小 最好为2的幂*/
+#define AT_LEN_RB_SIZE      64          /* 长度缓冲区: 存每行的长度 (存32行足够了, 32*2byte=64) */
+#define AT_DMA_BUF_SIZE     256         /* DMA 接收缓冲区 */
 #define AT_LINE_MAX_LEN     256         /* 单行回复最大长度 */
 #define AT_CMD_TIMEOUT_DEF  5000        /* 默认超时时间 5s */
 
@@ -76,12 +78,13 @@ typedef struct {
     UART_HandleTypeDef* uart;
 
     /* --- 3. 解析缓存 --- */
-    char line_buf[AT_LINE_MAX_LEN]; /* 线性缓存，存放当前正在解析的一行 */
-    uint16_t line_idx; /* 当前行写入位置 */
+    uint8_t line_buf[AT_LINE_MAX_LEN]; /* 线性缓存，存放当前正在解析的一行 */
+   volatile uint16_t line_idx; /* 当前行写入位置 */
+    RingBuffer msg_len_rb; /* 接收环形缓冲区 */
 
     /* --- 4. 运行时状态 --- */
     AT_Command_t *curr_cmd; /* 当前正在执行的指令 */
-    uint32_t req_start_tick; /* 指令开始发送的时间戳 */
+   volatile uint32_t req_start_tick; /* 指令开始发送的时间戳 */
 
     /* --- 5. 线程与同步 (双模兼容) --- */
 #if AT_RTOS_ENABLE
@@ -105,7 +108,7 @@ void AT_Core_Init(UART_HandleTypeDef* uart, void (*send_func)(uint8_t *, uint16_
  * @brief 接收数据回调 (放入串口接收中断)
  * @param byte 收到的单个字节
  */
-void AT_Core_RxCallback(UART_HandleTypeDef *huart, uint16_t Size);
+void AT_Core_RxCallback(const UART_HandleTypeDef *huart, uint16_t Size);
 
 /**
  * @brief 核心轮询/处理函数

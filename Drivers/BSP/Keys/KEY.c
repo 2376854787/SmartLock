@@ -53,48 +53,66 @@ static bool LONGPRESS_HOLD_EventHandle(StateMachine *fsm, const Event *event);
 
 /* 事件和回调函数映射表设置 */
 /* 空闲状态的事件和函数绑定 */
-const static EventAction_t IDLE_Event_Action[] = {
-    {KEY_Event_Pressed, IDLE_Eventhandle},
-    {-1, NULL}
+static const EventAction_t IDLE_Event_Action[] = {
+    {.event_id = KEY_Event_Pressed, .handler = IDLE_Eventhandle},
+    {.event_id = -1, .handler = NULL}
 };
-const static EventAction_t ELIMINATE_DITHERING_Event_Action[] = {
-    {KEY_Event_OverTime, ELIMINATE_DITHERING_EventHandle},
-    {-1, NULL}
+static const EventAction_t ELIMINATE_DITHERING_Event_Action[] = {
+    {.event_id = KEY_Event_OverTime, .handler = ELIMINATE_DITHERING_EventHandle},
+    {.event_id = -1, .handler = NULL}
 };
-const static EventAction_t WAITING_RELEASE_Event_Action[] = {
-    {KEY_Event_up, WAITING_RELEASE_EventHandle},
-    {KEY_Event_OverTime, WAITING_RELEASE_EventHandle},
-    {-1, NULL}
+static const EventAction_t WAITING_RELEASE_Event_Action[] = {
+    {.event_id = KEY_Event_up, .handler = WAITING_RELEASE_EventHandle},
+    {.event_id = KEY_Event_OverTime, .handler = WAITING_RELEASE_EventHandle},
+    {.event_id = -1, .handler = NULL}
 };
-const static EventAction_t WAITING_NEXTCLICK_Event_Action[] = {
-    {KEY_Event_Pressed, WAITING_NEXTCLICK_EventHandle},
-    {KEY_Event_OverTime, WAITING_NEXTCLICK_EventHandle},
-    {-1, NULL}
+static const EventAction_t WAITING_NEXTCLICK_Event_Action[] = {
+    {.event_id = KEY_Event_Pressed, .handler = WAITING_NEXTCLICK_EventHandle},
+    {.event_id = KEY_Event_OverTime, .handler = WAITING_NEXTCLICK_EventHandle},
+    {.event_id = -1, .handler = NULL}
 };
 static const EventAction_t LONGPRESS_HOLD_Event_Action[] = {
-    {KEY_Event_OverTime, LONGPRESS_HOLD_EventHandle},
-    {KEY_Event_up, LONGPRESS_HOLD_EventHandle},
-    {-1, NULL}
+    {.event_id = KEY_Event_OverTime, .handler = LONGPRESS_HOLD_EventHandle},
+    {.event_id = KEY_Event_up, .handler = LONGPRESS_HOLD_EventHandle},
+    {.event_id = -1, .handler = NULL}
 };
 
 /*创建状态实例*/
-static State IDLE = {"空闲状态", IDLE_entry, NULL, IDLE_Event_Action, NULL};
-static State ELIMINATE_DITHERING = {
-    "消抖状态", ELIMINATE_DITHERING_entry, NULL, ELIMINATE_DITHERING_Event_Action, NULL
+static const State IDLE = {
+    .state_name = "空闲状态", .on_enter = IDLE_entry, .on_exit = NULL, .event_actions = IDLE_Event_Action, .parent = NULL
 };
-static State WAITING_RELEASE = {
-    "等待释放状态", WAITING_RELEASE_entry, NULL, WAITING_RELEASE_Event_Action, NULL
+static const State ELIMINATE_DITHERING = {
+    .state_name = "消抖状态", .on_enter = ELIMINATE_DITHERING_entry, .on_exit = NULL,
+    .event_actions = ELIMINATE_DITHERING_Event_Action,
+    .parent = NULL
 };
-static State WAITING_NEXTCLICK = {
-    "等待下一次点击状态", WAITING_NEXTCLICK_entry, NULL, WAITING_NEXTCLICK_Event_Action, NULL
+static const State WAITING_RELEASE = {
+    .state_name = "等待释放状态", .on_enter = WAITING_RELEASE_entry, .on_exit = NULL,
+    .event_actions = WAITING_RELEASE_Event_Action, .parent = NULL
+};
+static const State WAITING_NEXTCLICK = {
+    .state_name = "等待下一次点击状态", .on_enter = WAITING_NEXTCLICK_entry, .on_exit = NULL,
+    .event_actions = WAITING_NEXTCLICK_Event_Action,
+    .parent = NULL
 };
 
 /* 最终结算的按键状态 */
-static State SINGLE_CLICK = {"单击状态", SING_CLICK_entry, NULL, NULL, NULL};
-static State DOUBLE_CLICK = {"双击状态", DOUBLE_CLICK_entry, NULL, NULL, NULL};
-static State TRIPLE_CLICK = {"三击状态", TRIPLE_CLICK_entry, NULL, NULL, NULL};
-static State LONGPRESS = {"长按状态", LONG_PRESS_entry, NULL, NULL, NULL};
-static State LONGPRESS_HOLD = {"长按保持", LONG_PRESS_HOLD_entry, NULL, LONGPRESS_HOLD_Event_Action, NULL};
+static const State SINGLE_CLICK = {
+    .state_name = "单击状态", .on_enter = SING_CLICK_entry, .on_exit = NULL, .event_actions = NULL, .parent = NULL
+};
+static const State DOUBLE_CLICK = {
+    .state_name = "双击状态", .on_enter = DOUBLE_CLICK_entry, .on_exit = NULL, .event_actions = NULL, .parent = NULL
+};
+static const State TRIPLE_CLICK = {
+    .state_name = "三击状态", .on_enter = TRIPLE_CLICK_entry, .on_exit = NULL, .event_actions = NULL, .parent = NULL
+};
+static const State LONGPRESS = {
+    .state_name = "长按状态", .on_enter = LONG_PRESS_entry, .on_exit = NULL, .event_actions = NULL, .parent = NULL
+};
+static const State LONGPRESS_HOLD = {
+    .state_name = "长按保持", .on_enter = LONG_PRESS_HOLD_entry, .on_exit = NULL,
+    .event_actions = LONGPRESS_HOLD_Event_Action, .parent = NULL
+};
 /*按键数组 存储用于初始化的按键和 状态信息*/
 static KEY_TypedefHandle *registered_keys[5] = {NULL};
 static uint8_t registered_key_count = 0;
@@ -105,7 +123,7 @@ static const uint8_t MAX_REGISTERED_KEYS = sizeof(registered_keys) / sizeof(regi
 /**
  * @brief 向指定引脚写入电平
  */
-static void KEY_Pin_Write(KeyInfo *pin, bool state) {
+static void KEY_Pin_Write(const KeyInfo *pin, bool state) {
 #ifdef USE_HAL_DRIVER
     HAL_GPIO_WritePin(pin->GPIOx, pin->GPIO_Pin,
                       state ? GPIO_PIN_SET : GPIO_PIN_RESET);
@@ -122,7 +140,7 @@ static void KEY_Pin_Write(KeyInfo *pin, bool state) {
 /**
  * @brief 读取指定引脚的电平
  */
-static bool KEY_Pin_Read(KeyInfo *pin) {
+static bool KEY_Pin_Read(const KeyInfo *pin) {
 #ifdef USE_HAL_DRIVER
     return (HAL_GPIO_ReadPin(pin->GPIOx, pin->GPIO_Pin) == GPIO_PIN_SET);
 #else // 使用标准库 SPL
@@ -174,7 +192,7 @@ static void ELIMINATE_DITHERING_entry(StateMachine *fsm) {
         return;
     }
     KEY_LOGI("按键：%s->进入消抖状态\n", key->Key_name);
-    Key_Timer_Start(key, KEY_DEBOUNCE_MS); // 启动消抖定时（默认20ms）
+    Key_Timer_Start(key, key->debounce_ms); // 启动消抖定时（默认20ms）
 }
 
 /**
@@ -214,7 +232,7 @@ static void WAITING_RELEASE_entry(StateMachine *fsm) {
         return;
     }
     KEY_LOGI("按键：%s->进入等待按键释放状态\n", key->Key_name);
-    Key_Timer_Start(key, KEY_LONG_PRESS_MS); // 启动800（默认）ms长按定时
+    Key_Timer_Start(key, key->long_press_ms); // 启动800（默认）ms长按定时
 }
 
 /**
@@ -366,7 +384,7 @@ static void LONG_PRESS_entry(StateMachine *fsm) {
         key->callback(key, KEY_ACTION_LONG_PRESS);
     }
     // 进入“长按保持”状态
-    HFSM_Transition(fsm, &LONGPRESS_HOLD);
+    HFSM_Transition(fsm, (State *) &LONGPRESS_HOLD);
 }
 
 static void LONG_PRESS_HOLD_entry(StateMachine *fsm) {

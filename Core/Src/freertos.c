@@ -57,7 +57,7 @@
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
 
-extern UART_HandleTypeDef;
+
 
 /* USER CODE END PM */
 
@@ -266,7 +266,7 @@ void StartDefaultTask(void *argument)
         //LED 1翻转
         HAL_GPIO_TogglePin(LED1_GPIO_Port,LED1_Pin);
         KEY_Tasks();
-        UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
+        //UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
         // printf("keyscanTask high watermark = %lu\r\n", (unsigned long) watermark);
         osDelay(10);
     }
@@ -324,7 +324,7 @@ void StartTask_LCD(void *argument)
         snprintf(buffer, 128, "Time:%lu", HAL_GetTick());
         lcd_show_string(50, 300, 240, 32, 32, buffer, BLACK);
 
-        UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
+       // UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
         // printf("lcdTask high watermark = %lu\r\n", (unsigned long) watermark);
         osDelay(20);
     }
@@ -356,7 +356,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
     if (huart->Instance == USART1) {
-        uint32_t error = HAL_UART_GetError(huart);
+        //uint32_t error = HAL_UART_GetError(huart);
         // 处理错误，如 ORE/FE
         __HAL_UART_CLEAR_OREFLAG(huart);
         __HAL_UART_CLEAR_FEFLAG(huart);
