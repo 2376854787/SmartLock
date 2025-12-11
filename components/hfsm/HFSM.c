@@ -57,7 +57,7 @@
  * @param fsm 指向状态机实例的指针
  * @param initial_state 指向初始状态的指针
  */
-void HFSM_Init(StateMachine *fsm, State *initial_state) {
+void HFSM_Init(StateMachine *fsm, const State *initial_state) {
     if (fsm == NULL || initial_state == NULL) {
         HFSM_LOGI("HFSM_Init: Invalid parameters");
         return;
@@ -71,7 +71,7 @@ void HFSM_Init(StateMachine *fsm, State *initial_state) {
  * @param fsm 指向状态机实例的指针
  * @param new_state 指向新的状态的指针
  */
-void HFSM_Transition(StateMachine *fsm, State *new_state) {
+void HFSM_Transition(StateMachine *fsm, const State *new_state) {
     if (fsm == NULL || new_state == NULL) return;
     HFSM_LOGD("HFSM_Transition: Transitioning from %s to %s",
               fsm->current_state ? fsm->current_state->state_name : "NULL",
@@ -98,7 +98,7 @@ void HFSM_Transition(StateMachine *fsm, State *new_state) {
  * @param fsm 指向状态机实例的指针
  * @param event 指向事件的指针
  */
-void HFSM_HandleEvent(StateMachine *fsm, Event *event) {
+void HFSM_HandleEvent(StateMachine *fsm, const Event *event) {
     HFSM_LOGD("\n>>> Handling event: %d...", event->event_id);
     const State *s = fsm->current_state;
 
