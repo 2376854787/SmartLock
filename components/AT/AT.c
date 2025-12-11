@@ -8,7 +8,7 @@
 #define  UART_RX_DMA_BUF_SIZE  256
 
 static AT_Manager_t g_AT_Manager;
-static State IDLE = {
+static const State IDLE = {
     .state_name = "AT_IDLE",
     .event_actions = NULL,
     .on_enter = NULL,
@@ -126,4 +126,6 @@ void AT_Core_RxCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 
     /* 5. 更新位置 */
     last_pos = cur_pos;
+
+    /* 6.通知任务 */
 }
