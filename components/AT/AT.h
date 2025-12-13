@@ -6,11 +6,11 @@
 #define SMARTCLOCK_AT_H
 #include "stm32f4xx_hal.h"
 #include "stm32f4xx_hal_uart.h"
+#include "HFSM.h"
+#include "RingBuffer.h"
 /* 1: 启用RTOS模式(信号量/互斥锁)  0: 启用裸机模式(轮询) */
 #ifndef AT_RTOS_ENABLE
 #define AT_RTOS_ENABLE      1    /*是否启用了RTOS*/
-#include "HFSM.h"
-#include "RingBuffer.h"
 
 #endif
 
@@ -26,7 +26,7 @@
 #if AT_RTOS_ENABLE
 #include "cmsis_os2.h"
 #endif
-
+typedef struct AT_Manager_t  AT_Manager_t;
 /* ================= 枚举定义 ================= */
 /* AT命令执行返回的结果 */
 typedef enum {
@@ -45,7 +45,6 @@ typedef enum {
     AT_EVT_TIMEOUT, /* [Tick] 定时器超时 */
 } AT_EventID_t;
 
-extern  RingBuffer AT_dma_rx_rb;
 /* ================= 核心结构体 ================= */
 /**
  * @brief AT指令对象 (通常由调用者在栈上临时创建)
@@ -67,24 +66,28 @@ typedef struct {
 #endif
 } AT_Command_t;
 
-typedef struct {
+typedef struct AT_Manager_t{
     /* --- 1. 继承状态机 --- */
     StateMachine fsm;
 
     /* --- 2. 硬件/底层资源 --- */
     RingBuffer rx_rb; /* 接收环形缓冲区 */
     /* 如果 RingBuffer 需要静态内存，可以在此定义，或外部注入 */
-    void (*hw_send)(uint8_t *data, uint16_t len); /* 硬件发送函数指针 */
-    UART_HandleTypeDef* uart;
+    void (*hw_send)(AT_Manager_t* at_manager, const uint8_t *data, uint16_t len); /* 硬件发送函数指针 */
+    UART_HandleTypeDef *uart;
 
     /* --- 3. 解析缓存 --- */
     uint8_t line_buf[AT_LINE_MAX_LEN]; /* 线性缓存，存放当前正在解析的一行 */
-   volatile uint16_t line_idx; /* 当前行写入位置 */
-    RingBuffer msg_len_rb; /* 接收环形缓冲区 */
+    uint8_t dma_rx_arr[AT_DMA_BUF_SIZE]; /* DMA接收缓冲区 */
+    volatile uint16_t line_idx; /* 当前行处理位置 */
+    volatile uint16_t isr_line_len; /* 当前行写入位置 */
+    RingBuffer msg_len_rb; /* 接收行长度环形缓冲区 */
+    volatile uint16_t last_pos;
+    volatile bool rx_overflow; /* 溢出检测 */
 
     /* --- 4. 运行时状态 --- */
     AT_Command_t *curr_cmd; /* 当前正在执行的指令 */
-   volatile uint32_t req_start_tick; /* 指令开始发送的时间戳 */
+    volatile uint32_t req_start_tick; /* 指令开始发送的时间戳 */
 
     /* --- 5. 线程与同步 (双模兼容) --- */
 #if AT_RTOS_ENABLE
@@ -99,30 +102,34 @@ typedef struct {
 
 /**
  * @brief 初始化 AT 核心框架
+ * @param at_manager
  * @param uart 串口句柄
  * @param send_func 硬件串口发送函数指针
  */
-void AT_Core_Init(UART_HandleTypeDef* uart, void (*send_func)(uint8_t *, uint16_t));
+void AT_Core_Init(AT_Manager_t * at_manager, UART_HandleTypeDef *uart,
+                  void (*hw_send)(AT_Manager_t *, const uint8_t *, uint16_t)) ;
 
 /**
  * @brief 接收数据回调 (放入串口接收中断)
+ * @param at_manager
  * @param byte 收到的单个字节
  */
-void AT_Core_RxCallback(const UART_HandleTypeDef *huart, uint16_t Size);
+void AT_Core_RxCallback(AT_Manager_t *at_manager, const UART_HandleTypeDef *huart, uint16_t Size);
 
 /**
  * @brief 核心轮询/处理函数
  * @note  RTOS模式: 放入 AT_Task 中运行
  * @note  裸机模式: 放入 main while(1) 中运行
  */
-void AT_Core_Process(void);
+void AT_Core_Process(AT_Manager_t *at_manager);
 
 /**
  * @brief 发送 AT 指令并等待结果 (阻塞式接口)
  * @param cmd 指令内容，如 "AT"
  * @param expect 期望回复，如 "OK" (NULL表示只等默认OK)
- * @param timeout 超时时间(ms)
+ * @param timeout_ms 超时时间(ms)
  * @return 执行结果
  */
-AT_Resp_t AT_SendCmd(const char *cmd, const char *expect, uint32_t timeout);
+AT_Resp_t AT_SendCmd( AT_Manager_t *at_manager, const char *cmd, const char *expect, uint32_t timeout_ms);
+
 #endif //SMARTCLOCK_AT_H
