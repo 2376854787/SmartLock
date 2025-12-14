@@ -4,7 +4,7 @@
 
 #ifndef SMARTCLOCK_AT_H
 #define SMARTCLOCK_AT_H
-#include "stm32f4xx_hal_uart.h"
+#include "stm32f4xx_hal.h"
 #include "HFSM.h"
 #include "RingBuffer.h"
 /* 1: 启用RTOS模式(信号量/互斥锁)  0: 启用裸机模式(轮询) */
