@@ -339,13 +339,12 @@ static void AT_OnLine(AT_Manager_t *mgr, const char *line) {
         return;
     }
 
-    /* 3、没有 curr_cmd：这行就是 URC*/
-    if (mgr->curr_cmd == NULL) {
-        if (mgr->urc_cb) mgr->urc_cb(mgr, line, mgr->urc_user);
-        return;
+    /* 3、 没有 curr_cmd：一定是 URC */
+    if (mgr->urc_cb) {
+        mgr->urc_cb(mgr, line, mgr->urc_user);
+    } else {
+        LOG_W("AT", "URC: %s", line);
     }
-
-    LOG_W("AT", "URC: %s", line);
 }
 
 
