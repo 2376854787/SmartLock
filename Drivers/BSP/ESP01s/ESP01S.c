@@ -1,11 +1,8 @@
 #include "ESP01S.h"
 
 #include <stdio.h>
-#include <string.h>
-
 #include "cmsis_os2.h"
 #include "log.h"
-#include "main.h"
 #include "MemoryAllocation.h"
 #include "RingBuffer.h"
 #include "AT_Core_Task.h"
@@ -58,7 +55,7 @@ void esp01s_Init(UART_HandleTypeDef *huart, uint16_t rb_size) {
 
     /* 开启SmartConfig */
     //printf("返回值为%d\r\n", AT_SendCmd(&g_at_manager, "AT+CWSTARTSMART=3\r\n", "OK", 5000));
-    if (AT_SendCmd(&g_at_manager, "AT+CWSTARTSMART=3\r\n", "CONNECTED", 5000) == AT_RESP_OK) {
+    if (AT_SendCmd(&g_at_manager, "AT+CWSTARTSMART=3\r\n", "CONNECTED", 20000) == AT_RESP_OK) {
         LOG_E("ESP01S", "AT 响应成功");
     } else {
         printf("%s  响应失败\n", "AT+CWSTARTSMART=3");

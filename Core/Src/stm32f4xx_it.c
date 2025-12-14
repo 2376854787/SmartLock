@@ -22,6 +22,7 @@
 #include "stm32f4xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "AT_Core_Task.h"
 #include "KEY.h"
 #include "myfree.h"
 /* USER CODE END Includes */
@@ -283,5 +284,11 @@ void DMA2_Stream7_IRQHandler(void)
 }
 
 /* USER CODE BEGIN 1 */
+
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+  /* DMA 发送后回调唤醒 */
+  AT_Manage_TxCpltCallback(huart);
+}
 
 /* USER CODE END 1 */

@@ -40,7 +40,6 @@ add_executable(${CMAKE_PROJECT_NAME}
         components/hfsm/HFSM.c
         Drivers/BSP/Keys/KEY.c
         Drivers/BSP/lcd/lcd.c
-        components/cutomize_printf/MyPrintf.c
         Drivers/BSP/ESP01s/ESP01S.c
         Application/Src/wifi_mqtt_task.c
         Application/Src/mqtt_at_task.c
@@ -52,7 +51,8 @@ add_executable(${CMAKE_PROJECT_NAME}
         Application/Src/Usart1_manage.c
         components/log/log.c
         components/AT/AT.c
-        Application/Src/AT_Core_Task.c
+        components/AT/AT_Core_Task.c
+        components/AT/AT_UartMap.c
 
 )
 
@@ -77,7 +77,6 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         components/ring_buffer
         Drivers/BSP/Keys
         Drivers/BSP/lcd
-        components/cutomize_printf
         Drivers/BSP/ESP01s
         Application/Inc
         Drivers/BSP/Beep
