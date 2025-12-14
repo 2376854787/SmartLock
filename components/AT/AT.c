@@ -358,8 +358,9 @@ static void AT_OnLine(AT_Manager_t *mgr, const char *line) {
 uint32_t AT_MsToTicks(const uint32_t ms) {
 #if AT_RTOS_ENABLE
     const uint32_t freq = osKernelGetTickFreq();
-    // 向上取整，避免短超时变成 0 tick
-    return (ms * freq + 999u) / 1000u;
+    uint64_t ticks = ((uint64_t) ms * freq + 999u) / 1000u;
+    if (ticks > 0xFFFFFFFFu) ticks = 0xFFFFFFFFu;
+    return (uint32_t) ticks;
 #else
     return ms;
 #endif
@@ -572,4 +573,18 @@ AT_Resp_t AT_Poll(AT_Command_t *h) {
 void AT_SetUrcHandler(AT_Manager_t *mgr, const AT_UrcCb cb, void *user) {
     mgr->urc_cb = cb;
     mgr->urc_user = user;
+}
+
+
+/**
+ * @brief 获取空闲对象装填参数后返回
+ * @param mgr AT句柄
+ * @param cmd 发送的AT命令
+ * @param expect 期待返回中应该有的字符串
+ * @param timeout_ms 超时时间
+ * @return 返回一个装填好的命令对象指针
+ * @note  非阻塞版
+ */
+AT_Command_t *AT_SendAsync(AT_Manager_t *mgr, const char *cmd, const char *expect, uint32_t timeout_ms) {
+    return AT_Submit(mgr, cmd, expect, timeout_ms);
 }

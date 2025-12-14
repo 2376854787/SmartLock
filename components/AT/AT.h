@@ -171,4 +171,29 @@ AT_Resp_t AT_Poll(AT_Command_t *h);
  * @param user 传递的上下文
  */
 void AT_SetUrcHandler(AT_Manager_t *mgr, AT_UrcCb cb, void *user);
+
+/**
+ * @brief 获取空闲对象装填参数后返回
+ * @param mgr AT句柄
+ * @param cmd 发送的AT命令
+ * @param expect 期待返回中应该有的字符串
+ * @param timeout_ms 超时时间
+ * @return 返回一个装填好的命令对象指针
+ */
+AT_Command_t *AT_Submit(AT_Manager_t *mgr,
+                        const char *cmd,
+                        const char *expect,
+                        uint32_t timeout_ms);
+
+/**
+ * @brief 获取空闲对象装填参数后返回
+ * @param mgr AT句柄
+ * @param cmd 发送的AT命令
+ * @param expect 期待返回中应该有的字符串
+ * @param timeout_ms 超时时间
+ * @return 返回一个装填好的命令对象指针
+ * @note  非阻塞版
+ */
+AT_Command_t *AT_SendAsync(AT_Manager_t *mgr, const char *cmd, const char *expect, uint32_t timeout_ms);
+
 #endif //SMARTCLOCK_AT_H
