@@ -1,27 +1,23 @@
 //
 // Created by yan on 2025/12/7.
 //
-#include "AT.h"
+#include "AT_UartMap.h"
+
 
 #include <stdio.h>
 #include <string.h>
 
 #include "log.h"
 #include "MemoryAllocation.h"
+#include "AT.h"
 
 
 static void AT_OnLine(AT_Manager_t *mgr, const char *line);
 
-AT_Command_t *AT_Submit(AT_Manager_t *mgr,
-                        const char *cmd,
-                        const char *expect,
-                        uint32_t timeout_ms);
 
 AT_Resp_t AT_Wait(AT_Command_t *h, uint32_t wait_ms);
 
 void AT_CmdRelease(AT_Manager_t *mgr, AT_Command_t *h);
-
-static void AT_SemDrain(osSemaphoreId_t sem);
 
 
 /**
@@ -63,6 +59,26 @@ void AT_Core_Init(AT_Manager_t *at_device, UART_HandleTypeDef *uart, const HW_Se
 
     /* 5、RTOS 裸机环境分开处理 */
 #if AT_RTOS_ENABLE
+
+    at_device->tx_busy = 0;
+    at_device->tx_error = 0;
+#if defined(AT_TX_USE_DMA) && (AT_TX_USE_DMA == 1)
+    at_device->tx_done_sem = osSemaphoreNew(1, 0, NULL); // 初值0：等回调释放
+    if (!at_device->tx_done_sem) {
+        LOG_E("AT", "tx_done_sem create failed");
+    }
+#endif
+
+
+    /*让 HAL 回调能找到对应 mgr */
+    at_device->uart = uart;
+    /* 绑定串口-> at_device 的路径*/
+    AT_BindUart(at_device, uart);
+
+    /* 默认初始化跟随全局设置 */
+    at_device->tx_mode = (AT_TX_USE_DMA ? AT_TX_DMA : AT_TX_BLOCK);
+
+
     /*  创建队列（元素是 AT_Command_t*）*/
     at_device->cmd_q = osMessageQueueNew(AT_MAX_PENDING, sizeof(AT_Command_t *), NULL);
     if (!at_device->cmd_q) {
@@ -89,8 +105,6 @@ void AT_Core_Init(AT_Manager_t *at_device, UART_HandleTypeDef *uart, const HW_Se
 
         at_device->free_stack[at_device->free_top++] = i;
     }
-
-    /*　RTOS任务函数指针 */
 
     /* 3、开启串口DMA接收 */
     HAL_UARTEx_ReceiveToIdle_DMA(uart,
@@ -445,7 +459,7 @@ static void AT_CmdFree(AT_Manager_t *mgr, AT_Command_t *c) {
  * @brief 获取信号量确保发送后被任务唤醒
  * @param sem 需要被获取的信号量
  */
-static void AT_SemDrain(osSemaphoreId_t sem) {
+void AT_SemDrain(osSemaphoreId_t sem) {
 #if AT_RTOS_ENABLE
     if (!sem) return;
     while (osSemaphoreAcquire(sem, 0) == osOK) {
@@ -587,4 +601,27 @@ void AT_SetUrcHandler(AT_Manager_t *mgr, const AT_UrcCb cb, void *user) {
  */
 AT_Command_t *AT_SendAsync(AT_Manager_t *mgr, const char *cmd, const char *expect, uint32_t timeout_ms) {
     return AT_Submit(mgr, cmd, expect, timeout_ms);
+}
+
+/**
+ * @brief 根据波特率和发送的数据长度计算需要的时间
+ * @param mgr AT设备句柄
+ * @param len 发送数据的长度
+ * @return 返回发送数据需要的数据时间
+ */
+uint32_t AT_TxTimeoutMs(AT_Manager_t *mgr, uint16_t len) {
+    // 估算：1字节≈10bit（起始+8数据+停止），超时时间留余量
+    const uint32_t baud = (mgr && mgr->uart) ? mgr->uart->Init.BaudRate : 115200;
+    uint32_t ms = (uint32_t) ((uint64_t) len * 10u * 1000u / baud);
+    if (ms < 5) ms = 5;
+    return ms + 20; // 额外裕量
+}
+
+/**
+ * @brief 更改具体AT设备的发送模式
+ * @param mgr AT设备句柄
+ * @param mode 设定的模式
+ */
+void AT_SetTxMode(AT_Manager_t *mgr, AT_TxMode mode) {
+    mgr->tx_mode = mode;
 }

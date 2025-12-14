@@ -4,8 +4,6 @@
 #include <string.h>
 
 
-
-
 /* 任务句柄 */
 osThreadId_t AT_Core_Task_Handle = NULL;
 
@@ -20,13 +18,13 @@ void Uart_send(AT_Manager_t *, const uint8_t *, uint16_t);
  * @note 负责接收通知然后处理接收的数据
  */
 void AT_Core_Task(void *argument) {
-    AT_Manager_t* mgr = (AT_Manager_t*)argument;
+    AT_Manager_t *mgr = (AT_Manager_t *) argument;
 
     for (;;) {
         // 用一个小超时周期，让我们有机会做超时检查（例如 10ms）
         const uint32_t flags = osThreadFlagsWait(AT_FLAG_RX | AT_FLAG_TX,
-                                           osFlagsWaitAny,
-                                           AT_MsToTicks(10));
+                                                 osFlagsWaitAny,
+                                                 AT_MsToTicks(10));
 
         if (!(flags & 0x80000000u)) {
             if (flags & AT_FLAG_RX) {
@@ -44,7 +42,7 @@ void AT_Core_Task(void *argument) {
 
                 // 真正发送：先保持阻塞发送也可以（因为在 core task 内，不会阻塞提交者）
                 if (mgr->hw_send) {
-                    mgr->hw_send(mgr, (uint8_t*)next->cmd_buf, (uint16_t)strlen(next->cmd_buf));
+                    mgr->hw_send(mgr, (uint8_t *) next->cmd_buf, (uint16_t) strlen(next->cmd_buf));
                 }
             }
         }
@@ -53,7 +51,7 @@ void AT_Core_Task(void *argument) {
         if (mgr->curr_cmd) {
             const uint32_t now = osKernelGetTickCount();
             // 处理 tick 回绕：用有符号差判断
-            if ((int32_t)(now - mgr->curr_deadline_tick) >= 0) {
+            if ((int32_t) (now - mgr->curr_deadline_tick) >= 0) {
                 AT_Command_t *c = mgr->curr_cmd;
                 c->result = AT_RESP_TIMEOUT;
                 mgr->curr_cmd = NULL;
@@ -92,11 +90,59 @@ void at_core_task_init(AT_Manager_t *at, UART_HandleTypeDef *uart) {
 }
 
 /**
- *
- * @param at at句柄
- * @param data 要发送的数据
- * @param size  数据大小 KB
+ * @brief 提供DMA 和阻塞两种方式完成AT命令发送
+ * @param mgr  AT设备句柄
+ * @param data 要发送的数据指针
+ * @param len 数据长度
  */
-void Uart_send(AT_Manager_t *at, const uint8_t *data, const uint16_t size) {
-    HAL_UART_Transmit(at->uart, data, size, HAL_MAX_DELAY);
+void Uart_send(AT_Manager_t *mgr, const uint8_t *data, uint16_t len) {
+    if (!mgr || !mgr->uart || !data || len == 0) return;
+
+#if defined(AT_TX_USE_DMA) && (AT_TX_USE_DMA == 1)
+    /* 运行期选择： */
+    if (mgr->tx_mode == AT_TX_DMA) {
+        mgr->tx_error = 0;
+        mgr->tx_busy = 1;
+
+        AT_SemDrain(mgr->tx_done_sem); /* 清残留 */
+
+        if (HAL_UART_Transmit_DMA(mgr->uart, (uint8_t *) data, len) != HAL_OK) {
+            mgr->tx_busy = 0;
+            mgr->tx_error = 1;
+            return;
+        }
+
+        /* 等待 DMA 发送完成*/
+        const uint32_t tx_to = AT_TxTimeoutMs(mgr, len);
+        if (osSemaphoreAcquire(mgr->tx_done_sem, AT_MsToTicks(tx_to)) != osOK) {
+            // DMA 回调没来：防死锁
+            mgr->tx_busy = 0;
+            mgr->tx_error = 1;
+            return;
+        }
+
+        /* 回调到达 */
+        mgr->tx_busy = 0;
+        return;
+    }
+#endif
+
+    /* 阻塞发送 */
+    (void) HAL_UART_Transmit(mgr->uart, (uint8_t *) data, len, HAL_MAX_DELAY);
+}
+
+/**
+ * @brief 释放信号量
+ * @param huart 串口句柄
+ * @note DMA发送完成回调函数中调用
+ */
+void AT_Manage_TxCpltCallback(UART_HandleTypeDef *huart) {
+    AT_Manager_t *mgr = AT_FindMgrByUart(huart);
+    if (!mgr) return;
+
+    mgr->tx_busy = 0;
+    // 二选一：信号量 or 线程标志
+    if (mgr->tx_done_sem) {
+        osSemaphoreRelease(mgr->tx_done_sem);
+    }
 }
