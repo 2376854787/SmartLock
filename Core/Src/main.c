@@ -36,7 +36,6 @@
 #include "lcd.h"
 #include "LightSensor.h"
 #include "log.h"
-#include "MyPrintf.h"
 #include "wifi_mqtt_task.h"
 /* USER CODE END Includes */
 
@@ -177,7 +176,6 @@ int main(void) {
     MX_ADC3_Init();
     MX_ADC1_Init();
     /* USER CODE BEGIN 2 */
-    dma_logger_init(&huart1);
     lcd_init();
     LOG_E("cu", "ssss");
     // bsp_esp8266_Init();

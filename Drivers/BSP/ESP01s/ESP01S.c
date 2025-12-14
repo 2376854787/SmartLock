@@ -1,14 +1,11 @@
 #include "ESP01S.h"
 
 #include <stdio.h>
-#include <string.h>
-
 #include "cmsis_os2.h"
 #include "log.h"
-#include "main.h"
 #include "MemoryAllocation.h"
 #include "RingBuffer.h"
-#include "../../../components/AT/AT_Core_Task.h"
+#include "AT_Core_Task.h"
 
 osMutexId_t esp01s_Mutex01Handle;
 ESP01S_Handle g_esp01_handle;

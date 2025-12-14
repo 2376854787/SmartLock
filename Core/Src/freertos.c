@@ -35,7 +35,6 @@
 #include "lcd.h"
 #include "Light_Sensor_task.h"
 #include "log.h"
-#include "MyPrintf.h"
 #include "tim.h"
 #include "wifi_mqtt_task.h"
 #include "mqtt_at_task.h"
