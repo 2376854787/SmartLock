@@ -10,114 +10,99 @@
 #include "MemoryAllocation.h"
 
 
-// ====== 前置声明 ======
-static bool AT_Idle_OnSend(StateMachine *fsm, const Event *e);
+static void AT_OnLine(AT_Manager_t *mgr, const char *line);
 
-static bool AT_Wait_OnRxLine(StateMachine *fsm, const Event *e);
+AT_Command_t *AT_Submit(AT_Manager_t *mgr,
+                        const char *cmd,
+                        const char *expect,
+                        uint32_t timeout_ms);
 
-static bool AT_Wait_OnTimeout(StateMachine *fsm, const Event *e);
+AT_Resp_t AT_Wait(AT_Command_t *h, uint32_t wait_ms);
 
-static void AT_IDLE_Enter(StateMachine *fsm);
+void AT_CmdRelease(AT_Manager_t *mgr, AT_Command_t *h);
 
-static void AT_WAIT_Enter(StateMachine *fsm);
-
-static void AT_WAIT_Exit(StateMachine *fsm);
-
-/* ====== IDLE 状态事件表 ====== */
-static const EventAction_t IDLE_actions[] = {
-    {AT_EVT_SEND, AT_Idle_OnSend},
-    {0, NULL} // 结束标记
-};
-
-/* ====== WAIT 状态事件表 ====== */
-static const EventAction_t WAIT_actions[] = {
-    {AT_EVT_RX_LINE, AT_Wait_OnRxLine},
-    {AT_EVT_TIMEOUT, AT_Wait_OnTimeout},
-    {0, NULL}
-};
-
-/* ====== 状态对象 ====== */
-static const State AT_IDLE = {
-    .state_name = "AT_IDLE",
-    .on_enter = AT_IDLE_Enter,
-    .on_exit = NULL,
-    .event_actions = IDLE_actions,
-    .parent = NULL
-};
-
-static const State AT_WAIT = {
-    .state_name = "AT_WAIT",
-    .on_enter = AT_WAIT_Enter,
-    .on_exit = AT_WAIT_Exit,
-    .event_actions = WAIT_actions,
-    .parent = NULL
-};
+static void AT_SemDrain(osSemaphoreId_t sem);
 
 
-void AT_Core_Init(AT_Manager_t *at_manager, UART_HandleTypeDef *uart,
+/**
+ * @brief 初始化串口设备句柄初始化变量、消息队列、静态对象池
+ * @param at_device 串口设备句柄
+ * @param uart      绑定的串口
+ * @param hw_send   发送函数指针
+ */
+void AT_Core_Init(AT_Manager_t *at_device, UART_HandleTypeDef *uart,
                   void (*hw_send)(AT_Manager_t *, const uint8_t *, uint16_t)) {
     /* 1、接收发送命令函数指针 */
-    at_manager->hw_send = hw_send;
+    at_device->hw_send = hw_send;
 
     /* 2、初始化AT管理的 RingBuffer缓冲区 */
-    if (!CreateRingBuffer(&at_manager->rx_rb, AT_RX_RB_SIZE)) {
-        LOG_E("RingBuffer", "g_AT_Manager 环形缓冲区初始化失败");
+    if (!CreateRingBuffer(&at_device->rx_rb, AT_RX_RB_SIZE)) {
+        LOG_E("RingBuffer", "at_device 环形缓冲区初始化失败");
     }
     LOG_W("heap", "%uKB- %u空间还剩余 %u", MEMORY_POND_MAX_SIZE, AT_RX_RB_SIZE, query_remain_size());
 
-    if (!CreateRingBuffer(&at_manager->msg_len_rb, AT_LEN_RB_SIZE)) {
-        LOG_E("RingBuffer", "g_AT_Manager.mesg_rx_rb 环形缓冲区初始化失败");
+    if (!CreateRingBuffer(&at_device->msg_len_rb, AT_LEN_RB_SIZE)) {
+        LOG_E("RingBuffer", "at_device.mesg_rx_rb 环形缓冲区初始化失败");
     }
     LOG_W("heap", "%uKB- %u空间还剩余 %u", MEMORY_POND_MAX_SIZE, AT_LEN_RB_SIZE, query_remain_size());
     /* 3、初始化 HFSM 为空闲状态*/
 
 
     /* 4、初始化变量 */
-    at_manager->line_idx = 0;
-    at_manager->isr_line_len = 0;
-    at_manager->last_pos = 0;
-    at_manager->curr_cmd = NULL;
-    at_manager->uart = uart;
-    at_manager->fsm.customizeHandle = at_manager;
-    at_manager->fsm.fsm_name = "fsm";
-
-    HFSM_Init(&at_manager->fsm, &AT_IDLE);
+    at_device->line_idx = 0;
+    at_device->isr_line_len = 0;
+    at_device->last_pos = 0;
+    at_device->curr_cmd = NULL;
+    at_device->uart = uart;
+    at_device->fsm.customizeHandle = at_device;
+    at_device->fsm.fsm_name = "fsm";
+    /* 有需求重新实现状态机 */
     LOG_I("AT", "Bind UART=%p Instance=%p", uart, uart->Instance);
 
 
     /* 5、RTOS 裸机环境分开处理 */
 #if AT_RTOS_ENABLE
-    /* 1. 定义互斥锁属性 (静态定义，保证属性结构体一直存在) */
-    /* 属性：递归锁 + 优先级继承 */
-    static const osMutexAttr_t send_mutex_attr = {
-        .name = "AT_SendMutex",
-        .attr_bits = osMutexRecursive | osMutexPrioInherit,
-        .cb_mem = NULL,
-        .cb_size = 0
-    };
-
-    /* 2. 创建互斥锁 */
-    /* g_at_mgr 是你的全局管理器实例，或者通过参数传进来的指针 */
-    at_manager->send_mutex = osMutexNew(&send_mutex_attr);
-
-    if (at_manager->send_mutex == NULL) {
-        /* 严重错误：互斥锁创建失败 (通常是Heap不够了) */
-        LOG_E("AT", "Mutex Create Failed!");
+    /*  创建队列（元素是 AT_Command_t*）*/
+    at_device->cmd_q = osMessageQueueNew(AT_MAX_PENDING, sizeof(AT_Command_t *), NULL);
+    if (!at_device->cmd_q) {
+        LOG_E("AT", "cmd_q create failed");
     }
+
+    /*  创建池互斥（保护 alloc/free） */
+    at_device->pool_mutex = osMutexNew(NULL);
+    if (!at_device->pool_mutex) {
+        LOG_E("AT", "pool_mutex create failed");
+    }
+
+    /*  初始化 free 栈 + 预创建每个命令的 done_sem */
+    at_device->free_top = 0;
+    for (uint16_t i = 0; i < AT_MAX_PENDING; i++) {
+        at_device->cmd_pool[i].in_use = 0;
+        at_device->cmd_pool[i].result = AT_RESP_WAITING;
+        at_device->cmd_pool[i].timeout_ms = AT_CMD_TIMEOUT_DEF;
+
+        at_device->cmd_pool[i].done_sem = osSemaphoreNew(1, 0, NULL);
+        if (!at_device->cmd_pool[i].done_sem) {
+            LOG_E("AT", "done_sem create failed idx=%u", i);
+        }
+
+        at_device->free_stack[at_device->free_top++] = i;
+    }
+
     /*　RTOS任务函数指针 */
-    //at_manager->core_task = NULL;
+
     /* 3、开启串口DMA接收 */
     HAL_UARTEx_ReceiveToIdle_DMA(uart,
-                                 at_manager->dma_rx_arr,
+                                 at_device->dma_rx_arr,
                                  AT_DMA_BUF_SIZE);
 #else
     /* 裸机模式：简单复位标志位 */
 
     at_manager->is_locked = false;
     /* 、开启串口DMA接收 */
-    HAL_UARTEx_ReceiveToIdle_DMA(uart, at_manager->dma_rx_arr, AT_DMA_BUF_SIZE);
+    HAL_UARTEx_ReceiveToIdle_DMA(uart, at_device->dma_rx_arr, AT_DMA_BUF_SIZE);
 #endif
-    LOG_D("AT", "INIT at=%p core_task=%p\r\n", at_manager, at_manager->core_task);
+    LOG_D("AT", "INIT at=%p core_task=%p\r\n", at_device, at_device->core_task);
 }
 
 /**
@@ -215,7 +200,7 @@ void AT_Core_RxCallback(AT_Manager_t *at_manager, const UART_HandleTypeDef *huar
 
     /* 6. 通知任务 */
     if (has_line && at_manager->core_task) {
-        osThreadFlagsSet(at_manager->core_task, 1u << 0);
+        osThreadFlagsSet(at_manager->core_task, AT_FLAG_RX);
     }
 }
 
@@ -285,19 +270,20 @@ void AT_Core_Process(AT_Manager_t *at_manager) {
         at_manager->line_buf[actual] = '\0';
 
         /* 8、开始状态机处理 */
-        /* 放置事件处理 */
-        Event ev = {
-            .event_id = AT_EVT_RX_LINE,
-            .event_data = (void *) at_manager->line_buf
-        };
-        HFSM_HandleEvent(&at_manager->fsm, &ev);
+        // /* 放置事件处理 */
+        // Event ev = {
+        //     .event_id = AT_EVT_RX_LINE,
+        //     .event_data = (void *) at_manager->line_buf
+        // };
+        // HFSM_HandleEvent(&at_manager->fsm, &ev);
+        AT_OnLine(at_manager, (const char *) at_manager->line_buf);
         /* 打印返回数据 */
         LOG_W("AT", "RX: %s", at_manager->line_buf);
     }
 }
 
 /**
- * @brief 发送AT命令进入状态机处理流程
+ * @brief 发送AT命令进入非阻塞处理流程
  * @param mgr 句柄
  * @param cmd 发送的命令
  * @param expect 期待收到的命令
@@ -305,189 +291,241 @@ void AT_Core_Process(AT_Manager_t *at_manager) {
  * @return 返回状态
  */
 AT_Resp_t AT_SendCmd(AT_Manager_t *mgr, const char *cmd, const char *expect, uint32_t timeout_ms) {
-    if (!mgr || !cmd) return AT_RESP_ERROR;
+#if !AT_RTOS_ENABLE
+    // 你裸机分支后续再做同样的队列化；先聚焦 RTOS
+    return AT_RESP_ERROR;
+#else
+    AT_Command_t *h = AT_Submit(mgr, cmd, expect, timeout_ms);
+    if (!h) return AT_RESP_BUSY;
+
+    const AT_Resp_t r = AT_Wait(h, timeout_ms);
+    AT_CmdRelease(mgr, h);
+    return r;
+#endif
+}
+
+/**
+ * @brief 对返回的字符串进行处理
+ * @param mgr AT设备句柄
+ * @param line 返回的语句
+ */
+static void AT_OnLine(AT_Manager_t *mgr, const char *line) {
+    if (!mgr || !line) return;
+
+    // 有正在执行的命令：优先作为响应处理
+    if (mgr->curr_cmd) {
+        AT_Command_t *c = mgr->curr_cmd;
+        const char *expect = (c->expect_buf[0] != '\0') ? c->expect_buf : "OK";
+
+        if (strstr(line, expect)) {
+            c->result = AT_RESP_OK;
+            mgr->curr_cmd = NULL;
+            osSemaphoreRelease(c->done_sem);
+            // 触发发送下一条
+            if (mgr->core_task) osThreadFlagsSet(mgr->core_task, AT_FLAG_TX);
+            return;
+        }
+        if (strstr(line, "ERROR")) {
+            c->result = AT_RESP_ERROR;
+            mgr->curr_cmd = NULL;
+            osSemaphoreRelease(c->done_sem);
+            if (mgr->core_task) osThreadFlagsSet(mgr->core_task, AT_FLAG_TX);
+            return;
+        }
+
+        // 未命中：可能是中间行/URC，先不结束
+        return;
+    }
+
+    // 没有 curr_cmd：这行就是 URC（后续第二阶段再加 URC 回调）
+    // LOG_W("AT", "URC: %s", line);
+}
+
+
+/**
+ * @brief 将ms转换为心跳
+ * @param ms 需要转换为心跳的ms
+ * @return 返回心跳
+ */
+uint32_t AT_MsToTicks(const uint32_t ms) {
+#if AT_RTOS_ENABLE
+    const uint32_t freq = osKernelGetTickFreq();
+    // 向上取整，避免短超时变成 0 tick
+    return (ms * freq + 999u) / 1000u;
+#else
+    return ms;
+#endif
+}
+
+/**
+ * @brief 返回静态对象池中的一个空闲命令对象
+ * @param mgr AT设备句柄
+ * @return 返回空闲命令对象
+ */
+static AT_Command_t *AT_CmdAlloc(AT_Manager_t *mgr) {
+    if (!mgr) return NULL;
+#if AT_RTOS_ENABLE
+    /* 获取锁 */
+    if (mgr->pool_mutex) osMutexAcquire(mgr->pool_mutex, osWaitForever);
+    /* 如果空闲对象为空 */
+    if (mgr->free_top == 0) {
+        if (mgr->pool_mutex) osMutexRelease(mgr->pool_mutex);
+        return NULL;
+    }
+    /* 获取在池中的位置 */
+    const uint16_t idx = mgr->free_stack[--mgr->free_top];
+    /* 根据索引返回空闲对象指针 */
+    AT_Command_t *c = &mgr->cmd_pool[idx];
+    /* 当前对象在内存池中标记为被使用 */
+    c->in_use = 1;
+
+    /* 释放锁 */
+    if (mgr->pool_mutex) osMutexRelease(mgr->pool_mutex);
+    return c;
+#else
+    return NULL;
+#endif
+}
+
+/**
+ * @brief     将内存池中的对象进行释放重置参数
+ * @param mgr AT句柄
+ * @param c   要发送的数据句柄
+ */
+static void AT_CmdFree(AT_Manager_t *mgr, AT_Command_t *c) {
+#if AT_RTOS_ENABLE
+    if (!mgr || !c) return;
+
+    // 清理字段（保留 done_sem）
+    c->in_use = 0;
+    c->result = AT_RESP_WAITING;
+    c->timeout_ms = AT_CMD_TIMEOUT_DEF;
+    c->cmd_buf[0] = '\0';
+    c->expect_buf[0] = '\0';
+
+
+    /* 加锁 */
+    if (mgr->pool_mutex) osMutexAcquire(mgr->pool_mutex, osWaitForever);
+    /* 计算索引 */
+    const uint16_t idx = (uint16_t) (c - mgr->cmd_pool);
+    /* 计算 c 在com_pool是第几个元素 */
+    if (mgr->free_top < AT_MAX_PENDING) {
+        mgr->free_stack[mgr->free_top++] = idx;
+    } else {
+        LOG_E("AT", "free_stack overflow (double free?) idx=%u", idx);
+    }
+
+    /* 释放锁 */
+    if (mgr->pool_mutex) osMutexRelease(mgr->pool_mutex);
+#else
+    (void) mgr; (void) c;
+#endif
+}
+
+/**
+ * @brief 获取信号量确保发送后被任务唤醒
+ * @param sem 需要被获取的信号量
+ */
+static void AT_SemDrain(osSemaphoreId_t sem) {
+#if AT_RTOS_ENABLE
+    if (!sem) return;
+    while (osSemaphoreAcquire(sem, 0) == osOK) {
+        /* drain */
+    }
+#endif
+}
+
+/**
+ * @brief 获取空闲对象装填参数后返回
+ * @param mgr AT句柄
+ * @param cmd 发送的AT命令
+ * @param expect 期待返回中应该有的字符串
+ * @param timeout_ms 超时时间
+ * @return 返回一个装填好的命令对象指针
+ */
+AT_Command_t *AT_Submit(AT_Manager_t *mgr,
+                        const char *cmd,
+                        const char *expect,
+                        uint32_t timeout_ms) {
+#if !AT_RTOS_ENABLE
+    (void) mgr;(void) cmd;(void) expect;(void) timeout_ms;
+    return NULL;
+#else
+    /* 1、防止空指针 */
+    if (!mgr || !cmd) return NULL;
+    /* 2、设置默认超时时间 */
     if (timeout_ms == 0) timeout_ms = AT_CMD_TIMEOUT_DEF;
 
-#if AT_RTOS_ENABLE
-    // 1) BUSY保护：一次只允许一个阻塞式命令在飞行中
-    if (mgr->curr_cmd != NULL) return AT_RESP_BUSY;
+    /* 3、从静态池拿出其中一个空对象的指针 */
+    AT_Command_t *c = AT_CmdAlloc(mgr);
+    if (!c) return NULL;
 
-    // 2) 发送互斥（可选但强烈建议：防止多任务同时调用SendCmd）
-    if (mgr->send_mutex) {
-        // 这里建议加一个超时，避免死锁
-        if (osMutexAcquire(mgr->send_mutex, timeout_ms) != osOK) {
-            return AT_RESP_BUSY;
-        }
+    /* 4、获取掉信号量 */
+    AT_SemDrain(c->done_sem);
+
+    /* 5、拷贝 cmd，避免上层栈字符串悬空；可在这里统一补 */
+    strncpy(c->cmd_buf, cmd, AT_CMD_MAX_LEN - 1);
+    c->cmd_buf[AT_CMD_MAX_LEN - 1] = '\0';
+
+    /* 6、期待字符串存在且其对应需要的缓冲区存在 */
+    if (expect && expect[0]) {
+        strncpy(c->expect_buf, expect, AT_EXPECT_MAX_LEN - 1);
+        c->expect_buf[AT_EXPECT_MAX_LEN - 1] = '\0';
+    } else {
+        c->expect_buf[0] = '\0'; // 表示默认 OK
     }
 
-    // 3) 栈上构造命令对象（阻塞期间一直有效）
-    AT_Command_t cmd_obj = {0};
-    cmd_obj.cmd_str = cmd;
-    cmd_obj.expect_resp = expect;
-    cmd_obj.timeout_ms = timeout_ms;
-    cmd_obj.result = AT_RESP_WAITING;
+    c->timeout_ms = timeout_ms;
+    c->result = AT_RESP_WAITING;
 
-    // 4) 创建二值信号量：初值0，最大1
-    cmd_obj.resp_sem = osSemaphoreNew(1, 0, NULL);
-    if (cmd_obj.resp_sem == NULL) {
-        if (mgr->send_mutex) osMutexRelease(mgr->send_mutex);
-        return AT_RESP_ERROR;
+    // 入队（队列满则归还）
+    AT_Command_t *ptr = c;
+    /* 消息队列获取失败释放命令*/
+    if (osMessageQueuePut(mgr->cmd_q, &ptr, 0, 0) != osOK) {
+        AT_CmdFree(mgr, c);
+        return NULL;
     }
 
-    // 5) 投递“发送”事件：event_data必须是 &cmd_obj
-    const Event ev = {
-        .event_id = AT_EVT_SEND,
-        .event_data = &cmd_obj
-    };
-    HFSM_HandleEvent(&mgr->fsm, &ev);
+    // 唤醒 core_task：通知有新命令
+    if (mgr->core_task) {
+        osThreadFlagsSet(mgr->core_task, AT_FLAG_TX); // AT_FLAG_TX
+    }
 
-    // 6) 阻塞等待：OK/ERROR 会 Release；否则超时返回
-    const osStatus_t st = osSemaphoreAcquire(cmd_obj.resp_sem, timeout_ms);
+    return c;
+#endif
+}
 
-    // 7) 如果是超时：需要主动清理（因为WAIT里不会自动触发timeout事件）
+/**
+ *
+ * @param h 命令对象指针
+ * @param wait_ms 等待的时间
+ * @return 返回
+ */
+AT_Resp_t AT_Wait(AT_Command_t *h, uint32_t wait_ms) {
+#if !AT_RTOS_ENABLE
+    (void) h; (void) wait_ms;
+    return AT_RESP_ERROR;
+#else
+    if (!h) return AT_RESP_ERROR;
+
+    // 一般 wait_ms 用 h->timeout_ms 即可；这里允许上层额外控制
+    const uint32_t ticks = (wait_ms == 0) ? osWaitForever : AT_MsToTicks(wait_ms);
+    /* 阻塞等待 */
+    const osStatus_t st = osSemaphoreAcquire(h->done_sem, ticks);
+
     if (st != osOK) {
-        cmd_obj.result = AT_RESP_TIMEOUT;
-
-        // 强制清理当前命令，避免后续一直卡在WAIT
-        mgr->curr_cmd = NULL;
-        HFSM_Transition(&mgr->fsm, &AT_IDLE);
+        // 理论上 core_task 会在超时时释放 done_sem；这里 st!=OK 意味着系统异常
+        return AT_RESP_TIMEOUT;
     }
-
-    // 8) 销毁信号量
-    osSemaphoreDelete(cmd_obj.resp_sem);
-
-    // 9) 释放互斥
-    if (mgr->send_mutex) osMutexRelease(mgr->send_mutex);
-
-    return cmd_obj.result;
-
-#else
-    // ---- 裸机版本（轮询阻塞）----
-    if (mgr->is_locked) return AT_RESP_BUSY;
-    mgr->is_locked = true;
-
-    AT_Command_t cmd_obj = {0};
-    cmd_obj.cmd_str = cmd;
-    cmd_obj.expect_resp = expect;
-    cmd_obj.timeout_ms = timeout_ms;
-    cmd_obj.result = AT_RESP_WAITING;
-    cmd_obj.is_finished = false;
-
-    Event ev = {.event_id = AT_EVT_SEND, .event_data = &cmd_obj};
-    HFSM_HandleEvent(&mgr->fsm, &ev);
-
-    uint32_t start = HAL_GetTick();
-    while (!cmd_obj.is_finished) {
-        AT_Core_Process(mgr); // 或者主循环里周期调
-        if ((HAL_GetTick() - start) >= timeout_ms) {
-            cmd_obj.result = AT_RESP_TIMEOUT;
-            mgr->curr_cmd = NULL;
-            HFSM_Transition(&mgr->fsm, &AT_IDLE);
-            break;
-        }
-    }
-
-    mgr->is_locked = false;
-    return cmd_obj.result;
+    return h->result;
 #endif
 }
 
-
-static void AT_IDLE_Enter(StateMachine *fsm) {
-    (void) fsm;
-    LOG_D("AT", "%s -> IDLE", fsm->fsm_name);
-}
-
-static void AT_WAIT_Enter(StateMachine *fsm) {
-    (void) fsm;
-    LOG_D("AT", "%s -> WAIT", fsm->fsm_name);
-}
-
-static void AT_WAIT_Exit(StateMachine *fsm) {
-    (void) fsm;
-    LOG_D("AT", "%s <- WAIT", fsm->fsm_name);
-}
-
-static bool AT_Idle_OnSend(StateMachine *fsm, const Event *e) {
-    AT_Manager_t *mgr = (AT_Manager_t *) fsm->customizeHandle;
-    if (!mgr || !e || !e->event_data) return true;
-
-    AT_Command_t *cmd = (AT_Command_t *) e->event_data;
-
-    // 绑定当前命令
-    mgr->curr_cmd = cmd;
-    mgr->curr_cmd->result = AT_RESP_WAITING;
-
-    // 记录开始 tick（RTOS 推荐 osKernelGetTickCount；裸机可 HAL_GetTick）
+void AT_CmdRelease(AT_Manager_t *mgr, AT_Command_t *h) {
 #if AT_RTOS_ENABLE
-    mgr->req_start_tick = osKernelGetTickCount();
+    if (!mgr || !h) return;
+    AT_CmdFree(mgr, h);
 #else
-    mgr->req_start_tick = HAL_GetTick();
+    (void) mgr; (void) h;
 #endif
-
-    // 发送
-    if (mgr->hw_send) {
-        mgr->hw_send(mgr, (uint8_t *) cmd->cmd_str, (uint16_t) strlen(cmd->cmd_str));
-    }
-    // 进入等待响应状态
-    HFSM_Transition(fsm, &AT_WAIT);
-    return true;
-}
-
-static bool AT_Wait_OnRxLine(StateMachine *fsm, const Event *e) {
-    AT_Manager_t *mgr = (AT_Manager_t *) fsm->customizeHandle;
-    if (!mgr || !mgr->curr_cmd || !e || !e->event_data) return true;
-
-    const char *line = (const char *) e->event_data;
-    AT_Command_t *cmd = mgr->curr_cmd;
-
-    // 默认 expect：如果用户没给，就用 "OK"
-    const char *expect = cmd->expect_resp ? cmd->expect_resp : "OK";
-
-    if (strstr(line, expect)) {
-        cmd->result = AT_RESP_OK;
-#if AT_RTOS_ENABLE
-        osSemaphoreRelease(cmd->resp_sem);
-#else
-        cmd->is_finished = true;
-#endif
-        mgr->curr_cmd = NULL;
-        HFSM_Transition(fsm, &AT_IDLE);
-        return true;
-    }
-
-    if (strstr(line, "ERROR")) {
-        cmd->result = AT_RESP_ERROR;
-#if AT_RTOS_ENABLE
-        osSemaphoreRelease(cmd->resp_sem);
-#else
-        cmd->is_finished = true;
-#endif
-        mgr->curr_cmd = NULL;
-        HFSM_Transition(fsm, &AT_IDLE);
-        return true;
-    }
-
-    // 未命中：继续等待下一行
-    return true;
-}
-
-static bool AT_Wait_OnTimeout(StateMachine *fsm, const Event *e) {
-    (void) e;
-    AT_Manager_t *mgr = (AT_Manager_t *) fsm->customizeHandle;
-    if (!mgr || !mgr->curr_cmd) return true;
-
-    AT_Command_t *cmd = mgr->curr_cmd;
-    cmd->result = AT_RESP_TIMEOUT;
-
-#if AT_RTOS_ENABLE
-    osSemaphoreRelease(cmd->resp_sem);
-#else
-    cmd->is_finished = true;
-#endif
-
-    LOG_E("AT", "AT命令响应超时");
-    mgr->curr_cmd = NULL;
-    HFSM_Transition(fsm, &AT_IDLE);
-    return true;
 }
