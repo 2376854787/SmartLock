@@ -52,6 +52,8 @@ void AT_Core_Init(AT_Manager_t *at_device, UART_HandleTypeDef *uart, const HW_Se
     at_device->isr_line_len = 0;
     at_device->last_pos = 0;
     at_device->curr_cmd = NULL;
+    at_device->urc_cb = NULL;
+    at_device->urc_user = NULL;
     at_device->uart = uart;
     at_device->fsm.customizeHandle = at_device;
     at_device->fsm.fsm_name = "fsm";
