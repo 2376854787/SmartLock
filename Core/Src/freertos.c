@@ -42,7 +42,7 @@
 #include "Usart1_manage.h"
 #include "water_adc.h"
 #include "AT.h"
-#include "AT_Core_Task.h"
+#include "../../components/AT/AT_Core_Task.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
