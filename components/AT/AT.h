@@ -31,6 +31,11 @@
 #endif
 /* 向前声明 */
 typedef struct AT_Manager_t AT_Manager_t;
+
+typedef void (*AT_UrcCb)(AT_Manager_t *mgr, const char *line, void *user);
+
+typedef void (*HW_Send)(AT_Manager_t *at_manager, const uint8_t *data, uint16_t len);
+
 /* ================= 枚举定义 ================= */
 /* AT命令执行返回的结果 */
 typedef enum {
@@ -78,7 +83,7 @@ typedef struct AT_Manager_t {
     /* --- 2. 硬件/底层资源 --- */
     RingBuffer rx_rb; /* 接收环形缓冲区 */
     /* 如果 RingBuffer 需要静态内存，可以在此定义，或外部注入 */
-    void (*hw_send)(AT_Manager_t *at_manager, const uint8_t *data, uint16_t len); /* 硬件发送函数指针 */
+    HW_Send hw_send; /* 硬件发送函数指针 */
     UART_HandleTypeDef *uart;
 
     /* --- 3. 解析缓存 --- */
@@ -89,6 +94,9 @@ typedef struct AT_Manager_t {
     RingBuffer msg_len_rb; /* 接收行长度环形缓冲区 */
     volatile uint16_t last_pos;
     volatile bool rx_overflow; /* 溢出检测 */
+    void *urc_user; /* 上下文指针 */
+    AT_UrcCb urc_cb; /* URC回调函数指针*/
+
 
     /* --- 4. 运行时状态 --- */
     AT_Command_t *curr_cmd; /* 当前正在执行的指令 */
@@ -115,10 +123,9 @@ typedef struct AT_Manager_t {
  * @brief 初始化 AT 核心框架
  * @param at_manager
  * @param uart 串口句柄
- * @param send_func 硬件串口发送函数指针
+ * @param hw_send 硬件串口发送函数指针
  */
-void AT_Core_Init(AT_Manager_t *at_manager, UART_HandleTypeDef *uart,
-                  void (*hw_send)(AT_Manager_t *, const uint8_t *, uint16_t));
+void AT_Core_Init(AT_Manager_t *at_manager, UART_HandleTypeDef *uart, HW_Send hw_send);
 
 /**
  * @brief 接收数据回调 (放入串口接收中断)
@@ -143,6 +150,25 @@ void AT_Core_Process(AT_Manager_t *at_manager);
  */
 AT_Resp_t AT_SendCmd(AT_Manager_t *at_manager, const char *cmd, const char *expect, uint32_t timeout_ms);
 
+/**
+ * @brief 将ms转换为心跳
+ * @param ms 需要转换为心跳的ms
+ * @return 返回心跳
+ */
+uint32_t AT_MsToTicks(uint32_t ms);
 
-uint32_t AT_MsToTicks(const uint32_t ms);
+/**
+ * @brief   返回当前句柄当前执行对象的进度状态
+ * @param h AT设备句柄
+ * @return 对象的进度状态
+ */
+AT_Resp_t AT_Poll(AT_Command_t *h);
+
+/**
+ *
+ * @param mgr AT设备句柄
+ * @param cb  绑定的URC回调函数
+ * @param user 传递的上下文
+ */
+void AT_SetUrcHandler(AT_Manager_t *mgr, AT_UrcCb cb, void *user);
 #endif //SMARTCLOCK_AT_H

@@ -97,6 +97,6 @@ void at_core_task_init(AT_Manager_t *at, UART_HandleTypeDef *uart) {
  * @param data 要发送的数据
  * @param size  数据大小 KB
  */
-void Uart_send(AT_Manager_t *at, const uint8_t *data, uint16_t size) {
+void Uart_send(AT_Manager_t *at, const uint8_t *data, const uint16_t size) {
     HAL_UART_Transmit(at->uart, data, size, HAL_MAX_DELAY);
 }

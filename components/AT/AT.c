@@ -30,8 +30,7 @@ static void AT_SemDrain(osSemaphoreId_t sem);
  * @param uart      绑定的串口
  * @param hw_send   发送函数指针
  */
-void AT_Core_Init(AT_Manager_t *at_device, UART_HandleTypeDef *uart,
-                  void (*hw_send)(AT_Manager_t *, const uint8_t *, uint16_t)) {
+void AT_Core_Init(AT_Manager_t *at_device, UART_HandleTypeDef *uart, const HW_Send hw_send) {
     /* 1、接收发送命令函数指针 */
     at_device->hw_send = hw_send;
 
@@ -298,7 +297,7 @@ AT_Resp_t AT_SendCmd(AT_Manager_t *mgr, const char *cmd, const char *expect, uin
     AT_Command_t *h = AT_Submit(mgr, cmd, expect, timeout_ms);
     if (!h) return AT_RESP_BUSY;
 
-    const AT_Resp_t r = AT_Wait(h, timeout_ms);
+    const AT_Resp_t r = AT_Wait(h, h->timeout_ms);
     AT_CmdRelease(mgr, h);
     return r;
 #endif
@@ -338,7 +337,12 @@ static void AT_OnLine(AT_Manager_t *mgr, const char *line) {
     }
 
     // 没有 curr_cmd：这行就是 URC（后续第二阶段再加 URC 回调）
-    // LOG_W("AT", "URC: %s", line);
+    if (mgr->curr_cmd == NULL) {
+        if (mgr->urc_cb) mgr->urc_cb(mgr, line, mgr->urc_user);
+        return;
+    }
+
+    LOG_W("AT", "URC: %s", line);
 }
 
 
@@ -395,7 +399,17 @@ static AT_Command_t *AT_CmdAlloc(AT_Manager_t *mgr) {
 static void AT_CmdFree(AT_Manager_t *mgr, AT_Command_t *c) {
 #if AT_RTOS_ENABLE
     if (!mgr || !c) return;
+    /* 判断指针范围是否在池中 */
+    if (c < mgr->cmd_pool || c >= &mgr->cmd_pool[AT_MAX_PENDING]) {
+        LOG_E("AT", "CmdFree invalid ptr=%p", c);
+        return;
+    }
 
+    /* 防止重复释放 */
+    if (c->in_use == 0) {
+        LOG_E("AT", "CmdFree double free idx=%u", (unsigned)(c - mgr->cmd_pool));
+        return;
+    }
     // 清理字段（保留 done_sem）
     c->in_use = 0;
     c->result = AT_RESP_WAITING;
@@ -501,7 +515,7 @@ AT_Command_t *AT_Submit(AT_Manager_t *mgr,
  * @param wait_ms 等待的时间
  * @return 返回
  */
-AT_Resp_t AT_Wait(AT_Command_t *h, uint32_t wait_ms) {
+AT_Resp_t AT_Wait(AT_Command_t *h, const uint32_t wait_ms) {
 #if !AT_RTOS_ENABLE
     (void) h; (void) wait_ms;
     return AT_RESP_ERROR;
@@ -521,6 +535,11 @@ AT_Resp_t AT_Wait(AT_Command_t *h, uint32_t wait_ms) {
 #endif
 }
 
+/**
+ *@brief  将内存池中的对象进行释放重置参数
+ * @param mgr AT设备对象指针
+ * @param h   AT命令对象指针
+ */
 void AT_CmdRelease(AT_Manager_t *mgr, AT_Command_t *h) {
 #if AT_RTOS_ENABLE
     if (!mgr || !h) return;
@@ -528,4 +547,25 @@ void AT_CmdRelease(AT_Manager_t *mgr, AT_Command_t *h) {
 #else
     (void) mgr; (void) h;
 #endif
+}
+
+/**
+ * @brief   返回当前句柄当前执行对象的进度状态
+ * @param h AT设备句柄
+ * @return 对象的进度状态
+ */
+AT_Resp_t AT_Poll(AT_Command_t *h) {
+    if (!h) return AT_RESP_ERROR;
+    return h->result; // WAITING/OK/ERROR/TIMEOUT
+}
+
+/**
+ *
+ * @param mgr AT设备句柄
+ * @param cb  绑定的URC回调函数
+ * @param user 传递的上下文
+ */
+void AT_SetUrcHandler(AT_Manager_t *mgr, const AT_UrcCb cb, void *user) {
+    mgr->urc_cb = cb;
+    mgr->urc_user = user;
 }
