@@ -311,7 +311,7 @@ AT_Resp_t AT_SendCmd(AT_Manager_t *mgr, const char *cmd, const char *expect, uin
 static void AT_OnLine(AT_Manager_t *mgr, const char *line) {
     if (!mgr || !line) return;
 
-    // 有正在执行的命令：优先作为响应处理
+    /* 有正在执行的命令：优先作为响应处理 */
     if (mgr->curr_cmd) {
         AT_Command_t *c = mgr->curr_cmd;
         const char *expect = (c->expect_buf[0] != '\0') ? c->expect_buf : "OK";
@@ -332,11 +332,14 @@ static void AT_OnLine(AT_Manager_t *mgr, const char *line) {
             return;
         }
 
-        // 未命中：可能是中间行/URC，先不结束
+        /* 2、未命中：很可能是 URC/中间行，交给 URC 回调（如果有）*/
+        if (mgr->urc_cb) {
+            mgr->urc_cb(mgr, line, mgr->urc_user);
+        }
         return;
     }
 
-    // 没有 curr_cmd：这行就是 URC（后续第二阶段再加 URC 回调）
+    /* 3、没有 curr_cmd：这行就是 URC*/
     if (mgr->curr_cmd == NULL) {
         if (mgr->urc_cb) mgr->urc_cb(mgr, line, mgr->urc_user);
         return;
