@@ -31,7 +31,7 @@ typedef enum {
 /* 设置当前系统的过滤等级 (小于此等级的日志不会打印) */
 // 这里默认设为 DEBUG，开发完后可以改成 INFO 或 ERROR
 #ifndef LOG_CURRENT_LEVEL
-#define LOG_CURRENT_LEVEL   LOG_LEVEL_DEBUG
+#define LOG_CURRENT_LEVEL   LOG_LEVEL_INFO
 #endif
 
 

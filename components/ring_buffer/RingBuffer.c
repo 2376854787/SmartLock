@@ -360,3 +360,15 @@ bool ReadRingBufferFromISR(RingBuffer *rb, uint8_t *add, uint16_t *size, const u
     RB_EXIT_CRITICAL_FROM_ISR();
     return true;
 }
+
+/**
+ * @brief 重置缓冲区
+ * @param rb 句柄
+ * @return
+ */
+bool ResetRingBuffer(RingBuffer *rb) {
+    if (rb == NULL)return false;
+    rb->front_index = 0;
+    rb->rear_index = 0;
+    return true;
+}

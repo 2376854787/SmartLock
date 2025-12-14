@@ -76,7 +76,7 @@ static const osMutexAttr_t logMutex_attr = {"LogMutex", osMutexRecursive, NULL, 
  * @note  负责从 RingBuffer 取出数据并通过串口发送
  */
 void Log_Task_Entry(void *argument) {
-    uint8_t send_buf[64]; /* 临时发送缓存，减少对 RingBuffer 的锁占用时间 */
+    uint8_t send_buf[128]; /* 临时发送缓存，减少对 RingBuffer 的锁占用时间 */
     uint16_t read_len;
     for (;;) {
         /* 1. 等待事件标志位 */

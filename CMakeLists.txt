@@ -52,6 +52,7 @@ add_executable(${CMAKE_PROJECT_NAME}
         Application/Src/Usart1_manage.c
         components/log/log.c
         components/AT/AT.c
+        Application/Src/AT_Core_Task.c
 
 )
 
