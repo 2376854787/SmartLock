@@ -9,6 +9,7 @@
 #include "Beep.h"
 #include "cmsis_os2.h"
 #include "LightSensor.h"
+#include "log.h"
 #include "usart.h"
 
 void StartLightSensorTask(void *argument) {
@@ -22,7 +23,7 @@ void StartLightSensorTask(void *argument) {
        //char buffer[64];
         //sniprintf(buffer, sizeof(buffer), "当前光敏电阻值为 %u\r\n", (unsigned)LightSensor_Data);
        // HAL_UART_Transmit_DMA(&huart1, (uint8_t *)buffer, sizeof(LightSensor_Data));
-        printf("当前光敏电阻值为 %u\r\n", (unsigned)LightSensor_Data);
+        LOG_D("光敏","当前光敏电阻值为 %u\r\n", (unsigned)LightSensor_Data);
         osDelay(1000); // 1s 读一次，完全够用
     }
 }

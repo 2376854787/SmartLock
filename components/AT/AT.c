@@ -113,7 +113,7 @@ void AT_Core_Init(AT_Manager_t *at_device, UART_HandleTypeDef *uart, const HW_Se
 #else
     /* 裸机模式：简单复位标志位 */
 
-    at_manager->is_locked = false;
+    at_device->is_locked = false;
     /* 、开启串口DMA接收 */
     HAL_UARTEx_ReceiveToIdle_DMA(uart, at_device->dma_rx_arr, AT_DMA_BUF_SIZE);
 #endif
