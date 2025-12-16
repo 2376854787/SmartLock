@@ -77,7 +77,7 @@ static const osMutexAttr_t logMutex_attr = {"LogMutex", osMutexRecursive, NULL, 
  */
 void Log_Task_Entry(void *argument) {
     uint8_t send_buf[128]; /* 临时发送缓存，减少对 RingBuffer 的锁占用时间 */
-    uint16_t read_len;
+    uint32_t read_len;
     for (;;) {
         /* 1. 等待事件标志位 */
         /* osFlagsWaitAny: 等待任意标志位，osWaitForever: 永久阻塞直到被唤醒 (也可设为 1000ms 超时) */
@@ -209,7 +209,7 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
     if (__get_IPSR() == 0) {
         if (osKernelGetState() == osKernelRunning) {
             /* 尝试写入 RingBuffer */
-            uint16_t write_len = total_len;
+            uint32_t write_len = total_len;
 
             /* 这里的 false 表示如果空间不足不写入全部丢弃 (或根据 RingBuffer 实现策略) */
             if (WriteRingBuffer(&s_logRB, (uint8_t *) log_buf, &write_len, false)) {

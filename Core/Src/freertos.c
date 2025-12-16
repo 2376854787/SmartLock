@@ -291,7 +291,7 @@ void StartTask02(void *argument) {
     char buffer[128];
     /* Infinite loop */
     for (;;) {
-        uint16_t read_size = RingBuffer_GetUsedSize(&g_rb_uart1);
+        uint32_t read_size = RingBuffer_GetUsedSize(&g_rb_uart1);
         if (read_size > 0) {
             if (read_size > 127) read_size = 127;
             if (ReadRingBuffer(&g_rb_uart1, (uint8_t *) buffer, &read_size, 0)) {

@@ -2,8 +2,8 @@
 // Created by yan on 2025/10/18.
 //
 
-#ifndef TEST_RINGBUFFER_H
-#define TEST_RINGBUFFER_H
+#ifndef RINGBUFFER_H
+#define RINGBUFFER_H
 #include <stdbool.h>
 
 #include "stdint.h"
@@ -12,29 +12,36 @@
 
 typedef struct {
     char *name;
-    volatile uint16_t rear_index; //表示可以添加数据的头地址
-    volatile uint16_t front_index; //表示可以被删除的头地址
-    volatile uint16_t size; //缓冲区大小
+    volatile uint32_t rear_index; //表示可以添加数据的头地址
+    volatile uint32_t front_index; //表示可以被删除的头地址
+    volatile uint32_t size; //缓冲区大小
     uint8_t *buffer; //缓冲区头地址
     bool isPowerOfTwo_Size;
 } RingBuffer;
 
 
-bool CreateRingBuffer(RingBuffer *rb, uint16_t size);
+bool CreateRingBuffer(RingBuffer *rb, uint32_t size);
 
-uint16_t RingBuffer_GetUsedSize(const RingBuffer *rb);
+uint32_t RingBuffer_GetUsedSize(const RingBuffer *rb);
 
-uint16_t RingBuffer_GetRemainSize(const RingBuffer *rb);
+uint32_t RingBuffer_GetUsedSizeFromISR(const RingBuffer *rb);
 
-bool WriteRingBuffer(RingBuffer *rb, const uint8_t *add, uint16_t *size, uint8_t isForceWrite);
+uint32_t RingBuffer_GetRemainSize(const RingBuffer *rb);
 
-bool ReadRingBuffer(RingBuffer *rb, uint8_t *add, uint16_t *size, uint8_t isForceRead);
+uint32_t RingBuffer_GetRemainSizeFromISR(const RingBuffer *rb);
 
-bool PeekRingBuffer(RingBuffer *rb, uint8_t *add, uint16_t *size, const uint8_t isForcePeek);
+bool WriteRingBuffer(RingBuffer *rb, const uint8_t *add, uint32_t *size, uint8_t isForceWrite);
 
-bool WriteRingBufferFromISR(RingBuffer *rb, const uint8_t *add, uint16_t *size, const uint8_t isForceWrite);
+bool ReadRingBuffer(RingBuffer *rb, uint8_t *add, uint32_t *size, uint8_t isForceRead);
 
-bool ReadRingBufferFromISR(RingBuffer *rb, uint8_t *add, uint16_t *size, const uint8_t isForceRead) ;
+bool PeekRingBuffer(RingBuffer *rb, uint8_t *add, uint32_t *size, const uint8_t isForcePeek);
+
+bool WriteRingBufferFromISR(RingBuffer *rb, const uint8_t *add, uint32_t *size, const uint8_t isForceWrite);
+
+bool ReadRingBufferFromISR(RingBuffer *rb, uint8_t *add, uint32_t *size, const uint8_t isForceRead);
 
 bool ResetRingBuffer(RingBuffer *rb);
-#endif //TEST_RINGBUFFER_H
+
+bool ResetRingBufferFromISR(RingBuffer *rb);
+
+#endif //RINGBUFFER_H

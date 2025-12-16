@@ -165,7 +165,7 @@ void AT_Core_RxCallback(AT_Manager_t *at_manager, const UART_HandleTypeDef *huar
 
 
     /*  WriteRingBufferFromISR 需要传入指针，这里准备好 */
-    uint16_t write_size_one = 1;
+    uint32_t write_size_one = 1;
 
     /* 定义一个宏来处理单个字节逻辑，避免回卷代码重复 */
 #define AT_HANDLE_BYTE(b) do { \
@@ -179,7 +179,7 @@ void AT_Core_RxCallback(AT_Manager_t *at_manager, const UART_HandleTypeDef *huar
             if ((b) == '\n' || (b) == '>') { \
                 /* 将当前行的长度 (uint16_t) 存入 长度 RingBuffer */ \
                 uint16_t len_val = at_manager->isr_line_len; \
-                uint16_t len_size = sizeof(uint16_t); \
+                uint32_t len_size = sizeof(uint16_t); \
                 /* 注意：这里把 &len_val 强转为 uint8_t* 写入 2 个字节 */ \
                bool ok_len =  WriteRingBufferFromISR(&at_manager->msg_len_rb, (uint8_t*)&len_val, &len_size, 0); \
                at_manager->isr_line_len = 0; \
@@ -236,7 +236,7 @@ void AT_Core_Process(AT_Manager_t *at_manager) {
     /* 1、判断是否有一句完整的数据帧 */
     while (RingBuffer_GetUsedSize(&at_manager->msg_len_rb) >= sizeof(uint16_t)) {
         /* 2、 读取数据 */
-        uint16_t size = sizeof(uint16_t);
+        uint32_t size = sizeof(uint16_t);
         uint8_t len_size_t[2];
 
         /* 3、判读当前行的字节数 是否大于最大可读数 */
@@ -260,7 +260,7 @@ void AT_Core_Process(AT_Manager_t *at_manager) {
         }
 
         /* 5、读取数据帧 */
-        uint16_t to_read = actual;
+        uint32_t to_read = actual;
         if (!ReadRingBuffer(&at_manager->rx_rb, at_manager->line_buf, &to_read, 0) || to_read != actual) {
             LOG_E("AT", "数据帧读取失败/不同步 (need=%u got=%u)", actual, to_read);
             break; // 后续做“重置策略”
@@ -272,7 +272,7 @@ void AT_Core_Process(AT_Manager_t *at_manager) {
             uint16_t drop = frame_len - actual;
             while (drop > 0) {
                 uint8_t dummy[32];
-                uint16_t chunk = (drop > sizeof(dummy)) ? sizeof(dummy) : drop;
+                uint32_t chunk = (drop > sizeof(dummy)) ? sizeof(dummy) : drop;
                 if (!ReadRingBuffer(&at_manager->rx_rb, dummy, &chunk, 1) || chunk == 0) {
                     LOG_E("AT", "超长帧丢弃失败，数据可能已不同步");
                     break;
@@ -285,12 +285,6 @@ void AT_Core_Process(AT_Manager_t *at_manager) {
         at_manager->line_buf[actual] = '\0';
 
         /* 8、开始状态机处理 */
-        // /* 放置事件处理 */
-        // Event ev = {
-        //     .event_id = AT_EVT_RX_LINE,
-        //     .event_data = (void *) at_manager->line_buf
-        // };
-        // HFSM_HandleEvent(&at_manager->fsm, &ev);
         AT_OnLine(at_manager, (const char *) at_manager->line_buf);
         /* 打印返回数据 */
         LOG_W("AT", "RX: %s", at_manager->line_buf);
@@ -307,7 +301,6 @@ void AT_Core_Process(AT_Manager_t *at_manager) {
  */
 AT_Resp_t AT_SendCmd(AT_Manager_t *mgr, const char *cmd, const char *expect, uint32_t timeout_ms) {
 #if !AT_RTOS_ENABLE
-    // 你裸机分支后续再做同样的队列化；先聚焦 RTOS
     return AT_RESP_ERROR;
 #else
     AT_Command_t *h = AT_Submit(mgr, cmd, expect, timeout_ms);
@@ -541,13 +534,12 @@ AT_Resp_t AT_Wait(AT_Command_t *h, const uint32_t wait_ms) {
 #else
     if (!h) return AT_RESP_ERROR;
 
-    // 一般 wait_ms 用 h->timeout_ms 即可；这里允许上层额外控制
     const uint32_t ticks = (wait_ms == 0) ? osWaitForever : AT_MsToTicks(wait_ms);
     /* 阻塞等待 */
     const osStatus_t st = osSemaphoreAcquire(h->done_sem, ticks);
 
     if (st != osOK) {
-        // 理论上 core_task 会在超时时释放 done_sem；这里 st!=OK 意味着系统异常
+        /* 理论上 core_task 会在超时时释放 done_sem；这里 st!=OK 意味着系统异常 */
         return AT_RESP_TIMEOUT;
     }
     return h->result;
