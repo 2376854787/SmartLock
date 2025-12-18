@@ -10,7 +10,7 @@ osThreadId_t AT_Core_Task_Handle = NULL;
 /* 引用外部变量 */
 AT_Manager_t g_at_manager;
 
-void Uart_send(AT_Manager_t *, const uint8_t *, uint16_t);
+bool Uart_send(AT_Manager_t *mgr, const uint8_t *data, uint16_t len);
 
 /**
  * @brief AT核心任务
@@ -21,8 +21,8 @@ void AT_Core_Task(void *argument) {
     AT_Manager_t *mgr = (AT_Manager_t *) argument;
 
     for (;;) {
-        // 用一个小超时周期，让我们有机会做超时检查（例如 10ms）
-        const uint32_t flags = osThreadFlagsWait(AT_FLAG_RX | AT_FLAG_TX,
+        /*  用一个小超时周期，让我们有机会做超时检查（例如 10ms）*/
+        const uint32_t flags = osThreadFlagsWait(AT_FLAG_RX | AT_FLAG_TX | AT_FLAG_TXDONE,
                                                  osFlagsWaitAny,
                                                  AT_MsToTicks(10));
 
@@ -32,22 +32,39 @@ void AT_Core_Task(void *argument) {
             }
         }
 
-        // 1) 若无当前命令，尝试取队列下一条并发送
+        /* 1、 若无当前命令，尝试取队列下一条并发送 */
         if (mgr->curr_cmd == NULL && mgr->cmd_q) {
+            /* 判断是否能够发送 */
+#if defined(AT_TX_USE_DMA) && (AT_TX_USE_DMA == 1)
+            if (mgr->tx_mode == AT_TX_DMA && mgr->tx_busy) {
+                // DMA 还在发：不要取队列，不要动 next，不要判错
+                // 等待 TXDONE 或下一次 10ms 轮询
+                goto timeout_check;
+            }
+#endif
+
             AT_Command_t *next = NULL;
             if (osMessageQueueGet(mgr->cmd_q, &next, NULL, 0) == osOK && next) {
                 mgr->curr_cmd = next;
                 mgr->req_start_tick = osKernelGetTickCount();
                 mgr->curr_deadline_tick = mgr->req_start_tick + AT_MsToTicks(next->timeout_ms);
-
-                // 真正发送：先保持阻塞发送也可以（因为在 core task 内，不会阻塞提交者）
+                /* 调用发送函数 */
                 if (mgr->hw_send) {
-                    mgr->hw_send(mgr, (uint8_t *) next->cmd_buf, (uint16_t) strlen(next->cmd_buf));
+                    /* 未发生完成就返回 释放命令对象的信号量 重新通知任务发送 */
+                    const bool ok = mgr->hw_send(mgr, (uint8_t *) next->cmd_buf, (uint16_t) strlen(next->cmd_buf));
+                    /* 异常处理 */
+                    if (!ok) {
+                        next->result = AT_RESP_ERROR;
+                        mgr->curr_cmd = NULL;
+                        osSemaphoreRelease(next->done_sem);
+                        osThreadFlagsSet(mgr->core_task, AT_FLAG_TX); /* 继续发下一条 */
+                    }
                 }
             }
         }
 
-        // 2) 超时检查（由 core task 统一收敛）
+        /* 2、 超时检查（由 core task 统一收敛）*/
+    timeout_check:
         if (mgr->curr_cmd) {
             const uint32_t now = osKernelGetTickCount();
             // 处理 tick 回绕：用有符号差判断
@@ -57,7 +74,7 @@ void AT_Core_Task(void *argument) {
                 mgr->curr_cmd = NULL;
                 osSemaphoreRelease(c->done_sem);
 
-                // 超时后立刻尝试发下一条（提高吞吐）
+                /* 超时后立刻尝试发下一条（提高吞吐）*/
                 osThreadFlagsSet(mgr->core_task, AT_FLAG_TX);
             }
         }
@@ -95,41 +112,24 @@ void at_core_task_init(AT_Manager_t *at, UART_HandleTypeDef *uart) {
  * @param data 要发送的数据指针
  * @param len 数据长度
  */
-void Uart_send(AT_Manager_t *mgr, const uint8_t *data, uint16_t len) {
-    if (!mgr || !mgr->uart || !data || len == 0) return;
+bool Uart_send(AT_Manager_t *mgr, const uint8_t *data, uint16_t len) {
+    if (!mgr || !mgr->uart || !data || len == 0) return false;
 
 #if defined(AT_TX_USE_DMA) && (AT_TX_USE_DMA == 1)
-    /* 运行期选择： */
     if (mgr->tx_mode == AT_TX_DMA) {
-        mgr->tx_error = 0;
+        if (mgr->tx_busy) return false; // 忙不是“错误”，但启动失败就 false
         mgr->tx_busy = 1;
-
-        AT_SemDrain(mgr->tx_done_sem); /* 清残留 */
-
         if (HAL_UART_Transmit_DMA(mgr->uart, (uint8_t *) data, len) != HAL_OK) {
             mgr->tx_busy = 0;
-            mgr->tx_error = 1;
-            return;
+            return false;
         }
-
-        /* 等待 DMA 发送完成*/
-        const uint32_t tx_to = AT_TxTimeoutMs(mgr, len);
-        if (osSemaphoreAcquire(mgr->tx_done_sem, AT_MsToTicks(tx_to)) != osOK) {
-            // DMA 回调没来：防死锁
-            mgr->tx_busy = 0;
-            mgr->tx_error = 1;
-            return;
-        }
-
-        /* 回调到达 */
-        mgr->tx_busy = 0;
-        return;
+        return true; // DMA 已启动
     }
 #endif
 
-    /* 阻塞发送 */
-    (void) HAL_UART_Transmit(mgr->uart, (uint8_t *) data, len, HAL_MAX_DELAY);
+    return (HAL_UART_Transmit(mgr->uart, (uint8_t *) data, len, HAL_MAX_DELAY) == HAL_OK);
 }
+
 
 /**
  * @brief 释放信号量
@@ -141,8 +141,9 @@ void AT_Manage_TxCpltCallback(UART_HandleTypeDef *huart) {
     if (!mgr) return;
 
     mgr->tx_busy = 0;
-    // 二选一：信号量 or 线程标志
-    if (mgr->tx_done_sem) {
-        osSemaphoreRelease(mgr->tx_done_sem);
+
+    /* 唤醒任务 */
+    if (mgr->core_task) {
+        osThreadFlagsSet(mgr->core_task, AT_FLAG_TXDONE);
     }
 }

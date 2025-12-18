@@ -31,10 +31,10 @@ bool MyUart_Init(void) {
 void process_dma_data(void) {
     static uint16_t last_pos = 0;
     //1、获取当前的位置
-    uint16_t curpos = DMA_BUFFER_SIZE - __HAL_DMA_GET_COUNTER(&hdma_usart1_rx);
+    uint32_t curpos = DMA_BUFFER_SIZE - __HAL_DMA_GET_COUNTER(&hdma_usart1_rx);
 
-    uint16_t write_size = curpos - last_pos; //没有回返
-    uint16_t write_size2 = DMA_BUFFER_SIZE - last_pos; //数据回返需要写入得后面部分得长度
+    uint32_t write_size = curpos - last_pos; //没有回返
+    uint32_t write_size2 = DMA_BUFFER_SIZE - last_pos; //数据回返需要写入得后面部分得长度
     //2、判断数据是否更新
     if (last_pos == curpos) return;
 

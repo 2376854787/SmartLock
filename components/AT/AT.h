@@ -4,7 +4,7 @@
 
 #ifndef SMARTCLOCK_AT_H
 #define SMARTCLOCK_AT_H
-#include "stm32f4xx_hal_uart.h"
+#include "stm32f4xx_hal.h"
 #include "HFSM.h"
 #include "RingBuffer.h"
 /* 1: 启用RTOS模式(信号量/互斥锁)  0: 启用裸机模式(轮询) */
@@ -16,8 +16,9 @@
 #define AT_TX_USE_DMA   1
 #endif
 /* 核心任务任务通知唤醒 */
-#define AT_FLAG_RX   (1u << 0)
-#define AT_FLAG_TX   (1u << 1)
+#define AT_FLAG_RX       (1u << 0)
+#define AT_FLAG_TX       (1u << 1)
+#define AT_FLAG_TXDONE   (1u << 2)
 /* AT指令超时设置 */
 #define AT_RX_RB_SIZE       1024        /* AT接收环形缓冲区大小 最好为2的幂*/
 #define AT_LEN_RB_SIZE      64          /* 长度缓冲区: 存每行的长度 (存32行足够了, 32*2byte=64) */
@@ -37,7 +38,7 @@ typedef struct AT_Manager_t AT_Manager_t;
 
 typedef void (*AT_UrcCb)(AT_Manager_t *mgr, const char *line, void *user);
 
-typedef void (*HW_Send)(AT_Manager_t *at_manager, const uint8_t *data, uint16_t len);
+typedef bool (*HW_Send)(AT_Manager_t *mgr, const uint8_t *data, uint16_t len);
 
 /* ================= 枚举定义 ================= */
 /* AT命令执行返回的结果 */
