@@ -867,3 +867,83 @@ bool RingBuffer_ReadCommitFromISR(RingBuffer *rb, uint32_t commit) {
     RB_EXIT_CRITICAL_FROM_ISR(saved);
     return true;
 }
+
+/**
+ * @brief 丢弃指定字节数据
+ * @param rb 操作句柄
+ * @param drop 期望丢弃字节数
+ * @param dropped 实际丢弃字节数
+ * @param isCompatible 是否开启兼容模式
+ * @return 成功或者失败
+ * @note  兼容模式下 used为0会返回true
+ */
+bool RingBuffer_Drop(RingBuffer *rb, uint32_t drop, uint32_t *dropped, bool isCompatible) {
+    if (!rb || !rb->buffer || rb->size < 2 || !dropped) return false;
+
+    /* 1、判断剩余的存储字节数 */
+    RB_ENTER_CRITICAL();
+    const uint32_t used = RingBuffer_GetUsedSize_Internal(rb);
+    if (drop == 0) {
+        *dropped = 0;
+        RB_EXIT_CRITICAL();
+        return true;
+    }
+    /* 2、实际要丢失多少字节 */
+    uint32_t g = drop;
+    if (g > used) {
+        if (isCompatible) g = used;
+        else {
+            *dropped = 0;
+            RB_EXIT_CRITICAL();
+            return false;
+        }
+    }
+
+    /* 3、开始丢弃 */
+    if (rb->isPowerOfTwo_Size) rb->front_index = (rb->front_index + g) & (rb->size - 1);
+    else rb->front_index = (rb->front_index + g) % rb->size;
+    *dropped = g;
+    RB_EXIT_CRITICAL();
+    return true;
+}
+
+/**
+ * @brief 丢弃指定字节数据
+ * @param rb 操作句柄
+ * @param drop 期望丢弃字节数
+ * @param dropped 实际丢弃字节数
+ * @param isCompatible 是否开启兼容模式
+ * @return 成功或者失败
+ * @note  兼容模式下 used为0会返回true
+ */
+bool RingBuffer_DropFromISR(RingBuffer *rb, uint32_t drop, uint32_t *dropped, bool isCompatible) {
+    if (!rb || !rb->buffer || rb->size < 2 || !dropped) return false;
+
+    /* 1、判断剩余的存储字节数 */
+
+    UBaseType_t saved;
+    RB_ENTER_CRITICAL_FROM_ISR(saved);
+    const uint32_t used = RingBuffer_GetUsedSize_Internal(rb);
+    if (drop == 0) {
+        *dropped = 0;
+        RB_EXIT_CRITICAL_FROM_ISR(saved);
+        return true;
+    }
+    /* 2、实际要丢失多少字节 */
+    uint32_t g = drop;
+    if (g > used) {
+        if (isCompatible) g = used;
+        else {
+            *dropped = 0;
+            RB_EXIT_CRITICAL_FROM_ISR(saved);
+            return false;
+        }
+    }
+
+    /* 3、开始丢弃 */
+    if (rb->isPowerOfTwo_Size) rb->front_index = (rb->front_index + g) & (rb->size - 1);
+    else rb->front_index = (rb->front_index + g) % rb->size;
+    *dropped = g;
+    RB_EXIT_CRITICAL_FROM_ISR(saved);
+    return true;
+}

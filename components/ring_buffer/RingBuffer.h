@@ -49,6 +49,8 @@ bool ReadRingBufferFromISR(RingBuffer *rb, uint8_t *add, uint32_t *size, uint8_t
 
 bool ResetRingBuffer(RingBuffer *rb);
 
+bool ResetRingBufferFromISR(RingBuffer *rb);
+
 /*　零拷贝 写 */
 bool RingBuffer_WriteReserve(RingBuffer *rb, uint32_t want, RingBufferSpan *out, uint32_t *granted, bool iSCompatible);
 
@@ -64,24 +66,26 @@ bool RingBuffer_WriteCommitFromISR(RingBuffer *rb, uint32_t commit);
 
 /* 零拷贝 读 */
 bool RingBuffer_ReadReserve(RingBuffer *rb,
-                                   uint32_t want,
-                                   RingBufferSpan *out,
-                                   uint32_t *granted,
-                                   bool isCompatible);
+                            uint32_t want,
+                            RingBufferSpan *out,
+                            uint32_t *granted,
+                            bool isCompatible);
+
 bool RingBuffer_ReadReserveFromISR(RingBuffer *rb,
                                    uint32_t want,
                                    RingBufferSpan *out,
                                    uint32_t *granted,
                                    bool isCompatible);
+
 bool RingBuffer_ReadCommit(RingBuffer *rb, uint32_t commit);
+
 bool RingBuffer_ReadCommitFromISR(RingBuffer *rb, uint32_t commit);
 
 
 /* 丢掉N字节 */
-bool RingBuffer_Drop(RingBuffer *rb, uint32_t drop, uint32_t *dropped);
+bool RingBuffer_Drop(RingBuffer *rb, uint32_t drop, uint32_t *dropped, bool isCompatible);
 
-bool RingBuffer_DropFromISR(RingBuffer *rb, uint32_t drop, uint32_t *dropped);
+bool RingBuffer_DropFromISR(RingBuffer *rb, uint32_t drop, uint32_t *dropped, bool isCompatible);
 
-bool ResetRingBufferFromISR(RingBuffer *rb);
 
 #endif //RINGBUFFER_H
