@@ -265,7 +265,7 @@ static void Log_PushBytes_NoBlock(const uint8_t *data, uint16_t len) {
 #if LOG_ASYNC_ENABLE
     if (osKernelGetState() == osKernelRunning) {
         uint32_t write_len = (uint32_t) len;
-        (void) WriteRingBuffer(&s_logRB, (uint8_t *) data, &write_len, false);
+        (void) WriteRingBufferFromISR(&s_logRB, (uint8_t *) data, &write_len, false);
 
         if (s_logTaskHandle != NULL) {
             (void) osThreadFlagsSet(s_logTaskHandle, LOG_TASK_FLAG);
