@@ -325,7 +325,7 @@ void StartTask_LCD(void *argument) {
     LOG_I("StartTask_LCD", "启动完成");
     LOG_I("111", "启动完成");
     for (;;) {
-        snprintf(buffer, 128, "Time:%lu", HAL_GetTick());
+        sniprintf(buffer, 128, "Time:%lu", HAL_GetTick());
         lcd_show_string(50, 300, 240, 32, 32, buffer, BLACK);
 
         // UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
