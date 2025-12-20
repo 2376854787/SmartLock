@@ -5,7 +5,6 @@
 #ifndef SMARTLOCK_RET_CODE_H
 #define SMARTLOCK_RET_CODE_H
 #include <stdint.h>
-#include "compiler_cus.h"
 #include "cmsis_gcc.h"
 #ifdef __cplusplus
 extern "C" {
