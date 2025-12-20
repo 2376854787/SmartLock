@@ -1,3 +1,6 @@
+#include "APP_config.h"
+/* 全局配置宏开关 */
+#ifdef ENABLE_LOG_SYSTEM
 #include "log.h"   /* 确保文件名与头文件一致 */
 #include "main.h"       /* 包含HAL库定义 */
 #include <stdarg.h>     /* 用于处理可变参数 va_list */
@@ -10,8 +13,10 @@
 #include "cmsis_os2.h"
 #include "MemoryAllocation.h"
 #include "RingBuffer.h"
-/* 宏开关 */
-#ifdef ENABLE_LOG_SYSTEM
+#include "ret_code.h"
+
+#define snprintf_my    sniprintf
+#define vsnprintf_my   vsniprintf
 /* ================= 宏定义与配置 ================= */
 
 /* 颜色代码 (ANSI Escape Code) - 用于串口终端显示颜色 */
@@ -93,7 +98,7 @@ void Log_Task_Entry(void *argument) {
             read_len = sizeof(send_buf);
 
             /* 从 RingBuffer 读取数据 */
-            if (ReadRingBuffer(&s_logRB, send_buf, &read_len, false) == true) {
+            if (ret_is_ok(ReadRingBuffer(&s_logRB, send_buf, &read_len, true))) {
                 /* 3. 调用硬件发送 (低优先级任务可以阻塞) */
                 Hardware_Send(send_buf, read_len);
             } else {
@@ -120,7 +125,7 @@ void Log_Init(void) {
 #if LOG_ASYNC_ENABLE
     /* 2. 初始化 RingBuffer */
     /* 假设 CreateRingBuffer 内部使用了 static_alloc 或 malloc */
-    if (!CreateRingBuffer(&s_logRB, LOG_RB_SIZE)) {
+    if (ret_is_err(CreateRingBuffer(&s_logRB, LOG_RB_SIZE))) {
         LOG_E("AT", "s_logRB 环形缓冲区分配失败");
     }
     LOG_W("heap", "%uKB- %u空间还剩余 %u", MEMORY_POND_MAX_SIZE, LOG_RB_SIZE, query_remain_size());
@@ -187,14 +192,14 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
     short_file = short_file ? short_file + 1 : file;
 
     /* 3. 拼装日志头: [Tick] L/TAG: */
-    const int head_len = snprintf(log_buf, LOG_LINE_MAX,
+    const int head_len = snprintf_my(log_buf, LOG_LINE_MAX,
                                   "%s[%lu] %c/%s %s:%d: ", color, tick, level_char, tag, short_file, line);
 
     /* 4. 拼装用户内容 (处理可变参数) */
     va_list args;
     va_start(args, fmt);
     /* vsnprintf 会自动处理缓冲区长度限制，防止溢出 */
-    const int content_len = vsnprintf(log_buf + head_len, LOG_LINE_MAX - head_len, fmt, args);
+    const int content_len = vsnprintf_my(log_buf + head_len, LOG_LINE_MAX - head_len, fmt, args);
     va_end(args);
 
     /* 计算当前总长度 */
@@ -204,7 +209,7 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
     /* 预留 6 字节给尾部字符，如果不够则截断内容 */
     if (total_len + 6 > LOG_LINE_MAX) total_len = LOG_LINE_MAX - 6;
 
-    const int tail_len = snprintf(log_buf + total_len, LOG_LINE_MAX - total_len, "%s\r\n", COLOR_RESET);
+    const int tail_len = snprintf_my(log_buf + total_len, LOG_LINE_MAX - total_len, "%s\r\n", COLOR_RESET);
     total_len += tail_len;
 
     /* ================= 发送阶段 ================= */
@@ -217,7 +222,7 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
             uint32_t write_len = total_len;
 
             /* 这里的 false 表示如果空间不足不写入全部丢弃 (或根据 RingBuffer 实现策略) */
-            if (WriteRingBuffer(&s_logRB, (uint8_t *) log_buf, &write_len, false)) {
+            if (ret_is_ok(WriteRingBuffer(&s_logRB, (uint8_t *) log_buf, &write_len, false))) {
                 /* 写入成功，设置标志位唤醒后台任务 */
                 if (s_logTaskHandle != NULL) {
                     /* osThreadFlagsSet 在 CMSIS-OS2 (STM32实现) 中通常是 ISR 安全的 */
@@ -378,7 +383,7 @@ void Log_Hexdump(LogLevel_t level, const char *file, int line, const char *tag, 
             if (limit == 0) {
                 // line_buf 太小，无法保证尾部，直接输出简版
                 char small[96];
-                int n = snprintf(small, sizeof(small),
+                int n = snprintf_my(small, sizeof(small),
                                  "%s[%lu] %c/%s %s:%d: HEX buf too small%s\r\n",
                                  color, tick, level_char, tag, short_file, line, COLOR_RESET);
                 if (n > 0)
@@ -387,7 +392,7 @@ void Log_Hexdump(LogLevel_t level, const char *file, int line, const char *tag, 
             }
 
             /* 拼装头部 */
-            const int head = snprintf(line_buf, sizeof(line_buf),
+            const int head = snprintf_my(line_buf, sizeof(line_buf),
                                       "%s[%lu] %c/%s %s:%d: %08lX: ",
                                       color, tick, level_char, tag, short_file, line, (unsigned long) off);
             if (head < 0) continue;
@@ -427,7 +432,7 @@ void Log_Hexdump(LogLevel_t level, const char *file, int line, const char *tag, 
             if (pos + 1 <= limit) line_buf[pos++] = '|';
 
             /* 尾部：颜色重置与换行 */
-            const int tail = snprintf(line_buf + pos, cap - pos, "%s\r\n", COLOR_RESET);
+            const int tail = snprintf_my(line_buf + pos, cap - pos, "%s\r\n", COLOR_RESET);
             if (tail > 0) pos += (size_t) tail;
             if (pos < cap) line_buf[pos] = '\0';
             /* 调用收敛后的输出逻辑 */

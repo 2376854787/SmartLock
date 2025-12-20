@@ -1,8 +1,15 @@
-#include <string.h>
+
+#include "APP_config.h"
+/* 全局配置开启宏 */
+#ifdef ENABLE_ASSERT_SYSTEM
 #include "assert_cus.h"
+#include <string.h>
+
 /* 可选：如果你想在 assert 里打日志，把你的 log.h include 进来
  * 注意：assert 不能依赖“可能阻塞”的输出路径；建议只在任务态且 log 异步就绪时打印
  */
+
+
 #ifdef ASSERT_USE_LOG
 #include "log.h"
 #endif
@@ -71,33 +78,37 @@ static void assert_record(const char *expr, const char *file, int line) {
 
 /* 你可以在项目层提供一个同名非 weak 的实现，覆盖该行为 */
 __WEAK void Assert_PlatformReset(void) {
+
+
 #if defined(NVIC_SystemReset)
-    NVIC_SystemReset();
+NVIC_SystemReset();
 #else
-    /* fallback: halt */
-    while (1) { ; }
+/* fallback: halt */
+while (1) { ; }
 #endif
 }
 
 __WEAK void Assert_PlatformHalt(void) {
-    /* 关中断，避免系统继续跑出二次破坏 */
+
+
+/* 关中断，避免系统继续跑出二次破坏 */
 #if defined(__arm__) || defined(__ARM_ARCH)
-    __disable_irq();
+__disable_irq();
 #endif
-    while (1) { ; }
+while (1) { ; }
 }
 
 void Assert_OnFail(const char *expr, const char *file, int line) {
     assert_record(expr, file, line);
 
 #ifdef ASSERT_USE_LOG
-    if (g_cfg.enable_log) {
+if (g_cfg.enable_log) {
         /* 异步输出 */
         LOG_E("ASSERT", "FAIL: %s (%s:%d)", expr, file, line);
     }
 #endif
 
-    switch (g_cfg.action) {
+switch (g_cfg.action) {
         case ASSERT_ACTION_LOG_ONLY:
             return;
 
@@ -111,3 +122,6 @@ void Assert_OnFail(const char *expr, const char *file, int line) {
             return;
     }
 }
+
+
+#endif

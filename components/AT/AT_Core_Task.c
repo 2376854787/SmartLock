@@ -1,9 +1,9 @@
+/* 全局启用配置宏 */
+#include "APP_config.h"
+#ifdef ENABLE_AT_SYSTEM
 #include "AT_Core_Task.h"
-
 #include <stdio.h>
 #include <string.h>
-
-
 /* 任务句柄 */
 osThreadId_t AT_Core_Task_Handle = NULL;
 
@@ -147,3 +147,6 @@ void AT_Manage_TxCpltCallback(UART_HandleTypeDef *huart) {
         osThreadFlagsSet(mgr->core_task, AT_FLAG_TXDONE);
     }
 }
+
+
+#endif

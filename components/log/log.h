@@ -5,9 +5,6 @@
 #ifndef SMARTCLOCK_LOG_H
 #define SMARTCLOCK_LOG_H
 #include <stdint.h>
-
-#include "APP_config.h" /* 全局配置开关 */
-
 /* ================= 配置区域 ================= */
 /* 日志控制宏可以控制调试信息的输出 全局*/
 #define G_LOG_ENABLE        1
@@ -35,21 +32,21 @@ typedef enum {
 /* 设置当前系统的过滤等级 (小于此等级的日志不会打印) */
 // 这里默认设为 DEBUG，开发完后可以改成 INFO 或 ERROR
 #ifndef LOG_CURRENT_LEVEL
-#define LOG_CURRENT_LEVEL   LOG_LEVEL_INFO
+#define LOG_CURRENT_LEVEL   LOG_LEVEL_ALL
 #endif
 
 
 /* 核心日志输出文件 */
 void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, const char *fmt, ...);
 
-void Log_Hexdump(LogLevel_t level, const char *file, int line, const char *tag, const void*buf, uint32_t len);
+void Log_Hexdump(LogLevel_t level, const char *file, int line, const char *tag, const void *buf, uint32_t len);
 
 /* 初始化日志系统 (RTOS模式下必须先调用) */
 void Log_Init(void);
 
 /* ================= 宏定义封装 (用户主要用这些) ================= */
 
-#if (G_LOG_ENABLE)
+#if  (G_LOG_ENABLE==1)
 
 /* ERROR: 严重错误 */
 #define LOG_E(tag, fmt, ...) \

@@ -4,8 +4,7 @@
 
 #ifndef SMARTLOCK_APP_CONFIG_H
 #define SMARTLOCK_APP_CONFIG_H
+#include "config_cus.h"
 
-/* 功能开启宏  取消注释即开启整个项目的 log功能*/
-#define ENABLE_LOG_SYSTEM  /* 日志管理系统 */
 
 #endif //SMARTLOCK_APP_CONFIG_H

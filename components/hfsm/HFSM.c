@@ -1,8 +1,11 @@
+#include "APP_config.h"
+/* 全局配置开启宏 */
+#ifdef ENABLE_HFSM_SYSTEM
 #include "HFSM.h"
 #include <stddef.h>
 #include <stdio.h> // 用于 printf 调试
-
 #include "log.h"
+
 
 /* 默认 TAG，可以按需改 */
 #ifndef HFSM_LOG_TAG
@@ -38,10 +41,10 @@
 /* --- 情况二：只有局部开关，无总日志系统 -> 回退到 printf --- */
 #include <stdio.h>
 
-#define HFSM_LOGE(fmt, ...)  printf("[E][%s] " fmt "\r\n", KEY_LOG_TAG, ##__VA_ARGS__)
-#define HFSM_LOGW(fmt, ...)  printf("[W][%s] " fmt "\r\n", KEY_LOG_TAG, ##__VA_ARGS__)
-#define HFSM_LOGI(fmt, ...)  printf("[I][%s] " fmt "\r\n", KEY_LOG_TAG, ##__VA_ARGS__)
-#define HFSM_LOGD(fmt, ...)  printf("[D][%s] " fmt "\r\n", KEY_LOG_TAG, ##__VA_ARGS__)
+#define HFSM_LOGE(fmt, ...)  printf("[E][%s] " fmt "\r\n", HFSM_LOG_TAG, ##__VA_ARGS__)
+#define HFSM_LOGW(fmt, ...)  printf("[W][%s] " fmt "\r\n", HFSM_LOG_TAG, ##__VA_ARGS__)
+#define HFSM_LOGI(fmt, ...)  printf("[I][%s] " fmt "\r\n", HFSM_LOG_TAG, ##__VA_ARGS__)
+#define HFSM_LOGD(fmt, ...)  printf("[D][%s] " fmt "\r\n", HFSM_LOG_TAG, ##__VA_ARGS__)
 
 #else
 
@@ -123,3 +126,6 @@ void HFSM_HandleEvent(StateMachine *fsm, const Event *event) {
         s = s->parent;
     }
 }
+
+
+#endif

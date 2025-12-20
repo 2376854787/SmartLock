@@ -1,7 +1,6 @@
-//
-// Created by yan on 2025/12/15.
-//
-// AT_UartMap.c
+#include "APP_config.h"
+/* 全局配置开启宏 */
+#ifdef ENABLE_AT_SYSTEM
 #include "AT.h"
 #include <string.h>
 
@@ -51,3 +50,7 @@ AT_Manager_t *AT_FindMgrByUart(const UART_HandleTypeDef *huart) {
     }
     return NULL;
 }
+
+
+
+#endif
