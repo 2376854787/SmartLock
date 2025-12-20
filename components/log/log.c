@@ -187,14 +187,14 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
     short_file = short_file ? short_file + 1 : file;
 
     /* 3. 拼装日志头: [Tick] L/TAG: */
-    const int head_len = sniprintf(log_buf, LOG_LINE_MAX,
-                                   "%s[%lu] %c/%s %s:%d: ", color, tick, level_char, tag, short_file, line);
+    const int head_len = snprintf(log_buf, LOG_LINE_MAX,
+                                  "%s[%lu] %c/%s %s:%d: ", color, tick, level_char, tag, short_file, line);
 
     /* 4. 拼装用户内容 (处理可变参数) */
     va_list args;
     va_start(args, fmt);
     /* vsnprintf 会自动处理缓冲区长度限制，防止溢出 */
-    const int content_len = vsniprintf(log_buf + head_len, LOG_LINE_MAX - head_len, fmt, args);
+    const int content_len = vsnprintf(log_buf + head_len, LOG_LINE_MAX - head_len, fmt, args);
     va_end(args);
 
     /* 计算当前总长度 */
@@ -204,7 +204,7 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
     /* 预留 6 字节给尾部字符，如果不够则截断内容 */
     if (total_len + 6 > LOG_LINE_MAX) total_len = LOG_LINE_MAX - 6;
 
-    const int tail_len = sniprintf(log_buf + total_len, LOG_LINE_MAX - total_len, "%s\r\n", COLOR_RESET);
+    const int tail_len = snprintf(log_buf + total_len, LOG_LINE_MAX - total_len, "%s\r\n", COLOR_RESET);
     total_len += tail_len;
 
     /* ================= 发送阶段 ================= */
@@ -378,18 +378,18 @@ void Log_Hexdump(LogLevel_t level, const char *file, int line, const char *tag, 
             if (limit == 0) {
                 // line_buf 太小，无法保证尾部，直接输出简版
                 char small[96];
-                int n = sniprintf(small, sizeof(small),
-                                  "%s[%lu] %c/%s %s:%d: HEX buf too small%s\r\n",
-                                  color, tick, level_char, tag, short_file, line, COLOR_RESET);
+                int n = snprintf(small, sizeof(small),
+                                 "%s[%lu] %c/%s %s:%d: HEX buf too small%s\r\n",
+                                 color, tick, level_char, tag, short_file, line, COLOR_RESET);
                 if (n > 0)
                     OUTPUT_LOG_LINE(small, n);
                 break; // 或 return
             }
 
             /* 拼装头部 */
-            const int head = sniprintf(line_buf, sizeof(line_buf),
-                                       "%s[%lu] %c/%s %s:%d: %08lX: ",
-                                       color, tick, level_char, tag, short_file, line, (unsigned long) off);
+            const int head = snprintf(line_buf, sizeof(line_buf),
+                                      "%s[%lu] %c/%s %s:%d: %08lX: ",
+                                      color, tick, level_char, tag, short_file, line, (unsigned long) off);
             if (head < 0) continue;
             pos = (size_t) head;
             if (pos > limit) pos = limit;
@@ -427,7 +427,7 @@ void Log_Hexdump(LogLevel_t level, const char *file, int line, const char *tag, 
             if (pos + 1 <= limit) line_buf[pos++] = '|';
 
             /* 尾部：颜色重置与换行 */
-            const int tail = sniprintf(line_buf + pos, cap - pos, "%s\r\n", COLOR_RESET);
+            const int tail = snprintf(line_buf + pos, cap - pos, "%s\r\n", COLOR_RESET);
             if (tail > 0) pos += (size_t) tail;
             if (pos < cap) line_buf[pos] = '\0';
             /* 调用收敛后的输出逻辑 */
