@@ -5,6 +5,8 @@
 #include <string.h>     /* 用于 strrchr, memcpy */
 
 /* 引入 CMSIS-OS2 和 RingBuffer */
+#include <sys/types.h>
+
 #include "cmsis_os2.h"
 #include "MemoryAllocation.h"
 #include "RingBuffer.h"
@@ -32,6 +34,9 @@
 
 /* 定义用于唤醒后台任务的事件标志位 (任意未使用的位即可) */
 #define LOG_TASK_FLAG 0x0001
+
+/* 将单字节写入环形缓冲区 */
+static void Log_PushBytes_NoBlock(const uint8_t *data, uint16_t len);
 
 /* ================= 外部依赖 ================= */
 
@@ -182,14 +187,14 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
     short_file = short_file ? short_file + 1 : file;
 
     /* 3. 拼装日志头: [Tick] L/TAG: */
-    const int head_len = snprintf(log_buf, LOG_LINE_MAX,
-                                  "%s[%lu] %c/%s %s:%d: ", color, tick, level_char, tag, short_file, line);
+    const int head_len = sniprintf(log_buf, LOG_LINE_MAX,
+                                   "%s[%lu] %c/%s %s:%d: ", color, tick, level_char, tag, short_file, line);
 
     /* 4. 拼装用户内容 (处理可变参数) */
     va_list args;
     va_start(args, fmt);
     /* vsnprintf 会自动处理缓冲区长度限制，防止溢出 */
-    const int content_len = vsnprintf(log_buf + head_len, LOG_LINE_MAX - head_len, fmt, args);
+    const int content_len = vsniprintf(log_buf + head_len, LOG_LINE_MAX - head_len, fmt, args);
     va_end(args);
 
     /* 计算当前总长度 */
@@ -199,7 +204,7 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
     /* 预留 6 字节给尾部字符，如果不够则截断内容 */
     if (total_len + 6 > LOG_LINE_MAX) total_len = LOG_LINE_MAX - 6;
 
-    const int tail_len = snprintf(log_buf + total_len, LOG_LINE_MAX - total_len, "%s\r\n", COLOR_RESET);
+    const int tail_len = sniprintf(log_buf + total_len, LOG_LINE_MAX - total_len, "%s\r\n", COLOR_RESET);
     total_len += tail_len;
 
     /* ================= 发送阶段 ================= */
@@ -230,9 +235,9 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
     else {
         /* 警告需要锁/阻塞代码 被上层尝试调用 */
         char buffer[128];
-        const int t_len = snprintf(buffer, 128,
-                                   "%s[%lu] %c/%s %s:%d:  %s \r\n %s", COLOR_RED, tick, 'E', "LOG", short_file, line
-                                   , "该代码尝试在中断调用有锁的代码！", COLOR_RESET);
+        const int t_len = sniprintf(buffer, 128,
+                                    "%s[%lu] %c/%s %s:%d:  %s \r\n %s", COLOR_RED, tick, 'E', "LOG", short_file, line
+                                    , "该代码尝试在中断调用有锁的代码！", COLOR_RESET);
         Hardware_Send((uint8_t *) buffer, t_len);
         /* 采用阻塞式的代码发生 */
         Hardware_Send((uint8_t *) log_buf, total_len);
@@ -251,5 +256,191 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
     }
 }
 
+/**
+ * @brief 将数据传入环形缓冲区通知唤醒发送任务
+ * @param data 数据源
+ * @param len  数据长度
+ */
+static void Log_PushBytes_NoBlock(const uint8_t *data, uint16_t len) {
+#if LOG_ASYNC_ENABLE
+    if (osKernelGetState() == osKernelRunning) {
+        uint32_t write_len = (uint32_t) len;
+        (void) WriteRingBuffer(&s_logRB, (uint8_t *) data, &write_len, false);
+
+        if (s_logTaskHandle != NULL) {
+            (void) osThreadFlagsSet(s_logTaskHandle, LOG_TASK_FLAG);
+        }
+    }
+#else
+    (void) data; (void) len;
+#endif
+}
+
+/**
+ * @brief HEX版本的日志打印输出
+ * @param level 日志等级
+ * @param file  触发文件
+ * @param line  触发行数
+ * @param tag   tag
+ * @param buf   数据源缓冲区
+ * @param len   数据长度
+ * @note  buf为中文时ASC显示为...
+ */
+void Log_Hexdump(LogLevel_t level, const char *file, int line, const char *tag, const void *buf, uint32_t len) {
+    /* 1、检查日志等级 */
+    if (level > LOG_CURRENT_LEVEL) return;
+
+    /* 2、获取数据源的指针 */
+    const uint8_t *p = (const uint8_t *) buf;
+
+    /* 3、获取时间戳、根据日志等级获取输出颜色 */
+    const uint32_t tick = HAL_GetTick();
+    const char *color = "";
+    char level_char = ' ';
+    switch (level) {
+        case LOG_LEVEL_ERROR: color = COLOR_RED;
+            level_char = 'E';
+            break;
+        case LOG_LEVEL_WARN: color = COLOR_YELLOW;
+            level_char = 'W';
+            break;
+        case LOG_LEVEL_INFO: color = COLOR_GREEN;
+            level_char = 'I';
+            break;
+        case LOG_LEVEL_DEBUG: color = COLOR_BLUE;
+            level_char = 'D';
+            break;
+        default: break;
+    }
+
+
+    /* 4、获取文件名 */
+    const char *short_file = strrchr(file, '/');
+    if (!short_file) short_file = strrchr(file, '\\');
+    short_file = short_file ? short_file + 1 : file;
+
+    /* 5、判断是否在中断中执行 */
+    const bool in_isr = (__get_IPSR() != 0);
+
+    /* --- [收敛：定义输出宏，用于处理中断和非中断的不同路径] --- */
+#if LOG_ASYNC_ENABLE
+
+#define OUTPUT_LOG_LINE(ptr, length) do {                                      \
+    if (in_isr) {                                                              \
+        Log_PushBytes_NoBlock((const uint8_t *)(ptr), (uint16_t)(length));     \
+    } else {                                                                   \
+        if (osKernelGetState() == osKernelRunning) {                           \
+            uint32_t write_len = (uint32_t)(length);                           \
+            (void)WriteRingBuffer(&s_logRB, (uint8_t *)(ptr), &write_len, false);\
+            if (write_len > 0 && s_logTaskHandle != NULL) {                    \
+                (void)osThreadFlagsSet(s_logTaskHandle, LOG_TASK_FLAG);        \
+            }                                                                  \
+        } else {                                                               \
+            Hardware_Send((uint8_t *)(ptr), (uint16_t)(length));               \
+        }                                                                      \
+    }                                                                          \
+} while (0)
+
+#else
+
+#define OUTPUT_LOG_LINE(ptr, length) do {                                      \
+    if (in_isr) {                                                              \
+        Log_PushBytes_NoBlock((const uint8_t *)(ptr), (uint16_t)(length));     \
+    } else {                                                                   \
+        Hardware_Send((uint8_t *)(ptr), (uint16_t)(length));                   \
+    }                                                                          \
+} while (0)
+
+#endif
+
+    /* 6、非中断模式下尝试获取互斥锁 */
+    if (!in_isr && osKernelGetState() == osKernelRunning && s_logMutex != NULL) {
+        osMutexAcquire(s_logMutex, osWaitForever);
+    }
+
+    /* 7、处理空数据或无效参数 */
+    if (p == NULL || len == 0) {
+        char line_buf[128];
+        const int n = sniprintf(line_buf, sizeof(line_buf),
+                                "%s[%lu] %c/%s %s:%d: HEX len=0%s\r\n",
+                                color, tick, level_char, tag, short_file, line, COLOR_RESET);
+        if (n > 0)
+            OUTPUT_LOG_LINE(line_buf, n);
+    } else {
+        /* 8、开始循环拼装 HEX Dump 主体 */
+        static const char HEX[] = "0123456789ABCDEF";
+        for (uint32_t off = 0; off < len; off += LOG_HEX_BYTES_PER_LINE) {
+            char line_buf[LOG_LINE_MAX]; // 局部缓冲区
+            const size_t cap = sizeof(line_buf);
+            const size_t tail_reserve = strlen(COLOR_RESET) + 2 /*\r\n*/ + 1 /*\0*/;
+            const size_t limit = (cap > tail_reserve) ? (cap - tail_reserve) : 0;
+            size_t pos = 0;
+            if (limit == 0) {
+                // line_buf 太小，无法保证尾部，直接输出简版
+                char small[96];
+                int n = sniprintf(small, sizeof(small),
+                                  "%s[%lu] %c/%s %s:%d: HEX buf too small%s\r\n",
+                                  color, tick, level_char, tag, short_file, line, COLOR_RESET);
+                if (n > 0)
+                    OUTPUT_LOG_LINE(small, n);
+                break; // 或 return
+            }
+
+            /* 拼装头部 */
+            const int head = sniprintf(line_buf, sizeof(line_buf),
+                                       "%s[%lu] %c/%s %s:%d: %08lX: ",
+                                       color, tick, level_char, tag, short_file, line, (unsigned long) off);
+            if (head < 0) continue;
+            pos = (size_t) head;
+            if (pos > limit) pos = limit;
+
+            /* 拼装 HEX 主体 */
+            for (uint16_t i = 0; i < LOG_HEX_BYTES_PER_LINE; i++) {
+                /* 至少能够装下一个16进制数 */
+                if (pos + 3 > limit) break;
+                /* 防止越界读取 */
+                if (off + i < len) {
+                    const uint8_t b = p[off + i];
+                    line_buf[pos++] = HEX[(b >> 4) & 0x0F];
+                    line_buf[pos++] = HEX[b & 0x0F];
+                    line_buf[pos++] = ' ';
+                } else {
+                    line_buf[pos++] = ' ';
+                    line_buf[pos++] = ' ';
+                    line_buf[pos++] = ' ';
+                }
+                /* 每 8 字节额外空格 */
+                if (i == 7 && pos + 1 < limit) line_buf[pos++] = ' ';
+            }
+
+            /* ASCII 区 */
+            if (pos + 1 < limit) line_buf[pos++] = '|';
+            for (uint16_t i = 0; i < LOG_HEX_BYTES_PER_LINE; i++) {
+                if (pos + 1 > limit) break;
+                if (off + i < len) {
+                    const uint8_t c = p[off + i];
+                    line_buf[pos++] = (c >= 32 && c <= 126) ? (char) c : '.';
+                } else {
+                    line_buf[pos++] = ' ';
+                }
+            }
+            if (pos + 1 <= limit) line_buf[pos++] = '|';
+
+            /* 尾部：颜色重置与换行 */
+            const int tail = sniprintf(line_buf + pos, cap - pos, "%s\r\n", COLOR_RESET);
+            if (tail > 0) pos += (size_t) tail;
+            if (pos < cap) line_buf[pos] = '\0';
+            /* 调用收敛后的输出逻辑 */
+            OUTPUT_LOG_LINE(line_buf, pos);
+        }
+    }
+
+    /* 9、释放互斥锁 */
+    if (!in_isr && osKernelGetState() == osKernelRunning && s_logMutex != NULL) {
+        osMutexRelease(s_logMutex);
+    }
+
+#undef OUTPUT_LOG_LINE // 宏仅在该函数内有效
+}
 
 #endif

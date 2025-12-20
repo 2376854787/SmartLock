@@ -102,11 +102,11 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
 
         # Add user defined libraries
 )
-# 启用浮点数打印
-target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
-        -Wl,-u,_printf_float
-        -Wl,-u,_scanf_float
-)
+## 启用浮点数打印
+#target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
+#        -Wl,-u,_printf_float
+#        -Wl,-u,_scanf_float
+#)
 
 # --- 生成 .bin 和 .hex 文件 ---
 if (CMAKE_OBJCOPY)
