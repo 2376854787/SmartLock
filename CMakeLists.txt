@@ -56,6 +56,7 @@ add_executable(${CMAKE_PROJECT_NAME}
         Drivers/BSP/as608/ThirdParty/LibDriver_AS608/driver_as608.c
         Drivers/BSP/as608/Core/Src/as608_port.c
         Drivers/BSP/as608/Core/Src/as608_service.c
+        Application/Src/as608_test_task.c
 
 )
 
