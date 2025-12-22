@@ -53,6 +53,7 @@ add_executable(${CMAKE_PROJECT_NAME}
         components/AT/AT.c
         components/AT/AT_Core_Task.c
         components/AT/AT_UartMap.c
+        components/log/log_port.c
 
 )
 

@@ -5,17 +5,8 @@
 
 #include <stdbool.h>
 #include <string.h>
-#include "FreeRTOS.h"
 #include "MemoryAllocation.h"
-#include "task.h"
-/* 任务中进入临界区的宏 */
-#define RB_ENTER_CRITICAL()   taskENTER_CRITICAL()
-#define RB_EXIT_CRITICAL()    taskEXIT_CRITICAL()
-
-/* 中断中可以使用的临界区 */
-#define RB_ENTER_CRITICAL_FROM_ISR(saved)   do { (saved) = taskENTER_CRITICAL_FROM_ISR(); } while (0)
-#define RB_EXIT_CRITICAL_FROM_ISR(saved)    do { taskEXIT_CRITICAL_FROM_ISR((saved)); } while (0)
-
+#include "rb_port.h"
 
 static inline uint32_t RingBuffer_GetUsedSize_Internal(const RingBuffer *rb);
 
@@ -74,7 +65,7 @@ uint32_t RingBuffer_GetUsedSize(const RingBuffer *rb) {
 uint32_t RingBuffer_GetUsedSizeFromISR(const RingBuffer *rb) {
     //进入临界区
     if (rb == NULL || rb->size < 2 || rb->buffer == NULL) return 0;
-    UBaseType_t saved;
+    rb_isr_state_t saved;
     RB_ENTER_CRITICAL_FROM_ISR(saved);
     const uint32_t used_size = RingBuffer_GetUsedSize_Internal(rb);
     //退出临界区
@@ -131,7 +122,7 @@ uint32_t RingBuffer_GetRemainSize(const RingBuffer *rb) {
 uint32_t RingBuffer_GetRemainSizeFromISR(const RingBuffer *rb) {
     if (rb == NULL || rb->size < 2 || rb->buffer == NULL) return 0;
     //进入临界区
-    UBaseType_t saved;
+    rb_isr_state_t saved;
     RB_ENTER_CRITICAL_FROM_ISR(saved);
     const uint32_t size = RingBuffer_GetRemainSize_Internal(rb);
     //退出临界区
@@ -323,7 +314,7 @@ ret_code_t WriteRingBufferFromISR(RingBuffer *rb, const uint8_t *add, uint32_t *
     //1、参数合法性检查
     if (rb == NULL || add == NULL || *size == 0 || rb->buffer == NULL || rb->size < 2)return RET_E_INVALID_ARG;
     // --- 进入临界区，保护所有对 rb 成员的访问 ---
-    UBaseType_t saved;
+    rb_isr_state_t saved;
     RB_ENTER_CRITICAL_FROM_ISR(saved);
     //2、检查当前缓冲区的大小是否能够装入
     const uint32_t remain_size = RingBuffer_GetRemainSize_Internal(rb);
@@ -377,7 +368,7 @@ ret_code_t ReadRingBufferFromISR(RingBuffer *rb, uint8_t *add, uint32_t *size, c
     //1、参数合法性检查
     if (rb == NULL || add == NULL || *size == 0 || rb->buffer == NULL || rb->size < 2)return RET_E_INVALID_ARG;
     // --- 进入临界区，保护所有对 rb 成员的访问 ---
-    UBaseType_t saved;
+    rb_isr_state_t saved;
     RB_ENTER_CRITICAL_FROM_ISR(saved);
     const uint32_t usedSize = RingBuffer_GetUsedSize_Internal(rb);
     //2、检查当前缓冲区的大小是否能够装入
@@ -444,7 +435,7 @@ ret_code_t ResetRingBufferFromISR(RingBuffer *rb) {
     if (rb == NULL) {
         return RET_E_INVALID_ARG;
     }
-    UBaseType_t saved;
+    rb_isr_state_t saved;
     RB_ENTER_CRITICAL_FROM_ISR(saved);
     rb->front_index = 0;
     rb->rear_index = 0;
@@ -569,7 +560,7 @@ ret_code_t RingBuffer_WriteReserveFromISR(RingBuffer *rb,
                                     bool isCompatible) {
     if (!rb || !out || !granted || !rb->buffer || rb->size < 2) return RET_E_INVALID_ARG;
 
-    UBaseType_t saved;
+    rb_isr_state_t saved;
     RB_ENTER_CRITICAL_FROM_ISR(saved);
 
     /* 1、获取剩余空间大小 */
@@ -640,7 +631,7 @@ ret_code_t RingBuffer_WriteReserveFromISR(RingBuffer *rb,
 ret_code_t RingBuffer_WriteCommitFromISR(RingBuffer *rb, uint32_t commit) {
     if (!rb || !rb->buffer || rb->size < 2) return RET_E_INVALID_ARG;
 
-    UBaseType_t saved;
+    rb_isr_state_t saved;
     RB_ENTER_CRITICAL_FROM_ISR(saved);
 
     const uint32_t remain = RingBuffer_GetRemainSize_Internal(rb);
@@ -762,7 +753,7 @@ ret_code_t RingBuffer_ReadReserveFromISR(RingBuffer *rb,
         return RET_OK;
     }
 
-    UBaseType_t saved;
+    rb_isr_state_t saved;
     RB_ENTER_CRITICAL_FROM_ISR(saved);
 
     const uint32_t used = RingBuffer_GetUsedSize_Internal(rb);
@@ -850,7 +841,7 @@ ret_code_t RingBuffer_ReadCommit(RingBuffer *rb, uint32_t commit) {
 ret_code_t RingBuffer_ReadCommitFromISR(RingBuffer *rb, uint32_t commit) {
     if (!rb || !rb->buffer || rb->size < 2) return RET_E_INVALID_ARG;
 
-    UBaseType_t saved;
+    rb_isr_state_t saved;
     RB_ENTER_CRITICAL_FROM_ISR(saved);
     const uint32_t used = RingBuffer_GetUsedSize_Internal(rb);
     if (commit > used) {
@@ -918,7 +909,7 @@ ret_code_t RingBuffer_DropFromISR(RingBuffer *rb, uint32_t drop, uint32_t *dropp
 
     /* 1、判断剩余的存储字节数 */
 
-    UBaseType_t saved;
+    rb_isr_state_t saved;
     RB_ENTER_CRITICAL_FROM_ISR(saved);
     const uint32_t used = RingBuffer_GetUsedSize_Internal(rb);
     if (drop == 0) {

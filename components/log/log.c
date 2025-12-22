@@ -45,17 +45,13 @@ static void Log_PushBytes_NoBlock(const uint8_t *data, uint16_t len);
 
 /* ================= 外部依赖 ================= */
 
-/* 引入串口句柄，用于硬件发送 */
-extern UART_HandleTypeDef huart1;
-
-/* 硬件层发送函数的封装 */
-static void Hardware_Send(const uint8_t *data, const uint16_t len) {
-    /* 使用 HAL 库阻塞式发送，超时时间 100ms */
-    HAL_UART_Transmit(&huart1, (uint8_t *) data, len, 100);
-}
 
 /* ================= 变量定义 ================= */
-
+static log_backend_t s_log_backend = {
+    .send_async = NULL,
+    .user = NULL,
+};
+static bool s_log_backend_ready = 0;
 /* 互斥量句柄：用于保护日志缓冲区，防止多线程同时写入导致乱码 */
 static osMutexId_t s_logMutex = NULL;
 
@@ -79,7 +75,21 @@ static const osMutexAttr_t logMutex_attr = {"LogMutex", osMutexRecursive, NULL, 
 #endif
 
 /* ================= 内部任务实现 ================= */
+/**
+ * @brief 判断是否初始化发送端
+ * @return
+ */
+static inline uint8_t Log_BackendReady(void) {
+    return s_log_backend_ready;
+}
 
+/**
+ * @brief 查询返回后端配置
+ * @return
+ */
+static inline const log_backend_t *Log_GetBackend(void) {
+    return &s_log_backend;
+}
 #if LOG_ASYNC_ENABLE
 /**
  * @brief 日志后台处理任务
@@ -100,7 +110,12 @@ void Log_Task_Entry(void *argument) {
             /* 从 RingBuffer 读取数据 */
             if (ret_is_ok(ReadRingBuffer(&s_logRB, send_buf, &read_len, true))) {
                 /* 3. 调用硬件发送 (低优先级任务可以阻塞) */
-                Hardware_Send(send_buf, read_len);
+                const log_backend_t *b = Log_GetBackend();
+                if (Log_BackendReady()) {
+                    (void) b->send_async(send_buf, (uint16_t) read_len, b->user);
+                } else {
+                    printf("LOG日志发送端配置异常！！！、、\r\n");
+                }
             } else {
                 /* 读取失败或为空，退出循环 */
                 read_len = 0;
@@ -148,9 +163,11 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
     /* 1. 过滤低等级日志 */
     if (level > LOG_CURRENT_LEVEL) return;
 
+    const bool in_isr = (__get_IPSR() != 0);
+
     /* 2. 获取互斥锁 (保护静态缓冲区 static char log_buf) */
     /* 只有当内核运行中时才需要锁，初始化阶段单线程运行不需要锁 */
-    if (osKernelGetState() == osKernelRunning) {
+    if (osKernelGetState() == osKernelRunning && !in_isr) {
         if (s_logMutex != NULL) {
             /* 等待获取锁，超时时间设为最大 */
             osMutexAcquire(s_logMutex, osWaitForever);
@@ -193,7 +210,7 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
 
     /* 3. 拼装日志头: [Tick] L/TAG: */
     const int head_len = snprintf_my(log_buf, LOG_LINE_MAX,
-                                  "%s[%lu] %c/%s %s:%d: ", color, tick, level_char, tag, short_file, line);
+                                     "%s[%lu] %c/%s %s:%d: ", color, tick, level_char, tag, short_file, line);
 
     /* 4. 拼装用户内容 (处理可变参数) */
     va_list args;
@@ -231,21 +248,47 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
                 }
             } else {
                 /* 缓冲区已满：可以选择丢弃，或者在此处强制改为阻塞发送(会影响实时性) */
+                printf("缓冲区已满！！！%s \r\n", log_buf);
             }
         } else {
             /* 如果调度器没启动 (例如在 Log_Init 前使用)，强制使用同步发送 */
-            Hardware_Send((uint8_t *) log_buf, total_len);
+            printf("RTOS调度器没启动！！！%s \r\n", log_buf);
         }
     } /* if (__get_IPSR() == 0) */
     else {
         /* 警告需要锁/阻塞代码 被上层尝试调用 */
         char buffer[128];
-        const int t_len = sniprintf(buffer, 128,
-                                    "%s[%lu] %c/%s %s:%d:  %s \r\n %s", COLOR_RED, tick, 'E', "LOG", short_file, line
-                                    , "该代码尝试在中断调用有锁的代码！", COLOR_RESET);
-        Hardware_Send((uint8_t *) buffer, t_len);
-        /* 采用阻塞式的代码发生 */
-        Hardware_Send((uint8_t *) log_buf, total_len);
+        uint32_t t_len = sniprintf(buffer, 128,
+                                   "%s[%lu] %c/%s %s:%d:  %s \r\n %s", COLOR_RED, tick, 'E', "LOG", short_file, line
+                                   , "该代码尝试在中断调用有锁的代码！", COLOR_RESET);
+
+        uint32_t write_len = total_len;
+        /* 发送数据到缓冲区 提示 */
+        if (ret_is_ok(WriteRingBufferFromISR(&s_logRB, (uint8_t *) buffer, &t_len, false))) {
+            /* 写入成功，设置标志位唤醒后台任务 */
+            if (s_logTaskHandle != NULL) {
+                /* osThreadFlagsSet 在 CMSIS-OS2 (STM32实现) 中通常是 ISR 安全的 */
+                /* 它内部会自动判断是否在中断中，并调用对应的 FreeRTOS FromISR 函数 */
+                osThreadFlagsSet(s_logTaskHandle, LOG_TASK_FLAG);
+            }
+        } else {
+            /* 缓冲区已满：可以选择丢弃，或者在此处强制改为阻塞发送(会影响实时性) */
+            printf("缓冲区已满！！！%s \r\n", log_buf);
+        }
+
+        /* 发送数据到缓冲区 日志 */
+        if (ret_is_ok(WriteRingBufferFromISR(&s_logRB, (uint8_t *) log_buf, &write_len, false))) {
+            /* 写入成功，设置标志位唤醒后台任务 */
+            if (s_logTaskHandle != NULL) {
+                /* osThreadFlagsSet 在 CMSIS-OS2 (STM32实现) 中通常是 ISR 安全的 */
+                /* 它内部会自动判断是否在中断中，并调用对应的 FreeRTOS FromISR 函数 */
+                osThreadFlagsSet(s_logTaskHandle, LOG_TASK_FLAG);
+            }
+        } else {
+            /* 缓冲区已满：可以选择丢弃，或者在此处强制改为阻塞发送(会影响实时性) */
+            /* 采用阻塞式的代码发生 */
+            printf("缓冲区已满！！！%s \r\n", log_buf);
+        }
     }
 
 #else
@@ -341,7 +384,7 @@ void Log_Hexdump(LogLevel_t level, const char *file, int line, const char *tag, 
                 (void)osThreadFlagsSet(s_logTaskHandle, LOG_TASK_FLAG);        \
             }                                                                  \
         } else {                                                               \
-            Hardware_Send((uint8_t *)(ptr), (uint16_t)(length));               \
+            printf("HEX打印缓冲区已满！！！%s \r\n", ptr);               \
         }                                                                      \
     }                                                                          \
 } while (0)
@@ -384,8 +427,8 @@ void Log_Hexdump(LogLevel_t level, const char *file, int line, const char *tag, 
                 // line_buf 太小，无法保证尾部，直接输出简版
                 char small[96];
                 int n = snprintf_my(small, sizeof(small),
-                                 "%s[%lu] %c/%s %s:%d: HEX buf too small%s\r\n",
-                                 color, tick, level_char, tag, short_file, line, COLOR_RESET);
+                                    "%s[%lu] %c/%s %s:%d: HEX buf too small%s\r\n",
+                                    color, tick, level_char, tag, short_file, line, COLOR_RESET);
                 if (n > 0)
                     OUTPUT_LOG_LINE(small, n);
                 break; // 或 return
@@ -393,8 +436,8 @@ void Log_Hexdump(LogLevel_t level, const char *file, int line, const char *tag, 
 
             /* 拼装头部 */
             const int head = snprintf_my(line_buf, sizeof(line_buf),
-                                      "%s[%lu] %c/%s %s:%d: %08lX: ",
-                                      color, tick, level_char, tag, short_file, line, (unsigned long) off);
+                                         "%s[%lu] %c/%s %s:%d: %08lX: ",
+                                         color, tick, level_char, tag, short_file, line, (unsigned long) off);
             if (head < 0) continue;
             pos = (size_t) head;
             if (pos > limit) pos = limit;
@@ -447,5 +490,24 @@ void Log_Hexdump(LogLevel_t level, const char *file, int line, const char *tag, 
 
 #undef OUTPUT_LOG_LINE // 宏仅在该函数内有效
 }
+
+
+/**
+ * @brief 注册日志后端（UART/RTT/USB/Flash 等）
+ * @note  必须在 Log_Init() 之前调用；一般只调用一次
+ */
+void Log_SetBackend(log_backend_t b) {
+    // 若传入无效后端，则清空并标记未就绪
+    if (b.send_async == NULL ) {
+        memset(&s_log_backend, 0, sizeof(s_log_backend));
+        s_log_backend_ready = 0;
+        return;
+    }
+
+    /* 直接拷贝保存 */
+    s_log_backend = b;
+    s_log_backend_ready = 1;
+}
+
 
 #endif
