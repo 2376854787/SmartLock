@@ -43,7 +43,8 @@
 #include "Usart1_manage.h"
 #include "water_adc.h"
 #include "AT.h"
-#include "../../components/AT/AT_Core_Task.h"
+#include "AT_Core_Task.h"
+#include "log_port.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -247,6 +248,7 @@ void MX_FREERTOS_Init(void) {
     /* 水滴传感器 任务*/
     Water_Sensor_TaskHandle = osThreadNew(waterSensor_task, NULL, &Water_Sensor_attributes);
     /* 日志任务 创建信号量、创建任务 */
+    Log_PortInit();
     Log_Init();
     /* 串口AT解析任务 创建信号量、创建任务*/
     at_core_task_init(&g_at_manager, &huart3);

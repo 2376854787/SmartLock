@@ -24,6 +24,7 @@
 /* USER CODE BEGIN Includes */
 #include "AT_Core_Task.h"
 #include "KEY.h"
+#include "log_port.h"
 #include "myfree.h"
 /* USER CODE END Includes */
 
@@ -304,6 +305,7 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
   /* DMA 发送后回调唤醒 */
   AT_Manage_TxCpltCallback(huart);
+  LOG_UART_TxCpltCallback(huart);
 }
 
 /* USER CODE END 1 */

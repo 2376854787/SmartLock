@@ -28,6 +28,14 @@ typedef enum {
     LOG_LEVEL_ALL // 全部
 } LogLevel_t;
 
+/* 发送函数抽象 */
+typedef int (*log_send_async_fn_t)(const uint8_t *data, uint16_t len, void *user);
+
+typedef struct {
+    log_send_async_fn_t send_async; // 启动发送（最终要DMA/IT非阻塞）
+    void *user; // 例如 UART_HandleTypeDef*
+} log_backend_t;
+
 
 /* 设置当前系统的过滤等级 (小于此等级的日志不会打印) */
 // 这里默认设为 DEBUG，开发完后可以改成 INFO 或 ERROR
@@ -44,7 +52,11 @@ void Log_Hexdump(LogLevel_t level, const char *file, int line, const char *tag, 
 /* 初始化日志系统 (RTOS模式下必须先调用) */
 void Log_Init(void);
 
-/* ================= 宏定义封装 (用户主要用这些) ================= */
+/* 发送函数抽象 */
+void Log_SetBackend(log_backend_t b);
+void Log_OnTxDoneISR(void);
+
+/* ================= 宏定义封装  ================= */
 
 #if  (G_LOG_ENABLE==1)
 
