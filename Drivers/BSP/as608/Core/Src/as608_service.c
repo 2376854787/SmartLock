@@ -98,11 +98,11 @@ static as608_svc_rc_t wait_done(osSemaphoreId_t sem, uint32_t timeout_ms)
 
 static uint8_t wait_finger_image(uint32_t addr, uint32_t timeout_ms, as608_status_t *status)
 {
-    /* 每 200ms 轮询一次 as608_get_image */
+    /* Poll as608_get_image every 200ms. */
     const uint32_t step = 200u;
-    uint32_t left = timeout_ms;
+    const uint32_t start = osKernelGetTickCount();
 
-    while (left > 0)
+    while ((uint32_t)(osKernelGetTickCount() - start) < timeout_ms)
     {
         uint8_t r = as608_get_image(&s_handle, addr, status);
         if (r != 0)
@@ -114,12 +114,12 @@ static uint8_t wait_finger_image(uint32_t addr, uint32_t timeout_ms, as608_statu
             return 0;
         }
         as608_interface_delay_ms(step);
-        left = (left > step) ? (left - step) : 0;
     }
 
-    /* 超时：保持 status 原值（一般是 NO_FINGERPRINT） */
+    /* Timeout: keep status unchanged (typically NO_FINGERPRINT). */
     return 0xFEu;
 }
+
 
 static void wait_finger_remove(uint32_t addr, uint32_t max_ms)
 {
@@ -300,7 +300,9 @@ as608_svc_rc_t AS608_CRUD_Create(uint16_t id, uint32_t timeout_ms, as608_status_
         return AS608_SVC_ERR;
     }
 
-    as608_svc_rc_t w = wait_done(req.done, timeout_ms);
+    uint32_t per_timeout = clamp_timeout(timeout_ms, 5000u, 60000u);
+    uint32_t wait_ms = per_timeout * 2u + 5000u;
+    as608_svc_rc_t w = wait_done(req.done, wait_ms);
     if (out_status) *out_status = req.status;
     osSemaphoreDelete(req.done);
 
@@ -330,7 +332,8 @@ as608_svc_rc_t AS608_CRUD_Read(uint32_t timeout_ms,
         return AS608_SVC_ERR;
     }
 
-    as608_svc_rc_t w = wait_done(req.done, timeout_ms);
+    uint32_t wait_ms = (timeout_ms < 1000u) ? 1000u : (timeout_ms + 1000u);
+    as608_svc_rc_t w = wait_done(req.done, wait_ms);
     if (out_found_id) *out_found_id = req.found_id;
     if (out_score) *out_score = req.score;
     if (out_status) *out_status = req.status;
@@ -360,7 +363,9 @@ as608_svc_rc_t AS608_CRUD_Update(uint16_t id, uint32_t timeout_ms, as608_status_
         return AS608_SVC_ERR;
     }
 
-    as608_svc_rc_t w = wait_done(req.done, timeout_ms);
+    uint32_t per_timeout = clamp_timeout(timeout_ms, 5000u, 60000u);
+    uint32_t wait_ms = per_timeout * 2u + 5000u;
+    as608_svc_rc_t w = wait_done(req.done, wait_ms);
     if (out_status) *out_status = req.status;
     osSemaphoreDelete(req.done);
 
