@@ -54,6 +54,7 @@ void Log_Init(void);
 
 /* 发送函数抽象 */
 void Log_SetBackend(log_backend_t b);
+void Log_OnTxDoneISR(void);
 
 /* ================= 宏定义封装  ================= */
 

@@ -38,7 +38,8 @@
 #define LOG_LINE_MAX  256
 
 /* 定义用于唤醒后台任务的事件标志位 (任意未使用的位即可) */
-#define LOG_TASK_FLAG 0x0001
+#define LOG_TASK_FLAG    0x0001
+#define LOG_TX_DONE_FLAG 0x0002
 
 /* 将单字节写入环形缓冲区 */
 static void Log_PushBytes_NoBlock(const uint8_t *data, uint16_t len);
@@ -96,33 +97,44 @@ static inline const log_backend_t *Log_GetBackend(void) {
  * @note  负责从 RingBuffer 取出数据并通过串口发送
  */
 void Log_Task_Entry(void *argument) {
-    uint8_t send_buf[128]; /* 临时发送缓存，减少对 RingBuffer 的锁占用时间 */
+    static uint8_t send_buf[128];
     uint32_t read_len;
-    for (;;) {
-        /* 1. 等待事件标志位 */
-        /* osFlagsWaitAny: 等待任意标志位，osWaitForever: 永久阻塞直到被唤醒 (也可设为 1000ms 超时) */
-        osThreadFlagsWait(LOG_TASK_FLAG, osFlagsWaitAny, 1000);
 
-        /* 2. 循环读取缓冲区直到为空 */
-        do {
+    for (;;) {
+        /* 等待：有新日志 或 上一笔发送完成（都可能触发继续flush） */
+        (void) osThreadFlagsWait(LOG_TASK_FLAG | LOG_TX_DONE_FLAG, osFlagsWaitAny, osWaitForever);
+
+        for (;;) {
             read_len = sizeof(send_buf);
 
-            /* 从 RingBuffer 读取数据 */
-            if (ret_is_ok(ReadRingBuffer(&s_logRB, send_buf, &read_len, true))) {
-                /* 3. 调用硬件发送 (低优先级任务可以阻塞) */
-                const log_backend_t *b = Log_GetBackend();
-                if (Log_BackendReady()) {
-                    (void) b->send_async(send_buf, (uint16_t) read_len, b->user);
-                } else {
-                    printf("LOG日志发送端配置异常！！！、、\r\n");
-                }
-            } else {
-                /* 读取失败或为空，退出循环 */
-                read_len = 0;
+            if (!ret_is_ok(ReadRingBuffer(&s_logRB, send_buf, &read_len, true)) || read_len == 0) {
+                break; /* 空了 */
             }
-        } while (read_len > 0);
+
+            if (!Log_BackendReady()) {
+                /* 后端未就绪：丢弃 */
+                printf("LOG发送端待就位！！！\r\n");
+                continue;
+            }
+
+            const log_backend_t *b = Log_GetBackend();
+
+            /* 启动发送：若忙则等待完成再重试 */
+            int rc;
+            do {
+                rc = b->send_async(send_buf, (uint16_t) read_len, b->user);
+                if (rc == RET_E_BUSY) {
+                    printf("LOG发送BUSY！！！\r\n");
+                    (void) osThreadFlagsWait(LOG_TX_DONE_FLAG, osFlagsWaitAny, osWaitForever);
+                }
+            } while (rc == RET_E_BUSY);
+
+            /* 启动成功后必须等这笔发送完成，才能复用 send_buf 读下一段 */
+            (void) osThreadFlagsWait(LOG_TX_DONE_FLAG, osFlagsWaitAny, osWaitForever);
+        }
     }
 }
+
 #endif
 
 /* ================= API 接口实现 ================= */
@@ -174,8 +186,8 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
         }
     }
 
-    /* 共享缓冲区 (放在静态区减少栈溢出风险) */
-    static char log_buf[LOG_LINE_MAX];
+    /* 待优化 静态ISR 和任务抢占的问题 */
+    char log_buf[LOG_LINE_MAX];
 
     /* ================= 格式化阶段 ================= */
 
@@ -293,7 +305,7 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
 
 #else
     /* 同步模式：直接阻塞发送 */
-    Hardware_Send((uint8_t *) log_buf, total_len);
+    printf("%s", log_buf);
 #endif
 
     /* 6. 释放互斥锁 */
@@ -498,7 +510,7 @@ void Log_Hexdump(LogLevel_t level, const char *file, int line, const char *tag, 
  */
 void Log_SetBackend(log_backend_t b) {
     // 若传入无效后端，则清空并标记未就绪
-    if (b.send_async == NULL ) {
+    if (b.send_async == NULL) {
         memset(&s_log_backend, 0, sizeof(s_log_backend));
         s_log_backend_ready = 0;
         return;
@@ -509,5 +521,15 @@ void Log_SetBackend(log_backend_t b) {
     s_log_backend_ready = 1;
 }
 
+/**
+ * @brief 通知任务消息存储入缓冲区完成
+ */
+void Log_OnTxDoneISR(void) {
+#if LOG_ASYNC_ENABLE
+    if (s_logTaskHandle != NULL) {
+        (void) osThreadFlagsSet(s_logTaskHandle, LOG_TX_DONE_FLAG);
+    }
+#endif
+}
 
 #endif

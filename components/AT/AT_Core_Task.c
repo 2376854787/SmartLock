@@ -88,7 +88,7 @@ void AT_Core_Task(void *argument) {
 void at_core_task_init(AT_Manager_t *at, UART_HandleTypeDef *uart) {
     const osThreadAttr_t AT_Task_attributes = {
         .name = "AT_Core_Task",
-        .stack_size = 256 * 4,
+        .stack_size = 256 * 6,
         .priority = (osPriority_t) osPriorityNormal, /*  Normal，以免被低优先级日志阻塞 */
     };
 
