@@ -86,7 +86,7 @@ const osThreadAttr_t uartTask_attributes = {
 osThreadId_t lcdTaskHandle;
 const osThreadAttr_t lcdTask_attributes = {
   .name = "lcdTask",
-  .stack_size = 256 * 4,
+  .stack_size = 256 * 5,
   .priority = (osPriority_t) osPriorityLow,
 };
 
@@ -119,7 +119,7 @@ const osThreadAttr_t Water_Sensor_attributes = {
 const osThreadAttr_t as608TestTask_attr = {
     .name = "as608_test",
     .priority = (osPriority_t)osPriorityNormal,
-    .stack_size = 1024
+    .stack_size =  256 * 5,
 };
 
 /* USER CODE END FunctionPrototypes */
@@ -377,7 +377,6 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
     AS608_Port_OnUartRxCplt(huart);
-
     // 你其它 UART 的接收处理...
 }
 /* USER CODE END Application */

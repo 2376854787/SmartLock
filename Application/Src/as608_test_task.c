@@ -7,10 +7,11 @@
 #include <stdint.h>
 
 #include "as608_port.h"
+#include "log.h"
 #include "usart.h"
 
 /* 你可以按工程实际替换为 LOGI/LOGE */
-#define TLOG(fmt, ...)   printf("[AS608_TEST] " fmt "\r\n", ##__VA_ARGS__)
+#define TLOG(fmt, ...) LOG_I("as608_test", fmt, ##__VA_ARGS__)
 
 /* 可选：如果你有 LED 指示，可打开下面宏并改成你的 LED 引脚 */
 // #define AS608_TEST_USE_LED 1

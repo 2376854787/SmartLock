@@ -332,7 +332,8 @@ static void Log_PushBytes_NoBlock(const uint8_t *data, uint16_t len) {
         }
     }
 #else
-    (void) data; (void) len;
+    (void) data;
+    (void) len;
 #endif
 }
 
@@ -407,7 +408,7 @@ void Log_Hexdump(LogLevel_t level, const char *file, int line, const char *tag, 
     if (in_isr) {                                                              \
         Log_PushBytes_NoBlock((const uint8_t *)(ptr), (uint16_t)(length));     \
     } else {                                                                   \
-        Hardware_Send((uint8_t *)(ptr), (uint16_t)(length));                   \
+        printf("%s",ptr);                   \
     }                                                                          \
 } while (0)
 
