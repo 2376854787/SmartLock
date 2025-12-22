@@ -1,9 +1,9 @@
+/* 全局启用配置宏 */
+#include "APP_config.h"
+#ifdef ENABLE_AT_SYSTEM
 #include "AT_Core_Task.h"
-
 #include <stdio.h>
 #include <string.h>
-
-
 /* 任务句柄 */
 osThreadId_t AT_Core_Task_Handle = NULL;
 
@@ -88,7 +88,7 @@ void AT_Core_Task(void *argument) {
 void at_core_task_init(AT_Manager_t *at, UART_HandleTypeDef *uart) {
     const osThreadAttr_t AT_Task_attributes = {
         .name = "AT_Core_Task",
-        .stack_size = 256 * 4,
+        .stack_size = 256 * 6,
         .priority = (osPriority_t) osPriorityNormal, /*  Normal，以免被低优先级日志阻塞 */
     };
 
@@ -147,3 +147,6 @@ void AT_Manage_TxCpltCallback(UART_HandleTypeDef *huart) {
         osThreadFlagsSet(mgr->core_task, AT_FLAG_TXDONE);
     }
 }
+
+
+#endif

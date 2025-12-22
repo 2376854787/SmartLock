@@ -9,6 +9,7 @@
 #include "log.h"
 #include "MemoryAllocation.h"
 #include "usart.h"
+#include "ret_code.h"
 extern DMA_HandleTypeDef hdma_usart1_rx;
 extern DMA_HandleTypeDef hdma_usart1_tx;
 RingBuffer g_rb_uart1 = {
@@ -18,7 +19,7 @@ RingBuffer g_rb_uart1 = {
 uint8_t DmaBuffer[DMA_BUFFER_SIZE];
 
 bool MyUart_Init(void) {
-    if (!CreateRingBuffer(&g_rb_uart1,RINGBUFFER_SIZE)) {
+    if (ret_is_err(CreateRingBuffer(&g_rb_uart1,RINGBUFFER_SIZE))) {
         printf("环形缓冲区初始化失败");
         return false;
     }
@@ -41,11 +42,11 @@ void process_dma_data(void) {
 
     //3、搬运数据到环形缓冲区  //当前数据没有回返
     if (curpos > last_pos) {
-        if (!WriteRingBuffer(&g_rb_uart1, &DmaBuffer[last_pos], &write_size, 0))
+        if (ret_is_err(WriteRingBuffer(&g_rb_uart1, &DmaBuffer[last_pos], &write_size, 0)))
             printf("写入失败\n");
     } else {
         //数据回返
-        if (!WriteRingBuffer(&g_rb_uart1, &DmaBuffer[last_pos], &write_size2, 0)) {
+        if (ret_is_err(WriteRingBuffer(&g_rb_uart1, &DmaBuffer[last_pos], &write_size2, 0))) {
             printf("Write Error of RingBuffer\n");
         }
 

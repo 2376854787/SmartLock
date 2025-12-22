@@ -1,16 +1,16 @@
 //
 // Created by yan on 2025/12/7.
 //
+#include "APP_config.h"
+#ifdef ENABLE_AT_SYSTEM
 #include "AT_UartMap.h"
-
-
 #include <stdio.h>
 #include <string.h>
 
 #include "log.h"
 #include "MemoryAllocation.h"
 #include "AT.h"
-
+#include "ret_code.h"
 
 static void AT_OnLine(AT_Manager_t *mgr, const char *line);
 
@@ -31,12 +31,12 @@ void AT_Core_Init(AT_Manager_t *at_device, UART_HandleTypeDef *uart, const HW_Se
     at_device->hw_send = hw_send;
 
     /* 2、初始化AT管理的 RingBuffer缓冲区 */
-    if (!CreateRingBuffer(&at_device->rx_rb, AT_RX_RB_SIZE)) {
+    if (ret_is_err(CreateRingBuffer(&at_device->rx_rb, AT_RX_RB_SIZE))) {
         LOG_E("RingBuffer", "at_device 环形缓冲区初始化失败");
     }
     LOG_W("heap", "%uKB- %u空间还剩余 %u", MEMORY_POND_MAX_SIZE, AT_RX_RB_SIZE, query_remain_size());
 
-    if (!CreateRingBuffer(&at_device->msg_len_rb, AT_LEN_RB_SIZE)) {
+    if (ret_is_err(CreateRingBuffer(&at_device->msg_len_rb, AT_LEN_RB_SIZE))) {
         LOG_E("RingBuffer", "at_device.mesg_rx_rb 环形缓冲区初始化失败");
     }
     LOG_W("heap", "%uKB- %u空间还剩余 %u", MEMORY_POND_MAX_SIZE, AT_LEN_RB_SIZE, query_remain_size());
@@ -171,7 +171,7 @@ void AT_Core_RxCallback(AT_Manager_t *at_manager, const UART_HandleTypeDef *huar
 #define AT_HANDLE_BYTE(b) do { \
         /* A. 尝试写入 数据 RingBuffer */ \
         write_size_one = 1; \
-        if (WriteRingBufferFromISR(&at_manager->rx_rb, &(b), &write_size_one, 0)) { \
+        if (ret_is_ok(WriteRingBufferFromISR(&at_manager->rx_rb, &(b), &write_size_one, 0))) { \
             /* 只有写入成功才统计长度，防止 Buffer 满导致逻辑错位 */ \
             ++(at_manager->isr_line_len); \
             \
@@ -181,10 +181,10 @@ void AT_Core_RxCallback(AT_Manager_t *at_manager, const UART_HandleTypeDef *huar
                 uint16_t len_val = at_manager->isr_line_len; \
                 uint32_t len_size = sizeof(uint16_t); \
                 /* 注意：这里把 &len_val 强转为 uint8_t* 写入 2 个字节 */ \
-               bool ok_len =  WriteRingBufferFromISR(&at_manager->msg_len_rb, (uint8_t*)&len_val, &len_size, 0); \
+               ret_code_t  ok_len =  WriteRingBufferFromISR(&at_manager->msg_len_rb, (uint8_t*)&len_val, &len_size, 0); \
                at_manager->isr_line_len = 0; \
                /* 溢出 */    \
-               if(!ok_len){ \
+               if((ret_is_err(ok_len))){ \
                  at_manager->rx_overflow = 1;   \
                  stop = true; \
                } else {       \
@@ -240,7 +240,7 @@ void AT_Core_Process(AT_Manager_t *at_manager) {
         uint8_t len_size_t[2];
 
         /* 3、判读当前行的字节数 是否大于最大可读数 */
-        if (!ReadRingBuffer(&at_manager->msg_len_rb, len_size_t, &size, 0)) {
+        if (ret_is_err(ReadRingBuffer(&at_manager->msg_len_rb, len_size_t, &size, 0))) {
             LOG_E("AT", "行读失败！");
             break;
         }
@@ -261,7 +261,7 @@ void AT_Core_Process(AT_Manager_t *at_manager) {
 
         /* 5、读取数据帧 */
         uint32_t to_read = actual;
-        if (!ReadRingBuffer(&at_manager->rx_rb, at_manager->line_buf, &to_read, 0) || to_read != actual) {
+        if (ret_is_err(ReadRingBuffer(&at_manager->rx_rb, at_manager->line_buf, &to_read, 0) || to_read != actual)) {
             LOG_E("AT", "数据帧读取失败/不同步 (need=%u got=%u)", actual, to_read);
             break; // 后续做“重置策略”
         }
@@ -273,7 +273,7 @@ void AT_Core_Process(AT_Manager_t *at_manager) {
             while (drop > 0) {
                 uint8_t dummy[32];
                 uint32_t chunk = (drop > sizeof(dummy)) ? sizeof(dummy) : drop;
-                if (!ReadRingBuffer(&at_manager->rx_rb, dummy, &chunk, 1) || chunk == 0) {
+                if (ret_is_err(ReadRingBuffer(&at_manager->rx_rb, dummy, &chunk, 1) || chunk == 0)) {
                     LOG_E("AT", "超长帧丢弃失败，数据可能已不同步");
                     break;
                 }
@@ -617,3 +617,6 @@ uint32_t AT_TxTimeoutMs(AT_Manager_t *mgr, uint16_t len) {
 void AT_SetTxMode(AT_Manager_t *mgr, AT_TxMode mode) {
     mgr->tx_mode = mode;
 }
+
+
+#endif

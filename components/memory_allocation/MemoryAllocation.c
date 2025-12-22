@@ -1,9 +1,7 @@
-//
-// Created by yan on 2025/10/18.
-//
+#include "APP_config.h"
+/* 静态内存分配开启宏 */
+#ifdef ENABLE_STATIC_ALLOCATION
 #include "MemoryAllocation.h"
-
-
 #include <stdlib.h>
 static uint8_t MemoryPond[MEMORY_POND_MAX_SIZE];
 volatile uint16_t MemoryPondIndex = 0; //指向还没有被分配的空间的第一个地址
@@ -51,3 +49,6 @@ void static_alloc_reset(void) {
 uint16_t query_remain_size(void) {
     return MEMORY_POND_MAX_SIZE - MemoryPondIndex;
 }
+
+
+#endif

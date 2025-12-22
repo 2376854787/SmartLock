@@ -5,6 +5,7 @@
 
 #include "cmsis_os2.h"
 #include "RingBuffer.h"
+#include  "ret_code.h"
 #include  "main.h"
 
 /*　ESP01s句柄 */
@@ -28,7 +29,7 @@ typedef enum {
 extern osMutexId_t esp01s_Mutex01Handle;
 extern ESP01S_Handle g_esp01_handle;
 extern volatile uint8_t g_esp01s_flag;
-bool command_send(UART_HandleTypeDef *huart, const char *command, const char *wait_rsu, uint16_t max_wait_time);
+ret_code_t command_send(UART_HandleTypeDef *huart, const char *command, const char *wait_rsu, uint16_t max_wait_time);
 
 void esp01s_Init(UART_HandleTypeDef *huart, uint16_t rb_size);
 
