@@ -28,7 +28,7 @@ extern "C" {
 /* clang (including clangd's parser) */
 #define COMPILER_CLANG 1
 #elif defined(__GNUC__)
-//#define COMPILER_GCC 1
+#define COMPILER_GCC 1
 #else
 #error "Unsupported compiler"
 #endif

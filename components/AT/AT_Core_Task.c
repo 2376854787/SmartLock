@@ -21,7 +21,7 @@ void AT_Core_Task(void *argument) {
     AT_Manager_t *mgr = (AT_Manager_t *) argument;
 
     for (;;) {
-        /*  用一个小超时周期，让我们有机会做超时检查（例如 10ms）*/
+        /*  用一个小超时周期，让有机会做超时检查*/
         const uint32_t flags = osThreadFlagsWait(AT_FLAG_RX | AT_FLAG_TX | AT_FLAG_TXDONE,
                                                  osFlagsWaitAny,
                                                  AT_MsToTicks(10));
@@ -37,8 +37,8 @@ void AT_Core_Task(void *argument) {
             /* 判断是否能够发送 */
 #if defined(AT_TX_USE_DMA) && (AT_TX_USE_DMA == 1)
             if (mgr->tx_mode == AT_TX_DMA && mgr->tx_busy) {
-                // DMA 还在发：不要取队列，不要动 next，不要判错
-                // 等待 TXDONE 或下一次 10ms 轮询
+                /* DMA 还在发：不要取队列，不要动 next，不要判错 */
+                /* 等待 TXDONE 或下一次 10ms 轮询 */
                 goto timeout_check;
             }
 #endif

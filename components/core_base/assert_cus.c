@@ -4,7 +4,7 @@
 #ifdef ENABLE_ASSERT_SYSTEM
 #include "assert_cus.h"
 #include <string.h>
-
+#include "compiler_cus.h"
 /* 可选：如果你想在 assert 里打日志，把你的 log.h include 进来
  * 注意：assert 不能依赖“可能阻塞”的输出路径；建议只在任务态且 log 异步就绪时打印
  */
@@ -29,9 +29,8 @@ typedef struct {
 
 #define ASSERT_RECORD_MAGIC 0xA55E12C3u
 
-/* 放到 noinit 段（需要链接脚本支持）。如果你暂时没配，也不会影响功能，只是记录不保留。 */
+/* 放到 noinit 段需要链接脚本支持 否则记录不保留。 */
 __SECTION(".noinit.assert")
-
 static volatile assert_record_t g_assert_record;
 
 /* 断言运行默认配置 */
