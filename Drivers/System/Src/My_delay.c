@@ -67,10 +67,9 @@ void delay_init(uint16_t sysclk) {
  * @param nus 延时微妙数
  */
 void delay_us(uint32_t nus) {
-    uint32_t Ticks;
     uint32_t told, tnow, tcnt = 0;
-    uint32_t reload = SysTick->LOAD;
-    Ticks = nus * g_fac_us;
+    const uint32_t reload = SysTick->LOAD; /*168mhz主频下为 168000 */
+    const uint32_t Ticks = nus * g_fac_us;
 #if SYS_SUPPORT_OS
     delay_osschedlock();
 #endif
@@ -78,13 +77,17 @@ void delay_us(uint32_t nus) {
     while (1) {
         tnow = SysTick->VAL;
         if (tnow != told) {
+            /* 判断当前是否走完了设定时间应该完成的Systick寄存器的变化值 */
             if (tnow < told) {
+                /* 没有回环 */
                 tcnt += told - tnow;
             } else {
+                /* 回环了 */
                 tcnt += reload - tnow + told;
             }
             told = tnow;
             if (tcnt >= Ticks) {
+                /* 对应tick到了 */
                 break;
             }
         }

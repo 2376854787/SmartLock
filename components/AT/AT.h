@@ -233,6 +233,7 @@ uint32_t AT_TxTimeoutMs(AT_Manager_t *mgr, uint16_t len);
  * @brief 更改具体AT设备的发送模式
  * @param mgr AT设备句柄
  * @param mode 设定的模式
+ * @note 默认根据全局宏定义现在是 开启DMA
  */
 void AT_SetTxMode(AT_Manager_t *mgr, AT_TxMode mode);
 

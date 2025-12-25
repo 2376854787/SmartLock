@@ -169,18 +169,18 @@ void AT_Core_RxCallback(AT_Manager_t *at_manager, const UART_HandleTypeDef *huar
 
     /* 定义一个宏来处理单个字节逻辑，避免回卷代码重复 */
 #define AT_HANDLE_BYTE(b) do { \
-        /* A. 尝试写入 数据 RingBuffer */ \
+        /* 尝试写入 数据 RingBuffer */ \
         write_size_one = 1; \
         if (ret_is_ok(WriteRingBufferFromISR(&at_manager->rx_rb, &(b), &write_size_one, 0))) { \
             /* 只有写入成功才统计长度，防止 Buffer 满导致逻辑错位 */ \
             ++(at_manager->isr_line_len); \
             \
-            /* B. 检测结束符 \n 或 > */ \
+            /* 检测结束符 \n 或 > */ \
             if ((b) == '\n' || (b) == '>') { \
                 /* 将当前行的长度 (uint16_t) 存入 长度 RingBuffer */ \
                 uint16_t len_val = at_manager->isr_line_len; \
                 uint32_t len_size = sizeof(uint16_t); \
-                /* 注意：这里把 &len_val 强转为 uint8_t* 写入 2 个字节 */ \
+                /* 把 &len_val 强转为 uint8_t* 写入 2 个字节 */ \
                ret_code_t  ok_len =  WriteRingBufferFromISR(&at_manager->msg_len_rb, (uint8_t*)&len_val, &len_size, 0); \
                at_manager->isr_line_len = 0; \
                /* 溢出 */    \
