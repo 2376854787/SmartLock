@@ -45,6 +45,7 @@
 #include "AT.h"
 #include "AT_Core_Task.h"
 #include "log_port.h"
+#include "lvgl_task.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -72,7 +73,7 @@
 osThreadId_t KeyScanTaskHandle;
 const osThreadAttr_t KeyScanTask_attributes = {
   .name = "KeyScanTask",
-  .stack_size = 256 * 4,
+  .stack_size = 256 * 5,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for uartTask */
@@ -120,6 +121,13 @@ const osThreadAttr_t as608TestTask_attr = {
     .name = "as608_test",
     .priority = (osPriority_t)osPriorityNormal,
     .stack_size =  256 * 5,
+};
+
+/* LVGL 任务属性 */
+const osThreadAttr_t lvglTask_attributes = {
+    .name = "lvgl_task",
+    .stack_size = 4096 * 2,
+    .priority = (osPriority_t) osPriorityAboveNormal,
 };
 
 /* USER CODE END FunctionPrototypes */
@@ -246,14 +254,16 @@ void MX_FREERTOS_Init(void) {
     // MqttTaskHandle = osThreadNew(StartMqttAtTask, NULL, &MqttTask_attributes);
 
     /* 水滴传感器 任务*/
-    Water_Sensor_TaskHandle = osThreadNew(waterSensor_task, NULL, &Water_Sensor_attributes);
+    // Water_Sensor_TaskHandle = osThreadNew(waterSensor_task, NULL, &Water_Sensor_attributes);
     /* 日志任务 创建信号量、创建任务 */
     Log_PortInit();
     Log_Init();
     /* 串口AT解析任务 创建信号量、创建任务*/
     at_core_task_init(&g_at_manager, &huart3);
-    /* as608指纹模块测试函数 */
-    osThreadNew(AS608_TestTask, NULL, &as608TestTask_attr);
+    /* as608指纹模块测试函数 - 已停用，使用LVGL界面 */
+    // osThreadNew(AS608_TestTask, NULL, &as608TestTask_attr);
+    /* LVGL任务 */
+    lvgl_init();
 
   /* USER CODE END RTOS_THREADS */
 
@@ -334,8 +344,9 @@ void StartTask_LCD(void *argument)
     LOG_I("StartTask_LCD", "启动完成");
     LOG_I("111", "启动完成");
     for (;;) {
-        sniprintf(buffer, 128, "Time:%lu", HAL_GetTick());
-        lcd_show_string(50, 300, 240, 32, 32, buffer, BLACK);
+        // LVGL已接管LCD显示，注释掉旧的LCD API调用
+        // sniprintf(buffer, 128, "Time:%lu", HAL_GetTick());
+        // lcd_show_string(50, 300, 240, 32, 32, buffer, BLACK);
 
         // UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
         // printf("lcdTask high watermark = %lu\r\n", (unsigned long) watermark);

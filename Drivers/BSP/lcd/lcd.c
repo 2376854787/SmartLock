@@ -691,7 +691,7 @@ void lcd_init(void) {
                                           g_sram_handle.Init.ExtendedMode);
     }
 
-    lcd_display_dir(0); /* 默认为竖屏 */
+    lcd_display_dir(1); /* 默认为横屏 */
     LCD_BL(1); /* 点亮背光 */
     lcd_clear(WHITE);
 }

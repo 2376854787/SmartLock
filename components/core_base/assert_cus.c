@@ -4,6 +4,7 @@
 #ifdef ENABLE_ASSERT_SYSTEM
 #include "assert_cus.h"
 #include <string.h>
+#include "compiler_cus.h"
 
 /* 可选：如果你想在 assert 里打日志，把你的 log.h include 进来
  * 注意：assert 不能依赖“可能阻塞”的输出路径；建议只在任务态且 log 异步就绪时打印

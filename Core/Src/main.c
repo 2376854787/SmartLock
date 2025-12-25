@@ -181,15 +181,16 @@ int main(void)
     LOG_E("cu", "ssss");
     // bsp_esp8266_Init();
 
-    lcd_show_string(10, 40, 240, 32, 32, "STM32", RED);
-
-    lcd_show_string(10, 80, 240, 24, 24, "TFTLCD TEST", MAGENTA);
-
-    lcd_show_string(10, 110, 240, 16, 16, "ATOM@ALIENTEK", CYAN);
+    // LVGL已接管LCD显示，注释掉旧的LCD API调用
+    // lcd_show_string(10, 40, 240, 32, 32, "STM32", RED);
+    // lcd_show_string(10, 80, 240, 24, 24, "TFTLCD TEST", MAGENTA);
+    // lcd_show_string(10, 110, 240, 16, 16, "ATOM@ALIENTEK", CYAN);
     MyUart_Init();
     KEY_Init(&key0, &key0_config);
     KEY_Init(&key1, &key1_config);
     KEY_Init(&key2, &key2_config);
+    
+    HAL_Delay(100);
 
   /* USER CODE END 2 */
 
