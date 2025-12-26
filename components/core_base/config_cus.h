@@ -11,4 +11,5 @@
 #define ENABLE_STATIC_ALLOCATION        /* 静态内存分配 */
 #define ENABLE_RINGBUFFER_SYSTEM        /* 环形缓冲区系统 */
 #define ENABLE_HFSM_SYSTEM              /* HFSM系统 */
+#define ENABLE_KEYS
 #endif //SMARTLOCK_CONFIG_CUS_H
