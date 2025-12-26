@@ -28,7 +28,8 @@ typedef enum {
     RET_E_UNSUPPORTED = -9,
     RET_E_IO = -10,
     RET_E_CRC = -11,
-    RET_E_DATA_NOT_ENOUGH,
+    RET_E_DATA_NOT_ENOUGH =-12,
+    RET_E_ISR = -13,
 
     /* extend as needed... */
 } ret_code_t;
