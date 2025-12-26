@@ -4,13 +4,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "ret_code.h"
-#include "osal_config.h"
+
 
 #ifdef __cplusplus
 extern "C" {
-
-
-
 #endif
 /* =========== 通用常量 ========== */
 #define OSAL_WAIT_FOREVER (0xFFFFFFFFU)
@@ -24,25 +21,27 @@ typedef void *osal_msgq_t;
 typedef void *osal_thread_t;
 
 typedef uint32_t osal_flags_t;
+
 /* 线程入口函数 */
 typedef void (*osal_thread_fn_t)(void *arg);
+
 typedef enum {
     OSAL_FLAGS_WAIT_ANY = 0,
     OSAL_FLAGS_WAIT_ALL = 1
-} OSAL_flags_wait_t;
+} osal_flags_wait_t;
 
 typedef enum {
     OSAL_PRIO_LOW = 0,
     OSAL_PRIO_NORMAL,
     OSAL_PRIO_HIGH,
     OSAL_PRIO_REALTIME
-} OSAL_priority_t;
+} osal_priority_t;
 
 typedef struct {
     const char *name;
     uint32_t stack_size;
-    OSAL_priority_t priority;
-} OSAL_thread_attr_t;
+    osal_priority_t priority;
+} osal_thread_attr_t;
 
 /* ====================================== 内核状态/时间 ====================================================== */
 bool OSAL_kernel_is_running(void);
@@ -91,7 +90,7 @@ ret_code_t OSAL_sem_give(osal_sem_t sem);
 ret_code_t OSAL_sem_give_from_isr(osal_sem_t sem);
 
 /* ============================================ 消息队列 ====================================================== */
-ret_code_t OSAL_msgq_create(osal_msgq_t out, const char *name, uint32_t item_size, uint32_t item_count);
+ret_code_t OSAL_msgq_create(osal_msgq_t *out, const char *name, uint32_t item_size, uint32_t item_count);
 
 ret_code_t OSAL_msgq_delete(osal_msgq_t msgq);
 
@@ -100,13 +99,13 @@ ret_code_t OSAL_msgq_put(osal_msgq_t msgq, void *msg, uint32_t timeout_ms);
 ret_code_t OSAL_msgq_get(osal_msgq_t msgq, void *msg, uint32_t timeout_ms);
 
 /* ============================================ 线程 && Flags ====================================================== */
-ret_code_t OSAL_thread_create(osal_thread_t *out, osal_thread_fn_t fn, void *arg, const OSAL_thread_attr_t *attr);
+ret_code_t OSAL_thread_create(osal_thread_t *out, osal_thread_fn_t fn, void *arg, const osal_thread_attr_t *attr);
 
 osal_thread_t OSAL_thread_self(void);
 
-ret_code_t OSAL_thread_flags_set(osal_flags_t t, osal_flags_t flags);
+ret_code_t OSAL_thread_flags_set(osal_thread_t t, osal_flags_t flags);
 
-osal_flags_t OSAL_thread_flags_wait(osal_flags_t flags, OSAL_flags_wait_t mode, uint32_t timeout_ms);
+osal_flags_t OSAL_thread_flags_wait(osal_flags_t flags, osal_flags_wait_t mode, uint32_t timeout_ms);
 
 /* ============================================ Atomic原子操作 ====================================================== */
 
@@ -125,6 +124,7 @@ static inline bool OSAL_atomic_cas_u32(volatile uint32_t *v, uint32_t expected, 
     OSAL_exit_critical();
     return ok;
 }
+
 #ifdef __cplusplus
 }
 #endif
