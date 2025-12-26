@@ -87,6 +87,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         components/log
         components/AT
         components/core_base
+        components/osal
 
 
 )
