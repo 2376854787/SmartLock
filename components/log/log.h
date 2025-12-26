@@ -1,7 +1,3 @@
-//
-// Created by yan on 2025/12/6.
-//
-
 #ifndef SMARTCLOCK_LOG_H
 #define SMARTCLOCK_LOG_H
 #include <stdint.h>

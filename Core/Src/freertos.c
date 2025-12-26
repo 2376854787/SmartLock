@@ -70,7 +70,7 @@
 osThreadId_t KeyScanTaskHandle;
 const osThreadAttr_t KeyScanTask_attributes = {
     .name = "KeyScanTask",
-    .stack_size = 256 * 4,
+    .stack_size = 256 * 5,
     .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for uartTask */

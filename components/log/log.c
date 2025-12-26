@@ -8,9 +8,7 @@
 #include <string.h>     /* 用于 strrchr, memcpy */
 
 /* 引入 CMSIS-OS2 和 RingBuffer */
-#include <sys/types.h>
-
-#include "cmsis_os2.h"
+#include "osal.h"
 #include "MemoryAllocation.h"
 #include "RingBuffer.h"
 #include "ret_code.h"
@@ -54,22 +52,15 @@ static log_backend_t s_log_backend = {
 };
 static bool s_log_backend_ready = 0;
 /* 互斥量句柄：用于保护日志缓冲区，防止多线程同时写入导致乱码 */
-static osMutexId_t s_logMutex = NULL;
+static osal_mutex_t s_logMutex = NULL;
 
 #if LOG_ASYNC_ENABLE
 /* 异步模式资源 */
 static RingBuffer s_logRB; /* 环形缓冲区实例 */
 
 /* 后台发送任务的线程 ID */
-static osThreadId_t s_logTaskHandle = NULL;
+static osal_thread_t s_logTaskHandle = NULL;
 
-/* 互斥量属性 (CMSIS v2 需要) */
-static const osMutexAttr_t logMutex_attr = {
-    "LogMutex",
-    osMutexRecursive | osMutexPrioInherit, /* 推荐使用递归锁和优先级继承 */
-    NULL,
-    0
-};
 #else
 /* 同步模式下的互斥量属性 */
 static const osMutexAttr_t logMutex_attr = {"LogMutex", osMutexRecursive, NULL, 0};
@@ -102,7 +93,7 @@ void Log_Task_Entry(void *argument) {
 
     for (;;) {
         /* 等待：有新日志 或 上一笔发送完成（都可能触发继续flush） */
-        (void) osThreadFlagsWait(LOG_TASK_FLAG | LOG_TX_DONE_FLAG, osFlagsWaitAny, osWaitForever);
+        (void) OSAL_thread_flags_wait(LOG_TASK_FLAG | LOG_TX_DONE_FLAG, OSAL_FLAGS_WAIT_ANY, OSAL_WAIT_FOREVER);
 
         for (;;) {
             read_len = sizeof(send_buf);
@@ -125,12 +116,12 @@ void Log_Task_Entry(void *argument) {
                 rc = b->send_async(send_buf, (uint16_t) read_len, b->user);
                 if (rc == RET_E_BUSY) {
                     printf("LOG发送BUSY！！！\r\n");
-                    (void) osThreadFlagsWait(LOG_TX_DONE_FLAG, osFlagsWaitAny, osWaitForever);
+                    (void) OSAL_thread_flags_wait(LOG_TX_DONE_FLAG, OSAL_FLAGS_WAIT_ANY, OSAL_WAIT_FOREVER);
                 }
             } while (rc == RET_E_BUSY);
 
             /* 启动成功后必须等这笔发送完成，才能复用 send_buf 读下一段 */
-            (void) osThreadFlagsWait(LOG_TX_DONE_FLAG, osFlagsWaitAny, osWaitForever);
+            (void) OSAL_thread_flags_wait(LOG_TX_DONE_FLAG, OSAL_FLAGS_WAIT_ANY, OSAL_WAIT_FOREVER);
         }
     }
 }
@@ -146,7 +137,7 @@ void Log_Task_Entry(void *argument) {
 void Log_Init(void) {
     /* 1. 创建互斥量 (如果尚未创建) */
     if (s_logMutex == NULL) {
-        s_logMutex = osMutexNew(&logMutex_attr);
+        OSAL_mutex_create(&s_logMutex, "LogMutex", true, true);
     }
 
 #if LOG_ASYNC_ENABLE
@@ -157,14 +148,14 @@ void Log_Init(void) {
     }
     LOG_W("heap", "%uKB- %u空间还剩余 %u", MEMORY_POND_MAX_SIZE, LOG_RB_SIZE, query_remain_size());
     /* 3. 创建后台发送任务 */
-    const osThreadAttr_t logTask_attributes = {
+    const osal_thread_attr_t log_attr = {
         .name = "LogTask",
-        .stack_size = 128 * 4, /* 栈大小，根据实际情况调整 */
-        .priority = (osPriority_t) osPriorityLow, /* 低优先级，不影响业务 */
+        .stack_size = 128 * 4,
+        .priority = OSAL_PRIO_LOW,
     };
 
     /* 创建线程并保存句柄 */
-    s_logTaskHandle = osThreadNew(Log_Task_Entry, NULL, &logTask_attributes);
+    OSAL_thread_create(&s_logTaskHandle, Log_Task_Entry, NULL, &log_attr);
 #endif
 }
 
@@ -179,10 +170,10 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
 
     /* 2. 获取互斥锁 (保护静态缓冲区 static char log_buf) */
     /* 只有当内核运行中时才需要锁，初始化阶段单线程运行不需要锁 */
-    if (osKernelGetState() == osKernelRunning && !in_isr) {
+    if (OSAL_kernel_is_running() && !in_isr) {
         if (s_logMutex != NULL) {
             /* 等待获取锁，超时时间设为最大 */
-            osMutexAcquire(s_logMutex, osWaitForever);
+            OSAL_mutex_lock(s_logMutex, OSAL_WAIT_FOREVER);
         }
     }
 
@@ -246,7 +237,7 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
 #if LOG_ASYNC_ENABLE
     /* 异步模式：判断内核是否正在运行 */
     if (__get_IPSR() == 0) {
-        if (osKernelGetState() == osKernelRunning) {
+        if (OSAL_kernel_is_running()) {
             /* 尝试写入 RingBuffer */
             uint32_t write_len = total_len;
 
@@ -254,9 +245,9 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
             if (ret_is_ok(WriteRingBuffer(&s_logRB, (uint8_t *) log_buf, &write_len, false))) {
                 /* 写入成功，设置标志位唤醒后台任务 */
                 if (s_logTaskHandle != NULL) {
-                    /* osThreadFlagsSet 在 CMSIS-OS2 (STM32实现) 中通常是 ISR 安全的 */
+                    /* OSAL_thread_flags_set 在 CMSIS-OS2 (STM32实现) 中通常是 ISR 安全的 */
                     /* 它内部会自动判断是否在中断中，并调用对应的 FreeRTOS FromISR 函数 */
-                    osThreadFlagsSet(s_logTaskHandle, LOG_TASK_FLAG);
+                    OSAL_thread_flags_set(s_logTaskHandle, LOG_TASK_FLAG);
                 }
             } else {
                 /* 缓冲区已满：可以选择丢弃，或者在此处强制改为阻塞发送(会影响实时性) */
@@ -279,9 +270,9 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
         if (ret_is_ok(WriteRingBufferFromISR(&s_logRB, (uint8_t *) buffer, &t_len, false))) {
             /* 写入成功，设置标志位唤醒后台任务 */
             if (s_logTaskHandle != NULL) {
-                /* osThreadFlagsSet 在 CMSIS-OS2 (STM32实现) 中通常是 ISR 安全的 */
+                /* OSAL_thread_flags_set 在 CMSIS-OS2 (STM32实现) 中通常是 ISR 安全的 */
                 /* 它内部会自动判断是否在中断中，并调用对应的 FreeRTOS FromISR 函数 */
-                osThreadFlagsSet(s_logTaskHandle, LOG_TASK_FLAG);
+                OSAL_thread_flags_set(s_logTaskHandle, LOG_TASK_FLAG);
             }
         } else {
             /* 缓冲区已满：可以选择丢弃，或者在此处强制改为阻塞发送(会影响实时性) */
@@ -292,9 +283,9 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
         if (ret_is_ok(WriteRingBufferFromISR(&s_logRB, (uint8_t *) log_buf, &write_len, false))) {
             /* 写入成功，设置标志位唤醒后台任务 */
             if (s_logTaskHandle != NULL) {
-                /* osThreadFlagsSet 在 CMSIS-OS2 (STM32实现) 中通常是 ISR 安全的 */
+                /* OSAL_thread_flags_set 在 CMSIS-OS2 (STM32实现) 中通常是 ISR 安全的 */
                 /* 它内部会自动判断是否在中断中，并调用对应的 FreeRTOS FromISR 函数 */
-                osThreadFlagsSet(s_logTaskHandle, LOG_TASK_FLAG);
+                OSAL_thread_flags_set(s_logTaskHandle, LOG_TASK_FLAG);
             }
         } else {
             /* 缓冲区已满：可以选择丢弃，或者在此处强制改为阻塞发送(会影响实时性) */
@@ -309,9 +300,9 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
 #endif
 
     /* 6. 释放互斥锁 */
-    if (osKernelGetState() == osKernelRunning) {
+    if (OSAL_kernel_is_running()) {
         if (s_logMutex != NULL) {
-            osMutexRelease(s_logMutex);
+            OSAL_mutex_unlock(s_logMutex);
         }
     }
 }
@@ -323,12 +314,12 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
  */
 static void Log_PushBytes_NoBlock(const uint8_t *data, uint16_t len) {
 #if LOG_ASYNC_ENABLE
-    if (osKernelGetState() == osKernelRunning) {
+    if (OSAL_kernel_is_running()) {
         uint32_t write_len = (uint32_t) len;
         (void) WriteRingBufferFromISR(&s_logRB, (uint8_t *) data, &write_len, false);
 
         if (s_logTaskHandle != NULL) {
-            (void) osThreadFlagsSet(s_logTaskHandle, LOG_TASK_FLAG);
+            (void) OSAL_thread_flags_set(s_logTaskHandle, LOG_TASK_FLAG);
         }
     }
 #else
@@ -380,7 +371,7 @@ void Log_Hexdump(LogLevel_t level, const char *file, int line, const char *tag, 
     short_file = short_file ? short_file + 1 : file;
 
     /* 5、判断是否在中断中执行 */
-    const bool in_isr = (__get_IPSR() != 0);
+    const bool in_isr = OSAL_in_isr();
 
     /* --- [收敛：定义输出宏，用于处理中断和非中断的不同路径] --- */
 #if LOG_ASYNC_ENABLE
@@ -389,11 +380,11 @@ void Log_Hexdump(LogLevel_t level, const char *file, int line, const char *tag, 
     if (in_isr) {                                                              \
         Log_PushBytes_NoBlock((const uint8_t *)(ptr), (uint16_t)(length));     \
     } else {                                                                   \
-        if (osKernelGetState() == osKernelRunning) {                           \
+        if (OSAL_kernel_is_running()) {                           \
             uint32_t write_len = (uint32_t)(length);                           \
             (void)WriteRingBuffer(&s_logRB, (uint8_t *)(ptr), &write_len, false);\
             if (write_len > 0 && s_logTaskHandle != NULL) {                    \
-                (void)osThreadFlagsSet(s_logTaskHandle, LOG_TASK_FLAG);        \
+                (void)OSAL_thread_flags_set(s_logTaskHandle, LOG_TASK_FLAG);        \
             }                                                                  \
         } else {                                                               \
             printf("HEX打印缓冲区已满！！！%s \r\n", ptr);               \
@@ -414,8 +405,8 @@ void Log_Hexdump(LogLevel_t level, const char *file, int line, const char *tag, 
 #endif
 
     /* 6、非中断模式下尝试获取互斥锁 */
-    if (!in_isr && osKernelGetState() == osKernelRunning && s_logMutex != NULL) {
-        osMutexAcquire(s_logMutex, osWaitForever);
+    if (!in_isr && OSAL_kernel_is_running() && s_logMutex != NULL) {
+        OSAL_mutex_lock(s_logMutex, OSAL_WAIT_FOREVER);
     }
 
     /* 7、处理空数据或无效参数 */
@@ -496,8 +487,8 @@ void Log_Hexdump(LogLevel_t level, const char *file, int line, const char *tag, 
     }
 
     /* 9、释放互斥锁 */
-    if (!in_isr && osKernelGetState() == osKernelRunning && s_logMutex != NULL) {
-        osMutexRelease(s_logMutex);
+    if (!in_isr && OSAL_kernel_is_running() && s_logMutex != NULL) {
+        OSAL_mutex_unlock(s_logMutex);
     }
 
 #undef OUTPUT_LOG_LINE // 宏仅在该函数内有效
@@ -527,7 +518,7 @@ void Log_SetBackend(log_backend_t b) {
 void Log_OnTxDoneISR(void) {
 #if LOG_ASYNC_ENABLE
     if (s_logTaskHandle != NULL) {
-        (void) osThreadFlagsSet(s_logTaskHandle, LOG_TX_DONE_FLAG);
+        (void) OSAL_thread_flags_set(s_logTaskHandle, LOG_TX_DONE_FLAG);
     }
 #endif
 }

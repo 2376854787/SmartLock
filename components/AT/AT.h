@@ -31,7 +31,7 @@
 
 /* 根据模式引入头文件 */
 #if AT_RTOS_ENABLE
-#include "cmsis_os2.h"
+#include "osal.h"
 #endif
 /* 向前声明 */
 typedef struct AT_Manager_t AT_Manager_t;
@@ -79,7 +79,7 @@ typedef struct {
 
     /* --- 同步机制 (双模兼容) --- */
 #if AT_RTOS_ENABLE
-    osSemaphoreId_t done_sem; /* RTOS: 信号量，用于阻塞调用任务 */
+    osal_sem_t done_sem; /* RTOS: 信号量，用于阻塞调用任务 */
 #else
     volatile bool is_finished; /* 裸机: 完成标志位，用于 while 等待 */
 #endif
@@ -113,16 +113,16 @@ typedef struct AT_Manager_t {
     volatile uint32_t req_start_tick; /* 指令开始发送的时间戳 */
     /* 5、DMA开启配置 */
 #if AT_RTOS_ENABLE
-    osSemaphoreId_t tx_done_sem; // TX完成信号量
+    osal_sem_t tx_done_sem; // TX完成信号量
     volatile uint8_t tx_busy; // 仅做保护/调试
     volatile uint8_t tx_error; // 发送错误标志（ErrorCallback置位）
     AT_TxMode tx_mode; // 运行期选择
 #endif
     /* --- 6. 线程与同步 (双模兼容) --- */
 #if AT_RTOS_ENABLE
-    osMessageQueueId_t cmd_q; // 存 AT_Command_t* 指针
-    osThreadId_t core_task; /* AT 解析核心任务句柄 */
-    osMutexId_t pool_mutex; /* 命令池互斥锁 */
+    osal_msgq_t cmd_q; // 存 AT_Command_t* 指针
+    osal_thread_t core_task; /* AT 解析核心任务句柄 */
+    osal_mutex_t pool_mutex; /* 命令池互斥锁 */
 
     AT_Command_t cmd_pool[AT_MAX_PENDING]; /* 真正的对象数组 */
     uint16_t free_stack[AT_MAX_PENDING]; /* 空闲对象索引栈 */
@@ -219,7 +219,7 @@ AT_Command_t *AT_SendAsync(AT_Manager_t *mgr, const char *cmd, const char *expec
  * @brief 获取信号量确保发送后被任务唤醒
  * @param sem 需要被获取的信号量
  */
-void AT_SemDrain(osSemaphoreId_t sem);
+void AT_SemDrain(osal_sem_t sem);
 
 /**
  * @brief 根据波特率和发送的数据长度计算需要的时间
