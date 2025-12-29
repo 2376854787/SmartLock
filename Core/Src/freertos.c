@@ -32,6 +32,8 @@
 
 #include "as608_port.h"
 #include "as608_test_task.h"
+#include "rc522_test_task.h"
+#include "rc522_my_test_task.h"
 #include "ESP01S.h"
 #include "KEY.h"
 #include "lcd.h"
@@ -73,7 +75,7 @@
 osThreadId_t KeyScanTaskHandle;
 const osThreadAttr_t KeyScanTask_attributes = {
   .name = "KeyScanTask",
-  .stack_size = 256 * 5,
+  .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for uartTask */
@@ -87,7 +89,7 @@ const osThreadAttr_t uartTask_attributes = {
 osThreadId_t lcdTaskHandle;
 const osThreadAttr_t lcdTask_attributes = {
   .name = "lcdTask",
-  .stack_size = 256 * 5,
+  .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityLow,
 };
 
@@ -122,6 +124,20 @@ const osThreadAttr_t as608TestTask_attr = {
     .priority = (osPriority_t)osPriorityNormal,
     .stack_size =  256 * 5,
 };
+
+const osThreadAttr_t rc522TestTask_attr = {
+    .name = "rc522_test",
+    .priority = (osPriority_t)osPriorityNormal,
+    .stack_size = 512 * 4,
+};
+
+const osThreadAttr_t rc522MyTestTask_attr = {
+    .name = "rc522_my_test",
+    .priority = (osPriority_t)osPriorityNormal,
+    .stack_size = 512 * 4,
+};
+
+
 
 /* LVGL 任务属性 */
 const osThreadAttr_t lvglTask_attributes = {
@@ -261,9 +277,11 @@ void MX_FREERTOS_Init(void) {
     /* 串口AT解析任务 创建信号量、创建任务*/
     at_core_task_init(&g_at_manager, &huart3);
     /* as608指纹模块测试函数 - 已停用，使用LVGL界面 */
-    // osThreadNew(AS608_TestTask, NULL, &as608TestTask_attr);
-    /* LVGL任务 */
-    lvgl_init();
+   //  osThreadNew(AS608_TestTask, NULL, &as608TestTask_attr);
+   //  osThreadNew(RC522_TestTask, NULL, &rc522TestTask_attr);
+     osThreadNew(RC522_MyTestTask, NULL, &rc522MyTestTask_attr);
+  /* LVGL任务 */
+    //lvgl_init();
 
   /* USER CODE END RTOS_THREADS */
 

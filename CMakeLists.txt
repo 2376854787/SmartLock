@@ -64,6 +64,7 @@ add_executable(${CMAKE_PROJECT_NAME}
         Drivers/BSP/Keys/KEY.c
         Drivers/BSP/lcd/lcd.c
         Drivers/BSP/gt9147/gt9147.c
+        Drivers/BSP/rc522/rc522.c
         Drivers/BSP/ESP01s/ESP01S.c
         Application/Src/wifi_mqtt_task.c
         Application/Src/mqtt_at_task.c
@@ -81,6 +82,8 @@ add_executable(${CMAKE_PROJECT_NAME}
         Drivers/BSP/as608/Core/Src/as608_port.c
         Drivers/BSP/as608/Core/Src/as608_service.c
         Application/Src/as608_test_task.c
+        Application/Src/rc522_test_task.c
+        Application/Src/rc522_my_test_task.c
         components/log/log_port.c
         Drivers/BSP/lvgl_port/lvgl_port.c
         Application/Src/ui_fingerprint.c
@@ -191,6 +194,7 @@ add_executable(${CMAKE_PROJECT_NAME}
         Middlewares/LVGL/src/extra/widgets/tabview/lv_tabview.c
         Middlewares/LVGL/src/extra/widgets/tileview/lv_tileview.c
         Middlewares/LVGL/src/extra/widgets/win/lv_win.c
+        Drivers/BSP/rc522/rc522_my.c
 
 )
 
@@ -216,6 +220,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         Drivers/BSP/Keys
         Drivers/BSP/lcd
         Drivers/BSP/gt9147
+        Drivers/BSP/rc522
         Drivers/BSP/ESP01s
         Application/Inc
         Drivers/BSP/Beep

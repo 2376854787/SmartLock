@@ -77,6 +77,10 @@ void Error_Handler(void);
 #define Water_Sensor_GPIO_Port GPIOA
 #define LCD_BL_Pin GPIO_PIN_15
 #define LCD_BL_GPIO_Port GPIOB
+#define Rc522_CS_Pin GPIO_PIN_6
+#define Rc522_CS_GPIO_Port GPIOG
+#define Rc522_NRT_Pin GPIO_PIN_7
+#define Rc522_NRT_GPIO_Port GPIOG
 #define as608_tx_Pin GPIO_PIN_10
 #define as608_tx_GPIO_Port GPIOC
 #define as608_rx_Pin GPIO_PIN_11

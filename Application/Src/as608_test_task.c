@@ -96,7 +96,7 @@ void AS608_TestTask(void *argument) {
     const uint32_t search_timeout_ms = 8000;
     /* 初始化as608服务 */
     AS608_Port_BindUart(&huart4);
-    /* AS608_Service_Init(0xFFFFFFFF, 0x00000000); */
+    AS608_Service_Init(0xFFFFFFFF, 0x00000000);
     /* AS608服务已在ui_fingerprint_init中初始化，这里不再重复初始化 */
     for (;;) {
         test_led_toggle();
