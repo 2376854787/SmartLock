@@ -64,20 +64,22 @@ bool OSAL_in_isr(void);
 bool OSAL_is_timeout(osal_tick_t start_tick, uint32_t duration_ms);
 
 /* ============================================ 临界区 ====================================================== */
-/* 旧版保存state 可恢复 + 上下文正确 */
+/* 线程态、RTOS 任务专用 */
 void OSAL_enter_critical(void);
 
-/* 旧版保存state 可恢复 + 上下文正确 */
+/* 线程态、RTOS 任务专用 */
 void OSAL_exit_critical(void);
 
-/* 新版保存state 可恢复 + 上下文正确 */
+/* 通用 */
 void OSAL_enter_critical_ex(osal_crit_state_t *state);
 
-/* 新版保存state 可恢复 + 上下文正确 */
+/* 通用 */
 void OSAL_exit_critical_ex(osal_crit_state_t state);
 
+/* isr 专用*/
 void OSAL_enter_critical_from_isr(osal_crit_state_t *state);
 
+/* isr 专用*/
 void OSAL_exit_critical_from_isr(osal_crit_state_t state);
 
 /* ============================================ 互斥锁 ====================================================== */

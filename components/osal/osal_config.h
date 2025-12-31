@@ -1,10 +1,6 @@
 #ifndef SMARTLOCK_OSAL_CONFIG_H
 #define SMARTLOCK_OSAL_CONFIG_H
-/* 启动CMSIS v2 标准 */
-#define OSAL_BACKEND_CMSIS_OS2        1
 
-/* 1 使用 FreeRTOS 的taskENTER_CRITICAL()/FROM_ISR
- * 0 使用 PRIMASK  全关中断 （延时更大）
- */
-#define OSAL_CRITICAL_IMPL_FREERTOS   1
+
+
 #endif //SMARTLOCK_OSAL_CONFIG_H

@@ -15,7 +15,7 @@
 #endif
 #define STM32F4
 #if defined(STM32F1) || defined(STM32F4) || defined(STM32F0) || defined(STM32F7) || defined(STM32H7)
-#include "core_cm4.h"
+#include "stm32f4xx.h"
 #endif
 
 /* ========= Optional record (noinit) ========= */
@@ -30,7 +30,7 @@ typedef struct {
 #define ASSERT_RECORD_MAGIC 0xA55E12C3u
 
 /* 放到 noinit 段需要链接脚本支持 否则记录不保留。 */
-__SECTION(".noinit.assert")
+CORE_SECTION(".noinit.assert")
 static volatile assert_record_t g_assert_record;
 
 /* 断言运行默认配置 */

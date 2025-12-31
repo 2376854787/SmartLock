@@ -1,5 +1,6 @@
 #include "osal_config.h"
 #include "osal.h"
+#include "APP_config.h"
 
 #if OSAL_BACKEND_CMSIS_OS2
 #include "cmsis_os2.h"
@@ -7,18 +8,23 @@
 #include "cmsis_os.h"
 #include "stddef.h"
 
+/* ============ 断言 =============*/
+/* 断言系统全局配置 */
+#ifdef ENABLE_ASSERT_SYSTEM
+#include "assert_cus.h"
+#endif
+#ifdef ENABLE_ASSERT_SYSTEM
+#define OSAL_ASSERT(expr)   CORE_ASSERT(expr)
+#define OSAL_FAULT(expr)    CORE_FAULT_ASSERT(expr)
+#else
+#define OSAL_ASSERT(expr)   do { (void)(expr); } while (0)
+#define OSAL_FAULT(expr)    do { (void)(expr); } while (0)
+#endif
+/* ============ 断言 =============*/
+
 #if OSAL_CRITICAL_IMPL_FREERTOS
 #include "FreeRTOS.h"
 #include "task.h"
-#endif
-
-/* 临界区裸机环境嵌套 */
-static uint32_t g_irq_crit_nest = 0;
-static uint32_t g_irq_saved_primask = 0;
-
-/* RTOS 临界区嵌套 */
-#if OSAL_CRITICAL_IMPL_FREERTOS
-static uint32_t g_rtos_crit_nest = 0;
 #endif
 
 
@@ -137,20 +143,24 @@ bool OSAL_is_timeout(osal_tick_t start_tick, uint32_t duration_ms) {
 }
 
 /* ====================================================== 临界区 ====================================================== */
+/* 裸机/调度未启动：PRIMASK 嵌套 */
+static uint32_t g_irq_crit_nest = 0U;
+static uint32_t g_irq_saved_primask = 0U;
+
 /**
  * @note 根据宏定义的不同选择 关中断或者RTOS的临界区
  */
 void OSAL_enter_critical(void) {
+    OSAL_FAULT(!OSAL_in_isr());
+
 #if OSAL_CRITICAL_IMPL_FREERTOS
-    /* 线程态：调度已启动 -> 用 RTOS critical；否则 -> 用 PRIMASK */
     if (OSAL_kernel_is_running()) {
         taskENTER_CRITICAL();
-        g_rtos_crit_nest++;
         return;
     }
 #endif
 
-    /* 调度未启动/裸机：用 PRIMASK（可恢复） */
+    /* 调度未启动/裸机：用 PRIMASK（可恢复嵌套） */
     if (g_irq_crit_nest == 0U) {
         g_irq_saved_primask = __get_PRIMASK();
         __disable_irq();
@@ -163,22 +173,21 @@ void OSAL_enter_critical(void) {
  * @note 退出临界区
  */
 void OSAL_exit_critical(void) {
+    OSAL_FAULT(!OSAL_in_isr());
+
 #if OSAL_CRITICAL_IMPL_FREERTOS
-    /* 只有在 enter 确实走了 RTOS critical 时才 exit */
-    if (g_rtos_crit_nest > 0U) {
-        g_rtos_crit_nest--;
+    if (OSAL_kernel_is_running()) {
         taskEXIT_CRITICAL();
         return;
     }
 #endif
 
-    /* 否则按 PRIMASK 路径恢复 */
-    if (g_irq_crit_nest > 0U) {
-        g_irq_crit_nest--;
-        if (g_irq_crit_nest == 0U) {
-            __DMB();
-            __set_PRIMASK(g_irq_saved_primask);
-        }
+    /* PRIMASK 嵌套恢复 */
+    OSAL_FAULT(g_irq_crit_nest > 0U);
+    g_irq_crit_nest--;
+    if (g_irq_crit_nest == 0U) {
+        __DMB();
+        __set_PRIMASK(g_irq_saved_primask);
     }
 }
 
@@ -191,15 +200,20 @@ void OSAL_enter_critical_ex(osal_crit_state_t *state) {
 
 #if OSAL_CRITICAL_IMPL_FREERTOS
     if (OSAL_in_isr()) {
-        const UBaseType_t s = taskENTER_CRITICAL_FROM_ISR();
-        *state = (osal_crit_state_t) ((((uint32_t) s) & OSAL_CRIT_PAYLOAD_MASK) | OSAL_CRIT_MODE_RTOS_ISR);
-        return;
-    }
-
-    if (OSAL_kernel_is_running()) {
-        taskENTER_CRITICAL();
-        *state = (osal_crit_state_t) OSAL_CRIT_MODE_RTOS_THREAD;
-        return;
+        /* 调度未启动时不要走 FreeRTOS FROM_ISR，回退 PRIMASK */
+        if (OSAL_kernel_is_running()) {
+            const UBaseType_t s = taskENTER_CRITICAL_FROM_ISR();
+            *state = (osal_crit_state_t) ((((uint32_t) s) & OSAL_CRIT_PAYLOAD_MASK) | OSAL_CRIT_MODE_RTOS_ISR);
+            return;
+        }
+        /* else fallthrough -> PRIMASK */
+    } else {
+        if (OSAL_kernel_is_running()) {
+            taskENTER_CRITICAL();
+            *state = (osal_crit_state_t) OSAL_CRIT_MODE_RTOS_THREAD;
+            return;
+        }
+        /* else fallthrough -> PRIMASK */
     }
 #endif
 
@@ -239,7 +253,8 @@ void OSAL_exit_critical_ex(osal_crit_state_t state) {
         return;
     }
 
-    /* mode 未知：这里可选加断言/日志 */
+    /* 断言 */
+    OSAL_FAULT(0);
 }
 
 /**
@@ -248,15 +263,22 @@ void OSAL_exit_critical_ex(osal_crit_state_t state) {
  */
 void OSAL_enter_critical_from_isr(osal_crit_state_t *state) {
     if (!state) return;
+
 #if OSAL_CRITICAL_IMPL_FREERTOS
-    const UBaseType_t s = taskENTER_CRITICAL_FROM_ISR();
-    *state = (osal_crit_state_t) s;
-#else
-    uint32_t s = __get_PRIMASK();
-    __disable_irq();
-    __DMB();
-    *state = (osal_crit_state_t) s;
+    if (OSAL_kernel_is_running()) {
+        const UBaseType_t s = taskENTER_CRITICAL_FROM_ISR();
+        *state = (osal_crit_state_t) s;
+        return;
+    }
 #endif
+
+    /* 调度未启动/裸机：用 PRIMASK */
+    {
+        uint32_t s = __get_PRIMASK();
+        __disable_irq();
+        __DMB();
+        *state = (osal_crit_state_t) s;
+    }
 }
 
 /**
@@ -265,12 +287,16 @@ void OSAL_enter_critical_from_isr(osal_crit_state_t *state) {
  */
 void OSAL_exit_critical_from_isr(osal_crit_state_t state) {
 #if OSAL_CRITICAL_IMPL_FREERTOS
-    taskEXIT_CRITICAL_FROM_ISR((UBaseType_t)state);
-#else
+    if (OSAL_kernel_is_running()) {
+        taskEXIT_CRITICAL_FROM_ISR((UBaseType_t)state);
+        return;
+    }
+#endif
+
     __DMB();
     __set_PRIMASK((uint32_t) state);
-#endif
 }
+
 
 /* ================================================== 互斥锁 ========================================================= */
 /**

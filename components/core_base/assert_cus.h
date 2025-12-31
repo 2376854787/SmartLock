@@ -43,7 +43,7 @@ void Assert_OnFail(const char *expr,
 
 /* 可选：更“致命”的 fault assert（语义上表示系统不该继续运行） */
 #define CORE_FAULT_ASSERT(expr) do { \
-if (__UNLIKELY(!(expr))) { Assert_OnFail(#expr, __FILE__, __LINE__); } \
+if (CORE_UNLIKELY(!(expr))) { Assert_OnFail(#expr, __FILE__, __LINE__); } \
 } while (0)
 
 /* 常规 assert */
