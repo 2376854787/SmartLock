@@ -55,6 +55,12 @@ add_executable(${CMAKE_PROJECT_NAME}
         components/AT/AT_UartMap.c
         components/log/log_port.c
         components/osal/osal_cmsis2.c
+        components/soft_timer/src/soft_timer.c
+        components/auto_init/src/auto_init.c
+        platform/STM32/ports/hal_gpio_port.c
+        platform/STM32/ports/hal_uart_port.c
+        platform/STM32/ports/hal_time_port.c
+        platform/STM32/osal/osal_port.c
 
 )
 

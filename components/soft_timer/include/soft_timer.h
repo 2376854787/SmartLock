@@ -1,0 +1,8 @@
+//
+// Created by yan on 2025/12/31.
+//
+
+#ifndef SMARTLOCK_SOFT_TIMER_H
+#define SMARTLOCK_SOFT_TIMER_H
+
+#endif //SMARTLOCK_SOFT_TIMER_H

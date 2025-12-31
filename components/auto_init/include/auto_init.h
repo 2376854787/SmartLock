@@ -1,0 +1,8 @@
+//
+// Created by yan on 2025/12/31.
+//
+
+#ifndef SMARTLOCK_AUTO_INIT_H
+#define SMARTLOCK_AUTO_INIT_H
+
+#endif //SMARTLOCK_AUTO_INIT_H
