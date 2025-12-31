@@ -8,9 +8,6 @@
 
 #ifdef __cplusplus
 extern "C" {
-
-
-
 #endif
 /* =========== 通用常量 ========== */
 #define OSAL_WAIT_FOREVER (0xFFFFFFFFU)
