@@ -8,6 +8,9 @@
 
 #ifdef __cplusplus
 extern "C" {
+
+
+
 #endif
 /* =========== 通用常量 ========== */
 #define OSAL_WAIT_FOREVER (0xFFFFFFFFU)
@@ -61,9 +64,17 @@ bool OSAL_in_isr(void);
 bool OSAL_is_timeout(osal_tick_t start_tick, uint32_t duration_ms);
 
 /* ============================================ 临界区 ====================================================== */
+/* 旧版保存state 可恢复 + 上下文正确 */
 void OSAL_enter_critical(void);
 
+/* 旧版保存state 可恢复 + 上下文正确 */
 void OSAL_exit_critical(void);
+
+/* 新版保存state 可恢复 + 上下文正确 */
+void OSAL_enter_critical_ex(osal_crit_state_t *state);
+
+/* 新版保存state 可恢复 + 上下文正确 */
+void OSAL_exit_critical_ex(osal_crit_state_t state);
 
 void OSAL_enter_critical_from_isr(osal_crit_state_t *state);
 
