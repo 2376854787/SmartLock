@@ -86,7 +86,7 @@ extern "C" {
 #endif
 
 /* ================= Common helpers ================= */
-#define CORE_UNUSED(x)      (void)(x)                                           /* 消除未使用警告 */
+#define CORE__UNUSED(x)      (void)(x)                                           /* 消除未使用警告 */
 
 /* Static assert (C11 or fallback) */
 #define CORE_STR_IMPL(x) #x
