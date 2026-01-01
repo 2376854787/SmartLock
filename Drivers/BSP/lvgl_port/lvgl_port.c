@@ -5,13 +5,23 @@
 #include "log.h"
 
 static lv_disp_draw_buf_t draw_buf;
-#define LVGL_BUF_LINES 8
+/* Display draw buffer height (in lines).
+ * RAM usage ~= LV_HOR_RES_MAX * LVGL_BUF_LINES * sizeof(lv_color_t).
+ * For 800x480 RGB565: 800 * 4 * 2 = 6.4KB.
+ * Increase if you want faster refresh and have RAM; decrease to save RAM.
+ */
+#define LVGL_BUF_LINES 4
 static lv_color_t buf1[LV_HOR_RES_MAX * LVGL_BUF_LINES];
 static lv_coord_t last_x = 0;
 static lv_coord_t last_y = 0;
 static bool touch_ready = false;
 static bool last_pressed = false;
 
+/* LVGL display flush callback:
+ * - LVGL renders into `buf1` (line buffer).
+ * - We push the requested area directly to the LCD GRAM (RGB565).
+ * - Must call `lv_disp_flush_ready()` when done.
+ */
 static void disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p) {
     uint16_t x, y;
     uint32_t width = area->x2 - area->x1 + 1;
@@ -30,6 +40,12 @@ static void disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *c
     lv_disp_flush_ready(disp);
 }
 
+/* LVGL input device read callback (pointer):
+ * - Reads touch status/coordinates from the GT9xxx compat layer.
+ * - Coordinate mapping (landscape swap / mirror fix) is handled in the GT9xxx driver:
+ *   see `Drivers/BSP/touch/gt9xxx.c` (`gt9xxx_map_point()` and invert macros).
+ * - When released, LVGL expects the last known point coordinates.
+ */
 static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data) {
     (void) indev_drv;
     uint16_t x = 0;
@@ -65,6 +81,7 @@ void lv_port_disp_init(void) {
     static lv_disp_drv_t disp_drv;
     uint32_t buf_size = lcddev.width * LVGL_BUF_LINES;
 
+    /* Note: `LVGL_BUF_LINES` controls RAM usage and flush chunk size. */
     lv_disp_draw_buf_init(&draw_buf, buf1, NULL, buf_size);
 
     lv_disp_drv_init(&disp_drv);

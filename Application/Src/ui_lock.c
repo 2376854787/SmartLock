@@ -2,6 +2,22 @@
 
 #include "lvgl.h"
 
+/* UI: Multimodal Smart Lock (dev stage)
+ *
+ * Screen flow:
+ * - Home: time/date/weather (placeholders for future RTC/network)
+ * - Choose: select unlock method (Fingerprint / RFID / PIN)
+ * - Each method has:
+ *   - Unlock page (verify)
+ *   - Manage page (CRUD: enroll/delete/clear; kept for development)
+ *
+ * Concurrency model:
+ * - LVGL must be accessed from the LVGL handler task. Any background work (AS608 / RC522)
+ *   runs in worker tasks and reports results back to UI via `lv_async_call()`.
+ * - If you later add networking/time updates, follow the same pattern: do work in a task,
+ *   then schedule UI updates on the LVGL thread.
+ */
+
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -13,17 +29,53 @@
 
 #include "as608_port.h"
 #include "as608_service.h"
+#include "lock_data.h"
 #include "log.h"
 #include "lvgl_task.h"
 #include "rc522_my.h"
 #include "usart.h"
 
-static lv_color_t c_bg(void) { return lv_color_hex(0x0B1020); }
-static lv_color_t c_card(void) { return lv_color_hex(0x141B2D); }
-static lv_color_t c_card2(void) { return lv_color_hex(0x0F1628); }
-static lv_color_t c_text(void) { return lv_color_hex(0xE8EEF8); }
-static lv_color_t c_sub(void) { return lv_color_hex(0x93A4C7); }
-static lv_color_t c_accent(void) { return lv_color_hex(0x4C7DFF); }
+typedef struct {
+    lv_color_t bg;
+    lv_color_t card;
+    lv_color_t card2;
+    lv_color_t text;
+    lv_color_t sub;
+    lv_color_t accent;
+} ui_palette_t;
+
+/* Home and subpages use different palettes (per UX requirement). */
+static const ui_palette_t s_pal_home = {
+    .bg = LV_COLOR_MAKE(0x0B, 0x10, 0x20),
+    .card = LV_COLOR_MAKE(0x14, 0x1B, 0x2D),
+    .card2 = LV_COLOR_MAKE(0x0F, 0x16, 0x28),
+    .text = LV_COLOR_MAKE(0xE8, 0xEE, 0xF8),
+    .sub = LV_COLOR_MAKE(0x93, 0xA4, 0xC7),
+    .accent = LV_COLOR_MAKE(0x4C, 0x7D, 0xFF),
+};
+
+static const ui_palette_t s_pal_sub = {
+    .bg = LV_COLOR_MAKE(0x0B, 0x0D, 0x12),
+    .card = LV_COLOR_MAKE(0x15, 0x1A, 0x23),
+    .card2 = LV_COLOR_MAKE(0x10, 0x15, 0x1D),
+    .text = LV_COLOR_MAKE(0xE9, 0xEF, 0xFA),
+    .sub = LV_COLOR_MAKE(0xA0, 0xAF, 0xC6),
+    .accent = LV_COLOR_MAKE(0x1F, 0xC8, 0xA8),
+};
+
+static const ui_palette_t *s_pal = &s_pal_sub;
+
+static void ui_use_palette(const ui_palette_t *pal)
+{
+    if (pal) s_pal = pal;
+}
+
+static lv_color_t c_bg(void) { return s_pal->bg; }
+static lv_color_t c_card(void) { return s_pal->card; }
+static lv_color_t c_card2(void) { return s_pal->card2; }
+static lv_color_t c_text(void) { return s_pal->text; }
+static lv_color_t c_sub(void) { return s_pal->sub; }
+static lv_color_t c_accent(void) { return s_pal->accent; }
 static lv_color_t c_good(void) { return lv_color_hex(0x1FD07A); }
 static lv_color_t c_bad(void) { return lv_color_hex(0xFF4D6D); }
 static lv_color_t c_warn(void) { return lv_color_hex(0xFFD166); }
@@ -81,6 +133,193 @@ static void ui_toast(const char *text, lv_color_t color, uint32_t ms)
     lv_obj_center(l);
 
     (void)lv_timer_create(toast_close_cb, ms ? ms : 1200, ctx);
+}
+
+/* ================= Modal / Popup ================= */
+
+typedef struct {
+    lv_obj_t *overlay;
+    lv_obj_t *card;
+} ui_modal_ctx_t;
+
+static void modal_close_cb(lv_timer_t *t)
+{
+    ui_modal_ctx_t *ctx = (ui_modal_ctx_t *)t->user_data;
+    if (ctx && ctx->overlay) lv_obj_del(ctx->overlay);
+    lv_timer_del(t);
+    if (ctx) vPortFree(ctx);
+}
+
+static void ui_modal_result(const char *title, const char *detail, bool ok, uint32_t ms)
+{
+    ui_modal_ctx_t *ctx = (ui_modal_ctx_t *)pvPortMalloc(sizeof(ui_modal_ctx_t));
+    if (!ctx) return;
+    memset(ctx, 0, sizeof(*ctx));
+
+    ctx->overlay = lv_obj_create(lv_layer_top());
+    lv_obj_clear_flag(ctx->overlay, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(ctx->overlay, lv_pct(100), lv_pct(100));
+    lv_obj_center(ctx->overlay);
+    lv_obj_set_style_bg_color(ctx->overlay, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(ctx->overlay, LV_OPA_60, 0);
+    lv_obj_set_style_border_width(ctx->overlay, 0, 0);
+
+    ctx->card = lv_obj_create(ctx->overlay);
+    lv_obj_clear_flag(ctx->card, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(ctx->card, 560, 260);
+    lv_obj_center(ctx->card);
+    lv_obj_set_style_radius(ctx->card, 26, 0);
+    lv_obj_set_style_bg_color(ctx->card, c_card(), 0);
+    lv_obj_set_style_bg_opa(ctx->card, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(ctx->card, 1, 0);
+    lv_obj_set_style_border_color(ctx->card, lv_color_hex(0x24304A), 0);
+    lv_obj_set_style_shadow_width(ctx->card, 26, 0);
+    lv_obj_set_style_shadow_color(ctx->card, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_shadow_opa(ctx->card, LV_OPA_30, 0);
+    lv_obj_set_style_pad_all(ctx->card, 22, 0);
+
+    lv_obj_t *icon = lv_label_create(ctx->card);
+    lv_label_set_text(icon, ok ? LV_SYMBOL_OK : LV_SYMBOL_CLOSE);
+    lv_obj_set_style_text_color(icon, ok ? c_good() : c_bad(), 0);
+    lv_obj_set_style_text_font(icon, &lv_font_montserrat_48, 0);
+    lv_obj_align(icon, LV_ALIGN_TOP_MID, 0, -6);
+
+    lv_obj_t *t = lv_label_create(ctx->card);
+    lv_label_set_text(t, title ? title : "");
+    lv_obj_set_style_text_color(t, c_text(), 0);
+    lv_obj_set_style_text_font(t, &lv_font_montserrat_20, 0);
+    lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 88);
+
+    lv_obj_t *d = lv_label_create(ctx->card);
+    lv_label_set_text(d, detail ? detail : "");
+    lv_obj_set_style_text_color(d, c_sub(), 0);
+    lv_obj_set_style_text_font(d, &lv_font_montserrat_16, 0);
+    lv_obj_align(d, LV_ALIGN_TOP_MID, 0, 128);
+
+    (void)lv_timer_create(modal_close_cb, ms ? ms : 1500, ctx);
+}
+
+typedef void (*ui_keypad_ok_cb_t)(const char *text, void *user_ctx);
+
+typedef struct {
+    lv_obj_t *overlay;
+    lv_obj_t *card;
+    lv_obj_t *ta;
+    ui_keypad_ok_cb_t ok_cb;
+    void *user_ctx;
+} ui_keypad_ctx_t;
+
+static void keypad_close(ui_keypad_ctx_t *ctx)
+{
+    if (!ctx) return;
+    if (ctx->overlay) lv_obj_del(ctx->overlay);
+    vPortFree(ctx);
+}
+
+static void keypad_btnm_cb(lv_event_t *e)
+{
+    lv_obj_t *m = lv_event_get_target(e);
+    ui_keypad_ctx_t *ctx = (ui_keypad_ctx_t *)lv_event_get_user_data(e);
+    if (!ctx) return;
+
+    const char *txt = lv_btnmatrix_get_btn_text(m, lv_btnmatrix_get_selected_btn(m));
+    if (!txt) return;
+
+    if (strcmp(txt, "OK") == 0) {
+        const char *val = lv_textarea_get_text(ctx->ta);
+        if (ctx->ok_cb) ctx->ok_cb(val ? val : "", ctx->user_ctx);
+        keypad_close(ctx);
+        return;
+    }
+    if (strcmp(txt, "Cancel") == 0) {
+        keypad_close(ctx);
+        return;
+    }
+    if (strcmp(txt, "Del") == 0) {
+        lv_textarea_del_char(ctx->ta);
+        return;
+    }
+    if (strcmp(txt, "Clear") == 0) {
+        lv_textarea_set_text(ctx->ta, "");
+        return;
+    }
+
+    /* digits */
+    lv_textarea_add_text(ctx->ta, txt);
+}
+
+static void ui_popup_keypad_num(const char *title, const char *initial, uint8_t max_len,
+                                ui_keypad_ok_cb_t ok_cb, void *user_ctx)
+{
+    ui_keypad_ctx_t *ctx = (ui_keypad_ctx_t *)pvPortMalloc(sizeof(ui_keypad_ctx_t));
+    if (!ctx) return;
+    memset(ctx, 0, sizeof(*ctx));
+    ctx->ok_cb = ok_cb;
+    ctx->user_ctx = user_ctx;
+
+    ctx->overlay = lv_obj_create(lv_layer_top());
+    lv_obj_clear_flag(ctx->overlay, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(ctx->overlay, lv_pct(100), lv_pct(100));
+    lv_obj_center(ctx->overlay);
+    lv_obj_set_style_bg_color(ctx->overlay, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(ctx->overlay, LV_OPA_70, 0);
+    lv_obj_set_style_border_width(ctx->overlay, 0, 0);
+
+    ctx->card = lv_obj_create(ctx->overlay);
+    lv_obj_clear_flag(ctx->card, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(ctx->card, 560, 380);
+    lv_obj_center(ctx->card);
+    lv_obj_set_style_radius(ctx->card, 26, 0);
+    lv_obj_set_style_bg_color(ctx->card, c_card(), 0);
+    lv_obj_set_style_bg_opa(ctx->card, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(ctx->card, 1, 0);
+    lv_obj_set_style_border_color(ctx->card, lv_color_hex(0x24304A), 0);
+    lv_obj_set_style_pad_all(ctx->card, 18, 0);
+    lv_obj_set_style_pad_gap(ctx->card, 12, 0);
+
+    lv_obj_t *hdr = lv_label_create(ctx->card);
+    lv_label_set_text(hdr, title ? title : "");
+    lv_obj_set_style_text_color(hdr, c_text(), 0);
+    lv_obj_set_style_text_font(hdr, &lv_font_montserrat_20, 0);
+    lv_obj_align(hdr, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    ctx->ta = lv_textarea_create(ctx->card);
+    lv_obj_set_size(ctx->ta, 520, 56);
+    lv_obj_align(ctx->ta, LV_ALIGN_TOP_LEFT, 0, 46);
+    lv_textarea_set_one_line(ctx->ta, true);
+    lv_textarea_set_password_mode(ctx->ta, false);
+    lv_textarea_set_max_length(ctx->ta, max_len ? max_len : 6);
+    lv_obj_set_style_radius(ctx->ta, 18, 0);
+    lv_obj_set_style_bg_color(ctx->ta, c_card2(), 0);
+    lv_obj_set_style_text_color(ctx->ta, c_text(), 0);
+    lv_obj_set_style_border_width(ctx->ta, 1, 0);
+    lv_obj_set_style_border_color(ctx->ta, lv_color_hex(0x24304A), 0);
+    if (initial) lv_textarea_set_text(ctx->ta, initial);
+
+    static const char *map[] = {
+        "1", "2", "3", "Del", "\n",
+        "4", "5", "6", "Clear", "\n",
+        "7", "8", "9", "Cancel", "\n",
+        "0", "OK", "", "", ""
+    };
+
+    lv_obj_t *m = lv_btnmatrix_create(ctx->card);
+    lv_btnmatrix_set_map(m, map);
+    lv_obj_set_size(m, 520, 240);
+    lv_obj_align(m, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    lv_obj_add_event_cb(m, keypad_btnm_cb, LV_EVENT_VALUE_CHANGED, ctx);
+    lv_obj_set_style_bg_opa(m, LV_OPA_0, 0);
+    lv_obj_set_style_border_width(m, 0, 0);
+    lv_obj_set_style_pad_all(m, 0, 0);
+    lv_obj_set_style_pad_gap(m, 10, 0);
+
+    lv_obj_set_style_radius(m, 18, LV_PART_ITEMS);
+    lv_obj_set_style_bg_color(m, c_card2(), LV_PART_ITEMS);
+    lv_obj_set_style_bg_opa(m, LV_OPA_COVER, LV_PART_ITEMS);
+    lv_obj_set_style_border_width(m, 1, LV_PART_ITEMS);
+    lv_obj_set_style_border_color(m, lv_color_hex(0x24304A), LV_PART_ITEMS);
+    lv_obj_set_style_text_color(m, c_text(), LV_PART_ITEMS);
+    lv_obj_set_style_text_font(m, &lv_font_montserrat_16, LV_PART_ITEMS);
 }
 
 /* ================= Shared UI Widgets ================= */
@@ -268,14 +507,33 @@ static void build_fp_manage(void);
 static void build_rfid_unlock(void);
 static void build_rfid_manage(void);
 static void build_pin_unlock(void);
+static void build_pin_manage(void);
 
 /* ================= PIN ================= */
 
 static lv_obj_t *s_pin_status = NULL;
 static lv_obj_t *s_pin_ta = NULL;
-static char s_pin_value[8] = "1234"; /* dev default */
+static lv_obj_t *s_pin_manage = NULL;
+static lv_obj_t *s_pin_manage_status = NULL;
+static lv_obj_t *s_pin_list = NULL;
+static lv_obj_t *s_pin_page_lbl = NULL;
+static lv_obj_t *s_pin_sel_lbl = NULL;
+static uint16_t s_pin_page = 0;
+static uint16_t s_pin_sel_mask = 0; /* by current list index */
+static char s_pin_add_value[LOCK_PIN_MAX_LEN + 1u];
 
 static void pin_back_to_choose(lv_event_t *e) { (void)e; nav_to(s_choose); }
+static void pin_back_to_unlock(lv_event_t *e) { (void)e; nav_to(s_pin_unlock); }
+static void pin_manage_refresh_list(void);
+
+static void pin_open_manage_cb(lv_event_t *e)
+{
+    (void)e;
+    s_pin_page = 0;
+    s_pin_sel_mask = 0;
+    nav_to(s_pin_manage);
+    pin_manage_refresh_list();
+}
 
 static void pin_btnm_cb(lv_event_t *e)
 {
@@ -285,13 +543,15 @@ static void pin_btnm_cb(lv_event_t *e)
 
     if (strcmp(txt, "OK") == 0) {
         const char *in = lv_textarea_get_text(s_pin_ta);
-        if (in && strcmp(in, s_pin_value) == 0) {
+        uint32_t pin_id = 0;
+        if (in && lock_pin_verify(in, &pin_id)) {
             set_label(s_pin_status, "Unlocked", c_good());
-            ui_toast("Unlocked (PIN)", c_good(), 1200);
+            ui_modal_result("Unlocked", "PIN verified", true, 1500);
             lv_textarea_set_text(s_pin_ta, "");
             nav_to(s_home);
         } else {
-            set_label(s_pin_status, "Wrong PIN", c_bad());
+            set_label(s_pin_status, "Wrong or expired PIN", c_bad());
+            ui_modal_result("Access denied", "Wrong or expired PIN", false, 1500);
             lv_textarea_set_text(s_pin_ta, "");
         }
         return;
@@ -325,7 +585,7 @@ static void build_pin_unlock(void)
     lv_obj_set_style_radius(card, 24, 0);
     lv_obj_set_style_bg_color(card, c_card(), 0);
     lv_obj_set_style_border_width(card, 1, 0);
-    lv_obj_set_style_border_color(card, lv_color_hex(0x233152), 0);
+    lv_obj_set_style_border_color(card, lv_color_hex(0x24304A), 0);
     lv_obj_set_style_pad_all(card, 22, 0);
 
     lv_obj_t *title = lv_label_create(card);
@@ -344,10 +604,10 @@ static void build_pin_unlock(void)
     lv_obj_set_style_bg_color(s_pin_ta, c_card2(), 0);
     lv_obj_set_style_text_color(s_pin_ta, c_text(), 0);
     lv_obj_set_style_border_width(s_pin_ta, 1, 0);
-    lv_obj_set_style_border_color(s_pin_ta, lv_color_hex(0x233152), 0);
+    lv_obj_set_style_border_color(s_pin_ta, lv_color_hex(0x24304A), 0);
 
     s_pin_status = lv_label_create(card);
-    lv_label_set_text(s_pin_status, "Default PIN: 1234 (dev)");
+    lv_label_set_text(s_pin_status, "Use Manage to add PINs");
     lv_obj_set_style_text_color(s_pin_status, c_sub(), 0);
     lv_obj_set_style_text_font(s_pin_status, &lv_font_montserrat_14, 0);
     lv_obj_align(s_pin_status, LV_ALIGN_TOP_LEFT, 0, 112);
@@ -373,9 +633,400 @@ static void build_pin_unlock(void)
     lv_obj_set_style_bg_color(m, c_card2(), LV_PART_ITEMS);
     lv_obj_set_style_bg_opa(m, LV_OPA_COVER, LV_PART_ITEMS);
     lv_obj_set_style_border_width(m, 1, LV_PART_ITEMS);
-    lv_obj_set_style_border_color(m, lv_color_hex(0x233152), LV_PART_ITEMS);
+    lv_obj_set_style_border_color(m, lv_color_hex(0x24304A), LV_PART_ITEMS);
     lv_obj_set_style_text_color(m, c_text(), LV_PART_ITEMS);
     lv_obj_set_style_text_font(m, &lv_font_montserrat_16, LV_PART_ITEMS);
+
+    lv_obj_t *btn_manage = lv_btn_create(card);
+    lv_obj_set_size(btn_manage, 180, 56);
+    lv_obj_align(btn_manage, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    lv_obj_set_style_radius(btn_manage, 18, 0);
+    lv_obj_set_style_bg_color(btn_manage, c_card2(), 0);
+    lv_obj_set_style_border_width(btn_manage, 1, 0);
+    lv_obj_set_style_border_color(btn_manage, lv_color_hex(0x24304A), 0);
+    lv_obj_add_event_cb(btn_manage, pin_open_manage_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *lbl_manage = lv_label_create(btn_manage);
+    lv_label_set_text(lbl_manage, LV_SYMBOL_SETTINGS "  Manage");
+    lv_obj_set_style_text_color(lbl_manage, c_text(), 0);
+    lv_obj_set_style_text_font(lbl_manage, &lv_font_montserrat_16, 0);
+    lv_obj_center(lbl_manage);
+}
+
+static void pin_manage_refresh_list(void);
+static void pin_update_page_labels(uint8_t total);
+
+static void pin_item_set_style(lv_obj_t *btn, bool selected)
+{
+    if (!btn) return;
+    lv_obj_set_style_radius(btn, 16, 0);
+    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(btn, 1, 0);
+    lv_obj_set_style_border_color(btn, lv_color_hex(0x24304A), 0);
+    lv_obj_set_style_bg_color(btn, selected ? c_accent() : c_card2(), 0);
+}
+
+static void pin_item_click_cb(lv_event_t *e)
+{
+    uint8_t idx = (uint8_t)(uintptr_t)lv_event_get_user_data(e);
+    uint8_t total = lock_pin_count();
+    if (idx >= total || idx >= 16u) return;
+
+    s_pin_sel_mask ^= (uint16_t)(1u << idx);
+    bool selected = (s_pin_sel_mask & (uint16_t)(1u << idx)) != 0u;
+
+    lv_obj_t *btn = lv_event_get_target(e);
+    pin_item_set_style(btn, selected);
+
+    lv_obj_t *lbl = lv_obj_get_child(btn, 0);
+    if (lbl) {
+        lock_pin_entry_t entry;
+        if (lock_pin_get(idx, &entry)) {
+            uint32_t now_s = lock_time_now_s();
+            char exp[32];
+            if (entry.expires_at_s == 0) {
+                strncpy(exp, "never", sizeof(exp));
+                exp[sizeof(exp) - 1u] = '\0';
+            } else if (lock_pin_is_expired(&entry, now_s)) {
+                strncpy(exp, "expired", sizeof(exp));
+                exp[sizeof(exp) - 1u] = '\0';
+            } else {
+                uint32_t left_s = entry.expires_at_s - now_s;
+                uint32_t left_m = (left_s + 59u) / 60u;
+                snprintf(exp, sizeof(exp), "%lum", (unsigned long)left_m);
+            }
+
+            char line[72];
+            snprintf(line, sizeof(line), "%s  PIN #%lu  (%s)",
+                     selected ? LV_SYMBOL_OK : "  ",
+                     (unsigned long)entry.id,
+                     exp);
+            lv_label_set_text(lbl, line);
+            lv_obj_set_style_text_color(lbl, selected ? lv_color_white() : c_text(), 0);
+        }
+    }
+
+    pin_update_page_labels(total);
+}
+
+static void pin_update_page_labels(uint8_t total)
+{
+    if (s_pin_page_lbl) {
+        const uint16_t page_size = 6u;
+        uint16_t pages = ((uint16_t)total + page_size - 1u) / page_size;
+        if (pages == 0) pages = 1;
+        if (s_pin_page >= pages) s_pin_page = pages - 1u;
+        char buf[24];
+        snprintf(buf, sizeof(buf), "Page %u/%u", (unsigned)(s_pin_page + 1u), (unsigned)pages);
+        lv_label_set_text(s_pin_page_lbl, buf);
+    }
+
+    if (s_pin_sel_lbl) {
+        uint16_t selected = 0;
+        for (uint8_t i = 0; i < total && i < 16u; i++) {
+            if (s_pin_sel_mask & (uint16_t)(1u << i)) selected++;
+        }
+        char buf[32];
+        snprintf(buf, sizeof(buf), "Selected: %u", (unsigned)selected);
+        lv_label_set_text(s_pin_sel_lbl, buf);
+    }
+}
+
+static void pin_manage_rebuild_list_ui(void)
+{
+    if (!s_pin_list) return;
+    lv_obj_clean(s_pin_list);
+
+    uint8_t total = lock_pin_count();
+    const uint16_t page_size = 6u;
+    pin_update_page_labels(total);
+
+    uint16_t start = (uint16_t)(s_pin_page * page_size);
+    uint16_t end = start + page_size;
+    if (end > total) end = total;
+
+    for (uint16_t i = start; i < end; i++) {
+        uint8_t idx = (uint8_t)i;
+        lock_pin_entry_t entry;
+        if (!lock_pin_get(idx, &entry)) continue;
+
+        bool selected = (idx < 16u) && ((s_pin_sel_mask & (uint16_t)(1u << idx)) != 0u);
+
+        uint32_t now_s = lock_time_now_s();
+        char exp[32];
+        if (entry.expires_at_s == 0) {
+            strncpy(exp, "never", sizeof(exp));
+            exp[sizeof(exp) - 1u] = '\0';
+        } else if (lock_pin_is_expired(&entry, now_s)) {
+            strncpy(exp, "expired", sizeof(exp));
+            exp[sizeof(exp) - 1u] = '\0';
+        } else {
+            uint32_t left_s = entry.expires_at_s - now_s;
+            uint32_t left_m = (left_s + 59u) / 60u;
+            snprintf(exp, sizeof(exp), "%lum", (unsigned long)left_m);
+        }
+
+        lv_obj_t *btn = lv_btn_create(s_pin_list);
+        lv_obj_set_size(btn, 716, 52);
+        lv_obj_clear_flag(btn, LV_OBJ_FLAG_SCROLLABLE);
+        pin_item_set_style(btn, selected);
+        lv_obj_add_event_cb(btn, pin_item_click_cb, LV_EVENT_CLICKED, (void *)(uintptr_t)idx);
+
+        lv_obj_t *lbl = lv_label_create(btn);
+        char line[72];
+        snprintf(line, sizeof(line), "%s  PIN #%lu  (%s)",
+                 selected ? LV_SYMBOL_OK : "  ",
+                 (unsigned long)entry.id,
+                 exp);
+        lv_label_set_text(lbl, line);
+        lv_obj_set_style_text_color(lbl, selected ? lv_color_white() : c_text(), 0);
+        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_16, 0);
+        lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 14, 0);
+    }
+
+    pin_update_page_labels(total);
+}
+
+static void pin_manage_refresh_list(void)
+{
+    pin_manage_rebuild_list_ui();
+}
+
+static void pin_prev_page_cb(lv_event_t *e)
+{
+    (void)e;
+    if (s_pin_page > 0) s_pin_page--;
+    pin_manage_rebuild_list_ui();
+}
+
+static void pin_next_page_cb(lv_event_t *e)
+{
+    (void)e;
+    const uint16_t page_size = 6u;
+    uint8_t total = lock_pin_count();
+    uint16_t pages = ((uint16_t)total + page_size - 1u) / page_size;
+    if (pages == 0) pages = 1;
+    if ((s_pin_page + 1u) < pages) s_pin_page++;
+    pin_manage_rebuild_list_ui();
+}
+
+static void pin_add_ttl_ok_cb(const char *text, void *user_ctx)
+{
+    (void)user_ctx;
+    uint32_t ttl_min = (uint32_t)atoi(text ? text : "0");
+    uint32_t new_id = 0;
+    if (!lock_pin_add(s_pin_add_value, ttl_min, NULL, &new_id)) {
+        ui_modal_result("PIN add failed", "DB full or invalid", false, 1600);
+        set_label(s_pin_manage_status, "Add failed", c_bad());
+        return;
+    }
+
+    char msg[64];
+    snprintf(msg, sizeof(msg), "Added PIN #%lu", (unsigned long)new_id);
+    ui_modal_result("PIN added", msg, true, 1400);
+    set_label(s_pin_manage_status, msg, c_good());
+    s_pin_sel_mask = 0;
+    pin_manage_rebuild_list_ui();
+}
+
+static void pin_add_pin_ok_cb(const char *text, void *user_ctx)
+{
+    (void)user_ctx;
+    if (!text) text = "";
+    size_t len = strlen(text);
+    if (len < 4u || len > LOCK_PIN_MAX_LEN) {
+        ui_toast("PIN length: 4-6 digits", c_text(), 1200);
+        return;
+    }
+    strncpy(s_pin_add_value, text, sizeof(s_pin_add_value) - 1u);
+    s_pin_add_value[sizeof(s_pin_add_value) - 1u] = '\0';
+
+    ui_popup_keypad_num("Validity minutes (0 = never)", "0", 5, pin_add_ttl_ok_cb, NULL);
+}
+
+static void pin_add_cb(lv_event_t *e)
+{
+    (void)e;
+    memset(s_pin_add_value, 0, sizeof(s_pin_add_value));
+    ui_popup_keypad_num("New PIN (4-6 digits)", "", LOCK_PIN_MAX_LEN, pin_add_pin_ok_cb, NULL);
+}
+
+static void pin_delete_selected_cb(lv_event_t *e)
+{
+    (void)e;
+    uint8_t total = lock_pin_count();
+    if (total == 0) {
+        ui_toast("No PINs", c_text(), 900);
+        return;
+    }
+
+    uint32_t ids[LOCK_PIN_MAX];
+    uint8_t id_count = 0;
+    for (uint8_t i = 0; i < total && i < 16u; i++) {
+        if ((s_pin_sel_mask & (uint16_t)(1u << i)) == 0u) continue;
+        lock_pin_entry_t entry;
+        if (lock_pin_get(i, &entry) && id_count < LOCK_PIN_MAX) {
+            ids[id_count++] = entry.id;
+        }
+    }
+
+    if (id_count == 0) {
+        ui_toast("No PIN selected", c_text(), 900);
+        return;
+    }
+
+    for (uint8_t i = 0; i < id_count; i++) {
+        (void)lock_pin_remove(ids[i]);
+    }
+
+    s_pin_sel_mask = 0;
+    pin_manage_rebuild_list_ui();
+
+    char msg[48];
+    snprintf(msg, sizeof(msg), "Removed %u PIN(s)", (unsigned)id_count);
+    ui_modal_result("PIN updated", msg, true, 1500);
+    set_label(s_pin_manage_status, msg, c_good());
+}
+
+static void pin_clear_all_cb(lv_event_t *e)
+{
+    (void)e;
+    lock_pin_clear();
+    s_pin_sel_mask = 0;
+    s_pin_page = 0;
+    pin_manage_rebuild_list_ui();
+    ui_modal_result("PIN cleared", "All PINs removed", true, 1500);
+    set_label(s_pin_manage_status, "All PINs cleared", c_good());
+}
+
+static void build_pin_manage(void)
+{
+    s_pin_manage = lv_obj_create(NULL);
+    style_screen(s_pin_manage);
+    ui_make_topbar(s_pin_manage, "Password · Manage", pin_back_to_unlock);
+
+    lv_obj_t *card = lv_obj_create(s_pin_manage);
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(card, 760, 360);
+    lv_obj_align(card, LV_ALIGN_CENTER, 0, 12);
+    lv_obj_set_style_radius(card, 24, 0);
+    lv_obj_set_style_bg_color(card, c_card(), 0);
+    lv_obj_set_style_border_width(card, 1, 0);
+    lv_obj_set_style_border_color(card, lv_color_hex(0x24304A), 0);
+    lv_obj_set_style_pad_all(card, 22, 0);
+    lv_obj_set_style_pad_gap(card, 12, 0);
+
+    lv_obj_t *info = lv_label_create(card);
+    lv_label_set_text(info, "Create multiple PINs. Optional expiry uses uptime (dev).");
+    lv_obj_set_style_text_color(info, c_sub(), 0);
+    lv_obj_set_style_text_font(info, &lv_font_montserrat_14, 0);
+    lv_obj_align(info, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    lv_obj_t *btn_add = lv_btn_create(card);
+    lv_obj_set_size(btn_add, 220, 54);
+    lv_obj_align(btn_add, LV_ALIGN_TOP_LEFT, 0, 34);
+    lv_obj_set_style_radius(btn_add, 18, 0);
+    lv_obj_set_style_bg_color(btn_add, c_accent(), 0);
+    lv_obj_set_style_border_width(btn_add, 0, 0);
+    lv_obj_add_event_cb(btn_add, pin_add_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *la = lv_label_create(btn_add);
+    lv_label_set_text(la, LV_SYMBOL_PLUS "  Add PIN");
+    lv_obj_set_style_text_color(la, lv_color_white(), 0);
+    lv_obj_set_style_text_font(la, &lv_font_montserrat_16, 0);
+    lv_obj_center(la);
+
+    lv_obj_t *btn_del = lv_btn_create(card);
+    lv_obj_set_size(btn_del, 240, 54);
+    lv_obj_align(btn_del, LV_ALIGN_TOP_LEFT, 250, 34);
+    lv_obj_set_style_radius(btn_del, 18, 0);
+    lv_obj_set_style_bg_color(btn_del, lv_color_hex(0x24304A), 0);
+    lv_obj_set_style_border_width(btn_del, 1, 0);
+    lv_obj_set_style_border_color(btn_del, lv_color_hex(0x24304A), 0);
+    lv_obj_add_event_cb(btn_del, pin_delete_selected_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *ld = lv_label_create(btn_del);
+    lv_label_set_text(ld, LV_SYMBOL_TRASH "  Delete Selected");
+    lv_obj_set_style_text_color(ld, c_text(), 0);
+    lv_obj_set_style_text_font(ld, &lv_font_montserrat_16, 0);
+    lv_obj_center(ld);
+
+    lv_obj_t *btn_clear = lv_btn_create(card);
+    lv_obj_set_size(btn_clear, 220, 54);
+    lv_obj_align(btn_clear, LV_ALIGN_TOP_LEFT, 520, 34);
+    lv_obj_set_style_radius(btn_clear, 18, 0);
+    lv_obj_set_style_bg_color(btn_clear, c_card2(), 0);
+    lv_obj_set_style_border_width(btn_clear, 1, 0);
+    lv_obj_set_style_border_color(btn_clear, lv_color_hex(0x24304A), 0);
+    lv_obj_add_event_cb(btn_clear, pin_clear_all_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *lc = lv_label_create(btn_clear);
+    lv_label_set_text(lc, LV_SYMBOL_CLOSE "  Clear All");
+    lv_obj_set_style_text_color(lc, c_text(), 0);
+    lv_obj_set_style_text_font(lc, &lv_font_montserrat_16, 0);
+    lv_obj_center(lc);
+
+    s_pin_list = lv_obj_create(card);
+    lv_obj_clear_flag(s_pin_list, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(s_pin_list, 716, 176);
+    lv_obj_align(s_pin_list, LV_ALIGN_TOP_LEFT, 0, 98);
+    lv_obj_set_style_bg_opa(s_pin_list, LV_OPA_0, 0);
+    lv_obj_set_style_border_width(s_pin_list, 0, 0);
+    lv_obj_set_style_pad_all(s_pin_list, 0, 0);
+    lv_obj_set_style_pad_gap(s_pin_list, 10, 0);
+    lv_obj_set_flex_flow(s_pin_list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(s_pin_list, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+
+    lv_obj_t *page_bar = lv_obj_create(card);
+    lv_obj_clear_flag(page_bar, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(page_bar, 716, 46);
+    lv_obj_align(page_bar, LV_ALIGN_TOP_LEFT, 0, 284);
+    lv_obj_set_style_bg_opa(page_bar, LV_OPA_0, 0);
+    lv_obj_set_style_border_width(page_bar, 0, 0);
+    lv_obj_set_style_pad_all(page_bar, 0, 0);
+
+    lv_obj_t *btn_prev = lv_btn_create(page_bar);
+    lv_obj_set_size(btn_prev, 120, 42);
+    lv_obj_align(btn_prev, LV_ALIGN_LEFT_MID, 0, 0);
+    lv_obj_set_style_radius(btn_prev, 16, 0);
+    lv_obj_set_style_bg_color(btn_prev, c_card2(), 0);
+    lv_obj_set_style_border_width(btn_prev, 1, 0);
+    lv_obj_set_style_border_color(btn_prev, lv_color_hex(0x24304A), 0);
+    lv_obj_add_event_cb(btn_prev, pin_prev_page_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *lp = lv_label_create(btn_prev);
+    lv_label_set_text(lp, LV_SYMBOL_LEFT "  Prev");
+    lv_obj_set_style_text_color(lp, c_text(), 0);
+    lv_obj_center(lp);
+
+    s_pin_page_lbl = lv_label_create(page_bar);
+    lv_label_set_text(s_pin_page_lbl, "Page 1/1");
+    lv_obj_set_style_text_color(s_pin_page_lbl, c_sub(), 0);
+    lv_obj_set_style_text_font(s_pin_page_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_align(s_pin_page_lbl, LV_ALIGN_CENTER, 0, 0);
+
+    s_pin_sel_lbl = lv_label_create(page_bar);
+    lv_label_set_text(s_pin_sel_lbl, "Selected: 0");
+    lv_obj_set_style_text_color(s_pin_sel_lbl, c_sub(), 0);
+    lv_obj_set_style_text_font(s_pin_sel_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_align(s_pin_sel_lbl, LV_ALIGN_RIGHT_MID, -140, 0);
+
+    lv_obj_t *btn_next = lv_btn_create(page_bar);
+    lv_obj_set_size(btn_next, 120, 42);
+    lv_obj_align(btn_next, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_set_style_radius(btn_next, 16, 0);
+    lv_obj_set_style_bg_color(btn_next, c_card2(), 0);
+    lv_obj_set_style_border_width(btn_next, 1, 0);
+    lv_obj_set_style_border_color(btn_next, lv_color_hex(0x24304A), 0);
+    lv_obj_add_event_cb(btn_next, pin_next_page_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *ln = lv_label_create(btn_next);
+    lv_label_set_text(ln, "Next  " LV_SYMBOL_RIGHT);
+    lv_obj_set_style_text_color(ln, c_text(), 0);
+    lv_obj_center(ln);
+
+    s_pin_manage_status = lv_label_create(card);
+    lv_label_set_text(s_pin_manage_status, "Ready");
+    lv_obj_set_style_text_color(s_pin_manage_status, c_sub(), 0);
+    lv_obj_set_style_text_font(s_pin_manage_status, &lv_font_montserrat_14, 0);
+    lv_obj_align(s_pin_manage_status, LV_ALIGN_BOTTOM_LEFT, 0, -64);
+
+    pin_manage_rebuild_list_ui();
 }
 
 /* ================= Fingerprint (AS608) ================= */
@@ -385,6 +1036,7 @@ typedef enum {
     FP_OP_ENROLL,
     FP_OP_DELETE,
     FP_OP_CLEAR,
+    FP_OP_LIST_INDEX,
 } fp_op_t;
 
 typedef struct {
@@ -399,6 +1051,8 @@ typedef struct {
     as608_status_t st;
     uint16_t found_id;
     uint16_t score;
+    uint16_t capacity;
+    uint8_t index_bits[128]; /* 4 * 32 bytes = 1024 bits */
 } fp_res_t;
 
 static QueueHandle_t s_fp_q = NULL;
@@ -407,7 +1061,29 @@ static volatile bool s_fp_busy = false;
 
 static lv_obj_t *s_fp_unlock_status = NULL;
 static lv_obj_t *s_fp_manage_status = NULL;
-static lv_obj_t *s_fp_id_input = NULL;
+
+/* Fingerprint manage UI state */
+static uint16_t s_fp_capacity = 0;
+static uint16_t s_fp_target_id = 1;
+static uint8_t s_fp_index_bits[128];
+static uint8_t s_fp_selected_bits[128];
+static uint16_t s_fp_present_ids[1024];
+static uint16_t s_fp_present_count = 0;
+static uint16_t s_fp_page = 0;
+
+static lv_obj_t *s_fp_id_btn = NULL;
+static lv_obj_t *s_fp_id_lbl = NULL;
+static lv_obj_t *s_fp_list = NULL;
+static lv_obj_t *s_fp_page_lbl = NULL;
+static lv_obj_t *s_fp_sel_lbl = NULL;
+
+/* Batch delete (sequential; keeps AS608 single-operation semantics) */
+static bool s_fp_del_batch_active = false;
+static uint16_t s_fp_del_batch_ids[64];
+static uint8_t s_fp_del_batch_count = 0;
+static uint8_t s_fp_del_batch_pos = 0;
+static uint8_t s_fp_del_batch_ok = 0;
+static uint8_t s_fp_del_batch_fail = 0;
 
 static const char *fp_rc_str(as608_svc_rc_t rc)
 {
@@ -429,6 +1105,153 @@ static const char *fp_st_str(as608_status_t st)
         case AS608_STATUS_NOT_MATCH: return "NOT_MATCH";
         default: return "OTHER";
     }
+}
+
+static void fp_item_click_cb(lv_event_t *e);
+static void fp_item_long_cb(lv_event_t *e);
+
+static inline bool bit_get_u8(const uint8_t *bits, uint16_t bit_index)
+{
+    return (bits[bit_index >> 3] & (uint8_t)(1u << (bit_index & 7u))) != 0u;
+}
+
+static inline void bit_set_u8(uint8_t *bits, uint16_t bit_index, bool value)
+{
+    uint8_t *b = &bits[bit_index >> 3];
+    uint8_t m = (uint8_t)(1u << (bit_index & 7u));
+    if (value) *b |= m;
+    else *b &= (uint8_t)~m;
+}
+
+static void fp_rebuild_present_ids(void)
+{
+    s_fp_present_count = 0;
+
+    uint16_t cap = s_fp_capacity;
+    if (cap == 0) cap = 300; /* fallback */
+    if (cap > 1024u) cap = 1024u;
+
+    for (uint16_t id = 0; id < cap; id++) {
+        if (!bit_get_u8(s_fp_index_bits, id)) continue;
+        s_fp_present_ids[s_fp_present_count++] = id;
+        if (s_fp_present_count >= (uint16_t)(sizeof(s_fp_present_ids) / sizeof(s_fp_present_ids[0]))) break;
+    }
+}
+
+static uint16_t fp_selected_count(void)
+{
+    uint16_t count = 0;
+    for (uint16_t i = 0; i < s_fp_present_count; i++) {
+        if (bit_get_u8(s_fp_selected_bits, s_fp_present_ids[i])) count++;
+    }
+    return count;
+}
+
+static void fp_update_id_label(void)
+{
+    if (!s_fp_id_lbl) return;
+    char buf[32];
+    snprintf(buf, sizeof(buf), "ID: %u (tap to edit)", (unsigned)s_fp_target_id);
+    lv_label_set_text(s_fp_id_lbl, buf);
+}
+
+static void fp_update_page_label(void)
+{
+    if (!s_fp_page_lbl) return;
+    const uint16_t page_size = 8u;
+    uint16_t pages = (s_fp_present_count + page_size - 1u) / page_size;
+    if (pages == 0) pages = 1;
+    if (s_fp_page >= pages) s_fp_page = pages - 1u;
+    char buf[32];
+    snprintf(buf, sizeof(buf), "Page %u/%u", (unsigned)(s_fp_page + 1u), (unsigned)pages);
+    lv_label_set_text(s_fp_page_lbl, buf);
+}
+
+static void fp_update_sel_label(void)
+{
+    if (!s_fp_sel_lbl) return;
+    char buf[48];
+    snprintf(buf, sizeof(buf), "Selected: %u", (unsigned)fp_selected_count());
+    lv_label_set_text(s_fp_sel_lbl, buf);
+}
+
+static void fp_list_item_set_style(lv_obj_t *btn, bool selected)
+{
+    if (!btn) return;
+    lv_obj_set_style_radius(btn, 16, 0);
+    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(btn, 1, 0);
+    lv_obj_set_style_border_color(btn, lv_color_hex(0x24304A), 0);
+    if (selected) {
+        lv_obj_set_style_bg_color(btn, c_accent(), 0);
+    } else {
+        lv_obj_set_style_bg_color(btn, c_card2(), 0);
+    }
+}
+
+static void fp_manage_rebuild_list_ui(void)
+{
+    if (!s_fp_list) return;
+    lv_obj_clean(s_fp_list);
+
+    const uint16_t page_size = 8u;
+    fp_update_page_label();
+
+    uint16_t start = (uint16_t)(s_fp_page * page_size);
+    uint16_t end = start + page_size;
+    if (end > s_fp_present_count) end = s_fp_present_count;
+
+    for (uint16_t i = start; i < end; i++) {
+        uint16_t id = s_fp_present_ids[i];
+        bool selected = bit_get_u8(s_fp_selected_bits, id);
+
+        lv_obj_t *btn = lv_btn_create(s_fp_list);
+        lv_obj_set_size(btn, 340, 56);
+        lv_obj_clear_flag(btn, LV_OBJ_FLAG_SCROLLABLE);
+        fp_list_item_set_style(btn, selected);
+
+        lv_obj_t *lbl = lv_label_create(btn);
+        char text[32];
+        snprintf(text, sizeof(text), "%s  ID %u", selected ? LV_SYMBOL_OK : "  ", (unsigned)id);
+        lv_label_set_text(lbl, text);
+        lv_obj_set_style_text_color(lbl, selected ? lv_color_white() : c_text(), 0);
+        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_16, 0);
+        lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 14, 0);
+
+        /* Store ID in event user_data via pointer cast */
+        lv_obj_add_event_cb(btn, fp_item_click_cb, LV_EVENT_CLICKED, (void *)(uintptr_t)id);
+        lv_obj_add_event_cb(btn, fp_item_long_cb, LV_EVENT_LONG_PRESSED, (void *)(uintptr_t)id);
+    }
+
+    fp_update_sel_label();
+}
+
+static void fp_item_click_cb(lv_event_t *e)
+{
+    uint16_t id = (uint16_t)(uintptr_t)lv_event_get_user_data(e);
+    bool now_selected = !bit_get_u8(s_fp_selected_bits, id);
+    bit_set_u8(s_fp_selected_bits, id, now_selected);
+
+    lv_obj_t *btn = lv_event_get_target(e);
+    fp_list_item_set_style(btn, now_selected);
+
+    lv_obj_t *lbl = lv_obj_get_child(btn, 0);
+    if (lbl) {
+        char text[32];
+        snprintf(text, sizeof(text), "%s  ID %u", now_selected ? LV_SYMBOL_OK : "  ", (unsigned)id);
+        lv_label_set_text(lbl, text);
+        lv_obj_set_style_text_color(lbl, now_selected ? lv_color_white() : c_text(), 0);
+    }
+
+    fp_update_sel_label();
+}
+
+static void fp_item_long_cb(lv_event_t *e)
+{
+    uint16_t id = (uint16_t)(uintptr_t)lv_event_get_user_data(e);
+    s_fp_target_id = id;
+    fp_update_id_label();
+    ui_toast("ID selected", c_text(), 800);
 }
 
 static void fp_apply_cb(void *user_data);
@@ -463,6 +1286,29 @@ static void fp_worker(void *arg)
             case FP_OP_CLEAR:
                 res->rc = AS608_CRUD_ClearAll(&res->st);
                 break;
+            case FP_OP_LIST_INDEX: {
+                res->capacity = AS608_Get_Capacity();
+                if (res->capacity == 0) res->capacity = 300;
+
+                memset(res->index_bits, 0, sizeof(res->index_bits));
+                res->rc = AS608_SVC_OK;
+                res->st = AS608_STATUS_OK;
+
+                for (uint8_t num = 0; num < 4u; num++) {
+                    if ((uint32_t)num * 256u >= res->capacity) break;
+                    uint8_t table[32];
+                    memset(table, 0, sizeof(table));
+                    as608_status_t st = AS608_STATUS_UNKNOWN;
+                    as608_svc_rc_t rc = AS608_List_IndexTable(num, table, &st);
+                    if (rc != AS608_SVC_OK || st != AS608_STATUS_OK) {
+                        res->rc = rc;
+                        res->st = st;
+                        break;
+                    }
+                    memcpy(&res->index_bits[num * 32u], table, 32u);
+                }
+                break;
+            }
             default:
                 res->rc = AS608_SVC_ERR;
                 break;
@@ -489,54 +1335,141 @@ static bool fp_submit(fp_cmd_t cmd)
 
 static void fp_back_to_choose(lv_event_t *e) { (void)e; nav_to(s_choose); }
 static void fp_back_to_unlock(lv_event_t *e) { (void)e; nav_to(s_fp_unlock); }
-static void fp_open_manage_cb(lv_event_t *e) { (void)e; nav_to(s_fp_manage); }
+
+static bool fp_id_valid(uint16_t id)
+{
+    if (s_fp_capacity == 0) return (id < 1024u);
+    return (id < s_fp_capacity);
+}
+
+static void fp_request_index_refresh(void)
+{
+    set_label(s_fp_manage_status, "Refreshing list...", c_warn());
+    if (!fp_submit((fp_cmd_t){.op = FP_OP_LIST_INDEX, .id = 0})) {
+        set_label(s_fp_manage_status, "Busy...", c_bad());
+    }
+}
+
+static void fp_open_manage_cb(lv_event_t *e)
+{
+    (void)e;
+    nav_to(s_fp_manage);
+    fp_request_index_refresh();
+}
+
+static void fp_refresh_cb(lv_event_t *e)
+{
+    (void)e;
+    fp_request_index_refresh();
+}
 
 static void fp_unlock_start_cb(lv_event_t *e)
 {
     (void)e;
-    set_label(s_fp_unlock_status, "Place finger on sensor…", c_warn());
+    set_label(s_fp_unlock_status, "Place finger on sensor...", c_warn());
     if (!fp_submit((fp_cmd_t){.op = FP_OP_VERIFY, .id = 0})) {
-        set_label(s_fp_unlock_status, "Busy…", c_bad());
+        set_label(s_fp_unlock_status, "Busy...", c_bad());
     }
+}
+
+static void fp_id_ok_cb(const char *text, void *user_ctx)
+{
+    (void)user_ctx;
+    uint16_t id = (uint16_t)atoi(text ? text : "0");
+    if (!fp_id_valid(id)) {
+        set_label(s_fp_manage_status, "Invalid ID", c_bad());
+        return;
+    }
+    s_fp_target_id = id;
+    fp_update_id_label();
+    set_label(s_fp_manage_status, "Ready", c_sub());
+}
+
+static void fp_edit_id_cb(lv_event_t *e)
+{
+    (void)e;
+    char init[16];
+    snprintf(init, sizeof(init), "%u", (unsigned)s_fp_target_id);
+    ui_popup_keypad_num("Fingerprint ID", init, 4, fp_id_ok_cb, NULL);
 }
 
 static void fp_enroll_cb(lv_event_t *e)
 {
     (void)e;
-    const char *txt = lv_textarea_get_text(s_fp_id_input);
-    uint16_t id = (uint16_t)atoi(txt ? txt : "0");
-    if (id == 0) {
+    uint16_t id = s_fp_target_id;
+    if (!fp_id_valid(id)) {
         set_label(s_fp_manage_status, "Invalid ID", c_bad());
         return;
     }
-    set_label(s_fp_manage_status, "Enrolling… (press finger twice)", c_warn());
+    set_label(s_fp_manage_status, "Enrolling (press finger twice)...", c_warn());
     if (!fp_submit((fp_cmd_t){.op = FP_OP_ENROLL, .id = id})) {
-        set_label(s_fp_manage_status, "Busy…", c_bad());
-    }
-}
-
-static void fp_delete_cb(lv_event_t *e)
-{
-    (void)e;
-    const char *txt = lv_textarea_get_text(s_fp_id_input);
-    uint16_t id = (uint16_t)atoi(txt ? txt : "0");
-    if (id == 0) {
-        set_label(s_fp_manage_status, "Invalid ID", c_bad());
-        return;
-    }
-    set_label(s_fp_manage_status, "Deleting…", c_warn());
-    if (!fp_submit((fp_cmd_t){.op = FP_OP_DELETE, .id = id})) {
-        set_label(s_fp_manage_status, "Busy…", c_bad());
+        set_label(s_fp_manage_status, "Busy...", c_bad());
     }
 }
 
 static void fp_clear_cb(lv_event_t *e)
 {
     (void)e;
-    set_label(s_fp_manage_status, "Clearing…", c_warn());
+    memset(s_fp_selected_bits, 0, sizeof(s_fp_selected_bits));
+    set_label(s_fp_manage_status, "Clearing all templates...", c_warn());
     if (!fp_submit((fp_cmd_t){.op = FP_OP_CLEAR, .id = 0})) {
-        set_label(s_fp_manage_status, "Busy…", c_bad());
+        set_label(s_fp_manage_status, "Busy...", c_bad());
     }
+}
+
+static void fp_prev_page_cb(lv_event_t *e)
+{
+    (void)e;
+    if (s_fp_page > 0) s_fp_page--;
+    fp_manage_rebuild_list_ui();
+}
+
+static void fp_next_page_cb(lv_event_t *e)
+{
+    (void)e;
+    const uint16_t page_size = 8u;
+    uint16_t pages = (s_fp_present_count + page_size - 1u) / page_size;
+    if (pages == 0) pages = 1;
+    if ((s_fp_page + 1u) < pages) s_fp_page++;
+    fp_manage_rebuild_list_ui();
+}
+
+static void fp_delete_selected_start(void)
+{
+    s_fp_del_batch_active = false;
+    s_fp_del_batch_count = 0;
+    s_fp_del_batch_pos = 0;
+    s_fp_del_batch_ok = 0;
+    s_fp_del_batch_fail = 0;
+
+    for (uint16_t i = 0; i < s_fp_present_count; i++) {
+        uint16_t id = s_fp_present_ids[i];
+        if (!bit_get_u8(s_fp_selected_bits, id)) continue;
+        if (s_fp_del_batch_count < (uint8_t)(sizeof(s_fp_del_batch_ids) / sizeof(s_fp_del_batch_ids[0]))) {
+            s_fp_del_batch_ids[s_fp_del_batch_count++] = id;
+        }
+    }
+
+    if (s_fp_del_batch_count == 0) {
+        ui_toast("No ID selected", c_text(), 900);
+        return;
+    }
+
+    s_fp_del_batch_active = true;
+    char buf[64];
+    snprintf(buf, sizeof(buf), "Deleting %u templates...", (unsigned)s_fp_del_batch_count);
+    set_label(s_fp_manage_status, buf, c_warn());
+
+    if (!fp_submit((fp_cmd_t){.op = FP_OP_DELETE, .id = s_fp_del_batch_ids[0]})) {
+        set_label(s_fp_manage_status, "Busy...", c_bad());
+        s_fp_del_batch_active = false;
+    }
+}
+
+static void fp_delete_selected_cb(lv_event_t *e)
+{
+    (void)e;
+    fp_delete_selected_start();
 }
 
 static void fp_apply_cb(void *user_data)
@@ -548,16 +1481,20 @@ static void fp_apply_cb(void *user_data)
     }
 
     char buf[96];
+    bool submit_next_delete = false;
+    bool request_refresh = false;
+
     switch (res->op) {
         case FP_OP_VERIFY:
             if (res->rc == AS608_SVC_OK && res->st == AS608_STATUS_OK) {
                 snprintf(buf, sizeof(buf), "Match: ID %u  (score %u)", (unsigned)res->found_id, (unsigned)res->score);
                 set_label(s_fp_unlock_status, buf, c_good());
-                ui_toast("Unlocked (Fingerprint)", c_good(), 1200);
+                ui_modal_result("Unlocked", "Fingerprint verified", true, 1500);
                 nav_to(s_home);
             } else {
                 snprintf(buf, sizeof(buf), "Verify fail: rc=%s st=%s", fp_rc_str(res->rc), fp_st_str(res->st));
                 set_label(s_fp_unlock_status, buf, c_bad());
+                ui_modal_result("Access denied", "Fingerprint not recognized", false, 1500);
             }
             break;
         case FP_OP_ENROLL:
@@ -565,25 +1502,61 @@ static void fp_apply_cb(void *user_data)
                 snprintf(buf, sizeof(buf), "Enrolled: ID %u", (unsigned)res->id);
                 set_label(s_fp_manage_status, buf, c_good());
                 ui_toast("Fingerprint enrolled", c_good(), 1200);
+                request_refresh = true;
             } else {
                 snprintf(buf, sizeof(buf), "Enroll fail: rc=%s st=%s", fp_rc_str(res->rc), fp_st_str(res->st));
                 set_label(s_fp_manage_status, buf, c_bad());
             }
             break;
         case FP_OP_DELETE:
-            if (res->rc == AS608_SVC_OK && res->st == AS608_STATUS_OK) {
-                snprintf(buf, sizeof(buf), "Deleted: ID %u", (unsigned)res->id);
-                set_label(s_fp_manage_status, buf, c_good());
+            if (s_fp_del_batch_active) {
+                if (res->rc == AS608_SVC_OK && res->st == AS608_STATUS_OK) s_fp_del_batch_ok++;
+                else s_fp_del_batch_fail++;
+
+                s_fp_del_batch_pos++;
+                if (s_fp_del_batch_pos >= s_fp_del_batch_count) {
+                    s_fp_del_batch_active = false;
+                    memset(s_fp_selected_bits, 0, sizeof(s_fp_selected_bits));
+                    snprintf(buf, sizeof(buf), "Deleted %u, failed %u",
+                             (unsigned)s_fp_del_batch_ok, (unsigned)s_fp_del_batch_fail);
+                    ui_modal_result("Delete finished", buf, (s_fp_del_batch_fail == 0), 1700);
+                    request_refresh = true;
+                } else {
+                    submit_next_delete = true;
+                }
             } else {
-                snprintf(buf, sizeof(buf), "Delete fail: rc=%s st=%s", fp_rc_str(res->rc), fp_st_str(res->st));
-                set_label(s_fp_manage_status, buf, c_bad());
+                if (res->rc == AS608_SVC_OK && res->st == AS608_STATUS_OK) {
+                    snprintf(buf, sizeof(buf), "Deleted: ID %u", (unsigned)res->id);
+                    set_label(s_fp_manage_status, buf, c_good());
+                    request_refresh = true;
+                } else {
+                    snprintf(buf, sizeof(buf), "Delete fail: rc=%s st=%s", fp_rc_str(res->rc), fp_st_str(res->st));
+                    set_label(s_fp_manage_status, buf, c_bad());
+                }
             }
             break;
         case FP_OP_CLEAR:
             if (res->rc == AS608_SVC_OK && res->st == AS608_STATUS_OK) {
                 set_label(s_fp_manage_status, "Cleared all fingerprints", c_good());
+                request_refresh = true;
             } else {
                 snprintf(buf, sizeof(buf), "Clear fail: rc=%s st=%s", fp_rc_str(res->rc), fp_st_str(res->st));
+                set_label(s_fp_manage_status, buf, c_bad());
+            }
+            break;
+        case FP_OP_LIST_INDEX:
+            if (res->rc == AS608_SVC_OK && res->st == AS608_STATUS_OK) {
+                s_fp_capacity = res->capacity;
+                memcpy(s_fp_index_bits, res->index_bits, sizeof(s_fp_index_bits));
+                fp_rebuild_present_ids();
+                fp_update_id_label();
+                fp_manage_rebuild_list_ui();
+                fp_update_page_label();
+                fp_update_sel_label();
+                snprintf(buf, sizeof(buf), "Loaded %u template(s)", (unsigned)s_fp_present_count);
+                set_label(s_fp_manage_status, buf, c_good());
+            } else {
+                snprintf(buf, sizeof(buf), "List fail: rc=%s st=%s", fp_rc_str(res->rc), fp_st_str(res->st));
                 set_label(s_fp_manage_status, buf, c_bad());
             }
             break;
@@ -593,6 +1566,21 @@ static void fp_apply_cb(void *user_data)
 
     s_fp_busy = false;
     vPortFree(res);
+
+    if (submit_next_delete && s_fp_del_batch_active && (s_fp_del_batch_pos < s_fp_del_batch_count)) {
+        uint16_t next_id = s_fp_del_batch_ids[s_fp_del_batch_pos];
+        snprintf(buf, sizeof(buf), "Deleting ID %u (%u/%u)...",
+                 (unsigned)next_id,
+                 (unsigned)(s_fp_del_batch_pos + 1u),
+                 (unsigned)s_fp_del_batch_count);
+        set_label(s_fp_manage_status, buf, c_warn());
+        if (!fp_submit((fp_cmd_t){.op = FP_OP_DELETE, .id = next_id})) {
+            set_label(s_fp_manage_status, "Busy...", c_bad());
+            s_fp_del_batch_active = false;
+        }
+    } else if (request_refresh) {
+        fp_request_index_refresh();
+    }
 }
 
 static void build_fp_unlock(void)
@@ -667,42 +1655,34 @@ static void build_fp_manage(void)
 
     lv_obj_t *card = lv_obj_create(s_fp_manage);
     lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_size(card, 760, 340);
-    lv_obj_align(card, LV_ALIGN_CENTER, 0, 10);
+    lv_obj_set_size(card, 760, 360);
+    lv_obj_align(card, LV_ALIGN_CENTER, 0, 12);
     lv_obj_set_style_radius(card, 24, 0);
     lv_obj_set_style_bg_color(card, c_card(), 0);
     lv_obj_set_style_border_width(card, 1, 0);
-    lv_obj_set_style_border_color(card, lv_color_hex(0x233152), 0);
+    lv_obj_set_style_border_color(card, lv_color_hex(0x24304A), 0);
     lv_obj_set_style_pad_all(card, 22, 0);
+    lv_obj_set_style_pad_gap(card, 12, 0);
 
-    lv_obj_t *row = lv_obj_create(card);
-    lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_size(row, lv_pct(100), 62);
-    lv_obj_align(row, LV_ALIGN_TOP_LEFT, 0, 0);
-    lv_obj_set_style_bg_opa(row, LV_OPA_0, 0);
-    lv_obj_set_style_border_width(row, 0, 0);
-    lv_obj_set_style_pad_all(row, 0, 0);
+    /* ID input (tap to edit) */
+    s_fp_id_btn = lv_btn_create(card);
+    lv_obj_set_size(s_fp_id_btn, 340, 54);
+    lv_obj_align(s_fp_id_btn, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_set_style_radius(s_fp_id_btn, 18, 0);
+    lv_obj_set_style_bg_color(s_fp_id_btn, c_card2(), 0);
+    lv_obj_set_style_border_width(s_fp_id_btn, 1, 0);
+    lv_obj_set_style_border_color(s_fp_id_btn, lv_color_hex(0x24304A), 0);
+    lv_obj_add_event_cb(s_fp_id_btn, fp_edit_id_cb, LV_EVENT_CLICKED, NULL);
 
-    lv_obj_t *lbl = lv_label_create(row);
-    lv_label_set_text(lbl, "ID");
-    lv_obj_set_style_text_color(lbl, c_sub(), 0);
-    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
-    lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 0, 0);
-
-    s_fp_id_input = lv_textarea_create(row);
-    lv_obj_set_size(s_fp_id_input, 140, 44);
-    lv_obj_align(s_fp_id_input, LV_ALIGN_LEFT_MID, 44, 0);
-    lv_textarea_set_one_line(s_fp_id_input, true);
-    lv_textarea_set_text(s_fp_id_input, "1");
-    lv_obj_set_style_radius(s_fp_id_input, 14, 0);
-    lv_obj_set_style_bg_color(s_fp_id_input, c_card2(), 0);
-    lv_obj_set_style_text_color(s_fp_id_input, c_text(), 0);
-    lv_obj_set_style_border_width(s_fp_id_input, 1, 0);
-    lv_obj_set_style_border_color(s_fp_id_input, lv_color_hex(0x233152), 0);
+    s_fp_id_lbl = lv_label_create(s_fp_id_btn);
+    lv_obj_set_style_text_color(s_fp_id_lbl, c_text(), 0);
+    lv_obj_set_style_text_font(s_fp_id_lbl, &lv_font_montserrat_16, 0);
+    lv_obj_align(s_fp_id_lbl, LV_ALIGN_LEFT_MID, 14, 0);
+    fp_update_id_label();
 
     lv_obj_t *btn_en = lv_btn_create(card);
-    lv_obj_set_size(btn_en, 220, 56);
-    lv_obj_align(btn_en, LV_ALIGN_TOP_LEFT, 0, 86);
+    lv_obj_set_size(btn_en, 190, 54);
+    lv_obj_align(btn_en, LV_ALIGN_TOP_LEFT, 360, 0);
     lv_obj_set_style_radius(btn_en, 18, 0);
     lv_obj_set_style_bg_color(btn_en, c_accent(), 0);
     lv_obj_set_style_border_width(btn_en, 0, 0);
@@ -710,39 +1690,115 @@ static void build_fp_manage(void)
     lv_obj_t *t1 = lv_label_create(btn_en);
     lv_label_set_text(t1, LV_SYMBOL_PLUS "  Enroll");
     lv_obj_set_style_text_color(t1, lv_color_white(), 0);
+    lv_obj_set_style_text_font(t1, &lv_font_montserrat_16, 0);
     lv_obj_center(t1);
 
-    lv_obj_t *btn_del = lv_btn_create(card);
-    lv_obj_set_size(btn_del, 220, 56);
-    lv_obj_align(btn_del, LV_ALIGN_TOP_LEFT, 250, 86);
-    lv_obj_set_style_radius(btn_del, 18, 0);
-    lv_obj_set_style_bg_color(btn_del, c_card2(), 0);
-    lv_obj_set_style_border_width(btn_del, 1, 0);
-    lv_obj_set_style_border_color(btn_del, lv_color_hex(0x233152), 0);
-    lv_obj_add_event_cb(btn_del, fp_delete_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *t2 = lv_label_create(btn_del);
-    lv_label_set_text(t2, LV_SYMBOL_TRASH "  Delete");
-    lv_obj_set_style_text_color(t2, c_text(), 0);
-    lv_obj_center(t2);
+    lv_obj_t *btn_refresh = lv_btn_create(card);
+    lv_obj_set_size(btn_refresh, 190, 54);
+    lv_obj_align(btn_refresh, LV_ALIGN_TOP_LEFT, 570, 0);
+    lv_obj_set_style_radius(btn_refresh, 18, 0);
+    lv_obj_set_style_bg_color(btn_refresh, c_card2(), 0);
+    lv_obj_set_style_border_width(btn_refresh, 1, 0);
+    lv_obj_set_style_border_color(btn_refresh, lv_color_hex(0x24304A), 0);
+    lv_obj_add_event_cb(btn_refresh, fp_refresh_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *tr = lv_label_create(btn_refresh);
+    lv_label_set_text(tr, LV_SYMBOL_REFRESH "  Refresh");
+    lv_obj_set_style_text_color(tr, c_text(), 0);
+    lv_obj_set_style_text_font(tr, &lv_font_montserrat_16, 0);
+    lv_obj_center(tr);
+
+    /* Existing IDs list (paged) */
+    s_fp_list = lv_obj_create(card);
+    lv_obj_clear_flag(s_fp_list, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(s_fp_list, 716, 188);
+    lv_obj_align(s_fp_list, LV_ALIGN_TOP_LEFT, 0, 72);
+    lv_obj_set_style_bg_opa(s_fp_list, LV_OPA_0, 0);
+    lv_obj_set_style_border_width(s_fp_list, 0, 0);
+    lv_obj_set_style_pad_all(s_fp_list, 0, 0);
+    lv_obj_set_style_pad_gap(s_fp_list, 12, 0);
+    lv_obj_set_flex_flow(s_fp_list, LV_FLEX_FLOW_ROW_WRAP);
+    lv_obj_set_flex_align(s_fp_list, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+
+    lv_obj_t *page_bar = lv_obj_create(card);
+    lv_obj_clear_flag(page_bar, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(page_bar, 716, 46);
+    lv_obj_align(page_bar, LV_ALIGN_TOP_LEFT, 0, 268);
+    lv_obj_set_style_bg_opa(page_bar, LV_OPA_0, 0);
+    lv_obj_set_style_border_width(page_bar, 0, 0);
+    lv_obj_set_style_pad_all(page_bar, 0, 0);
+
+    lv_obj_t *btn_prev = lv_btn_create(page_bar);
+    lv_obj_set_size(btn_prev, 120, 42);
+    lv_obj_align(btn_prev, LV_ALIGN_LEFT_MID, 0, 0);
+    lv_obj_set_style_radius(btn_prev, 16, 0);
+    lv_obj_set_style_bg_color(btn_prev, c_card2(), 0);
+    lv_obj_set_style_border_width(btn_prev, 1, 0);
+    lv_obj_set_style_border_color(btn_prev, lv_color_hex(0x24304A), 0);
+    lv_obj_add_event_cb(btn_prev, fp_prev_page_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *lp = lv_label_create(btn_prev);
+    lv_label_set_text(lp, LV_SYMBOL_LEFT "  Prev");
+    lv_obj_set_style_text_color(lp, c_text(), 0);
+    lv_obj_center(lp);
+
+    s_fp_page_lbl = lv_label_create(page_bar);
+    lv_label_set_text(s_fp_page_lbl, "Page 1/1");
+    lv_obj_set_style_text_color(s_fp_page_lbl, c_sub(), 0);
+    lv_obj_set_style_text_font(s_fp_page_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_align(s_fp_page_lbl, LV_ALIGN_CENTER, 0, 0);
+
+    s_fp_sel_lbl = lv_label_create(page_bar);
+    lv_label_set_text(s_fp_sel_lbl, "Selected: 0");
+    lv_obj_set_style_text_color(s_fp_sel_lbl, c_sub(), 0);
+    lv_obj_set_style_text_font(s_fp_sel_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_align(s_fp_sel_lbl, LV_ALIGN_RIGHT_MID, -140, 0);
+
+    lv_obj_t *btn_next = lv_btn_create(page_bar);
+    lv_obj_set_size(btn_next, 120, 42);
+    lv_obj_align(btn_next, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_set_style_radius(btn_next, 16, 0);
+    lv_obj_set_style_bg_color(btn_next, c_card2(), 0);
+    lv_obj_set_style_border_width(btn_next, 1, 0);
+    lv_obj_set_style_border_color(btn_next, lv_color_hex(0x24304A), 0);
+    lv_obj_add_event_cb(btn_next, fp_next_page_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *ln = lv_label_create(btn_next);
+    lv_label_set_text(ln, "Next  " LV_SYMBOL_RIGHT);
+    lv_obj_set_style_text_color(ln, c_text(), 0);
+    lv_obj_center(ln);
+
+    /* Actions */
+    lv_obj_t *btn_del_sel = lv_btn_create(card);
+    lv_obj_set_size(btn_del_sel, 260, 56);
+    lv_obj_align(btn_del_sel, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    lv_obj_set_style_radius(btn_del_sel, 18, 0);
+    lv_obj_set_style_bg_color(btn_del_sel, lv_color_hex(0x24304A), 0);
+    lv_obj_set_style_border_width(btn_del_sel, 1, 0);
+    lv_obj_set_style_border_color(btn_del_sel, lv_color_hex(0x24304A), 0);
+    lv_obj_add_event_cb(btn_del_sel, fp_delete_selected_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *td = lv_label_create(btn_del_sel);
+    lv_label_set_text(td, LV_SYMBOL_TRASH "  Delete Selected");
+    lv_obj_set_style_text_color(td, c_text(), 0);
+    lv_obj_set_style_text_font(td, &lv_font_montserrat_16, 0);
+    lv_obj_center(td);
 
     lv_obj_t *btn_clr = lv_btn_create(card);
-    lv_obj_set_size(btn_clr, 220, 56);
-    lv_obj_align(btn_clr, LV_ALIGN_TOP_LEFT, 500, 86);
+    lv_obj_set_size(btn_clr, 190, 56);
+    lv_obj_align(btn_clr, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
     lv_obj_set_style_radius(btn_clr, 18, 0);
     lv_obj_set_style_bg_color(btn_clr, c_card2(), 0);
     lv_obj_set_style_border_width(btn_clr, 1, 0);
-    lv_obj_set_style_border_color(btn_clr, lv_color_hex(0x233152), 0);
+    lv_obj_set_style_border_color(btn_clr, lv_color_hex(0x24304A), 0);
     lv_obj_add_event_cb(btn_clr, fp_clear_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *t3 = lv_label_create(btn_clr);
-    lv_label_set_text(t3, LV_SYMBOL_CLOSE "  Clear All");
-    lv_obj_set_style_text_color(t3, c_text(), 0);
-    lv_obj_center(t3);
+    lv_obj_t *tc = lv_label_create(btn_clr);
+    lv_label_set_text(tc, LV_SYMBOL_CLOSE "  Clear All");
+    lv_obj_set_style_text_color(tc, c_text(), 0);
+    lv_obj_set_style_text_font(tc, &lv_font_montserrat_16, 0);
+    lv_obj_center(tc);
 
     s_fp_manage_status = lv_label_create(card);
-    lv_label_set_text(s_fp_manage_status, "Ready");
+    lv_label_set_text(s_fp_manage_status, "Tap Refresh to load IDs");
     lv_obj_set_style_text_color(s_fp_manage_status, c_sub(), 0);
     lv_obj_set_style_text_font(s_fp_manage_status, &lv_font_montserrat_14, 0);
-    lv_obj_align(s_fp_manage_status, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    lv_obj_align(s_fp_manage_status, LV_ALIGN_BOTTOM_LEFT, 0, -64);
 }
 
 /* ================= RFID (MFRC522) ================= */
@@ -773,35 +1829,118 @@ static lv_obj_t *s_rfid_unlock_status = NULL;
 static lv_obj_t *s_rfid_manage_status = NULL;
 static lv_obj_t *s_rfid_last_uid = NULL;
 
-#define RFID_DB_MAX 16u
-static uint8_t s_rfid_db[RFID_DB_MAX][4];
-static uint8_t s_rfid_db_count = 0;
+/* RFID manage UI state */
+static lv_obj_t *s_rfid_list = NULL;
+static lv_obj_t *s_rfid_page_lbl = NULL;
+static lv_obj_t *s_rfid_sel_lbl = NULL;
+static uint16_t s_rfid_page = 0;
+static uint32_t s_rfid_sel_mask = 0; /* selection by current list index (rebuilt on refresh) */
 
-static int rfid_db_find(const uint8_t uid[4])
+static uint16_t rfid_sel_count(uint8_t count)
 {
-    for (uint8_t i = 0; i < s_rfid_db_count; i++) {
-        if (memcmp(s_rfid_db[i], uid, 4) == 0) return (int)i;
+    uint16_t selected = 0;
+    for (uint8_t i = 0; i < count && i < 32u; i++) {
+        if (s_rfid_sel_mask & (1u << i)) selected++;
     }
-    return -1;
+    return selected;
 }
 
-static bool rfid_db_add(const uint8_t uid[4])
+static void rfid_update_page_label(uint8_t total)
 {
-    if (s_rfid_db_count >= RFID_DB_MAX) return false;
-    if (rfid_db_find(uid) >= 0) return true;
-    memcpy(s_rfid_db[s_rfid_db_count++], uid, 4);
-    return true;
+    if (!s_rfid_page_lbl) return;
+    const uint16_t page_size = 8u;
+    uint16_t pages = ((uint16_t)total + page_size - 1u) / page_size;
+    if (pages == 0) pages = 1;
+    if (s_rfid_page >= pages) s_rfid_page = pages - 1u;
+    char buf[24];
+    snprintf(buf, sizeof(buf), "Page %u/%u", (unsigned)(s_rfid_page + 1u), (unsigned)pages);
+    lv_label_set_text(s_rfid_page_lbl, buf);
 }
 
-static bool rfid_db_remove(const uint8_t uid[4])
+static void rfid_update_sel_label(uint8_t total)
 {
-    int idx = rfid_db_find(uid);
-    if (idx < 0) return false;
-    for (uint8_t i = (uint8_t)idx; (i + 1u) < s_rfid_db_count; i++) {
-        memcpy(s_rfid_db[i], s_rfid_db[i + 1u], 4);
+    if (!s_rfid_sel_lbl) return;
+    char buf[32];
+    snprintf(buf, sizeof(buf), "Selected: %u", (unsigned)rfid_sel_count(total));
+    lv_label_set_text(s_rfid_sel_lbl, buf);
+}
+
+static void rfid_item_set_style(lv_obj_t *btn, bool selected)
+{
+    if (!btn) return;
+    lv_obj_set_style_radius(btn, 16, 0);
+    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(btn, 1, 0);
+    lv_obj_set_style_border_color(btn, lv_color_hex(0x24304A), 0);
+    lv_obj_set_style_bg_color(btn, selected ? c_accent() : c_card2(), 0);
+}
+
+static void rfid_item_click_cb(lv_event_t *e)
+{
+    uint8_t idx = (uint8_t)(uintptr_t)lv_event_get_user_data(e);
+    uint8_t total = lock_rfid_count();
+    if (idx >= total || idx >= 32u) return;
+
+    s_rfid_sel_mask ^= (1u << idx);
+    bool selected = (s_rfid_sel_mask & (1u << idx)) != 0u;
+
+    lv_obj_t *btn = lv_event_get_target(e);
+    rfid_item_set_style(btn, selected);
+
+    lv_obj_t *lbl = lv_obj_get_child(btn, 0);
+    if (lbl) {
+        lock_rfid_entry_t entry;
+        if (lock_rfid_get(idx, &entry)) {
+            char line[48];
+            snprintf(line, sizeof(line), "%s  UID %02X%02X%02X%02X",
+                     selected ? LV_SYMBOL_OK : "  ",
+                     entry.uid[0], entry.uid[1], entry.uid[2], entry.uid[3]);
+            lv_label_set_text(lbl, line);
+            lv_obj_set_style_text_color(lbl, selected ? lv_color_white() : c_text(), 0);
+        }
     }
-    s_rfid_db_count--;
-    return true;
+
+    rfid_update_sel_label(total);
+}
+
+static void rfid_manage_rebuild_list_ui(void)
+{
+    if (!s_rfid_list) return;
+    lv_obj_clean(s_rfid_list);
+
+    uint8_t total = lock_rfid_count();
+    const uint16_t page_size = 8u;
+    rfid_update_page_label(total);
+
+    uint16_t start = (uint16_t)(s_rfid_page * page_size);
+    uint16_t end = start + page_size;
+    if (end > total) end = total;
+
+    for (uint16_t i = start; i < end; i++) {
+        uint8_t idx = (uint8_t)i;
+        lock_rfid_entry_t entry;
+        if (!lock_rfid_get(idx, &entry)) continue;
+
+        bool selected = (idx < 32u) && ((s_rfid_sel_mask & (1u << idx)) != 0u);
+
+        lv_obj_t *btn = lv_btn_create(s_rfid_list);
+        lv_obj_set_size(btn, 340, 56);
+        lv_obj_clear_flag(btn, LV_OBJ_FLAG_SCROLLABLE);
+        rfid_item_set_style(btn, selected);
+        lv_obj_add_event_cb(btn, rfid_item_click_cb, LV_EVENT_CLICKED, (void *)(uintptr_t)idx);
+
+        lv_obj_t *lbl = lv_label_create(btn);
+        char line[48];
+        snprintf(line, sizeof(line), "%s  UID %02X%02X%02X%02X",
+                 selected ? LV_SYMBOL_OK : "  ",
+                 entry.uid[0], entry.uid[1], entry.uid[2], entry.uid[3]);
+        lv_label_set_text(lbl, line);
+        lv_obj_set_style_text_color(lbl, selected ? lv_color_white() : c_text(), 0);
+        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_16, 0);
+        lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 14, 0);
+    }
+
+    rfid_update_sel_label(total);
 }
 
 static bool rfid_wait_uid(uint32_t timeout_ms, uint8_t out_uid[4])
@@ -852,7 +1991,7 @@ static void rfid_worker(void *arg)
         res->op = cmd.op;
 
         if (cmd.op == RFID_OP_CLEAR) {
-            s_rfid_db_count = 0;
+            lock_rfid_clear();
             res->ok = true;
             snprintf(res->msg, sizeof(res->msg), "All cards cleared");
         } else {
@@ -864,10 +2003,10 @@ static void rfid_worker(void *arg)
             } else {
                 memcpy(res->uid, uid, 4);
                 if (cmd.op == RFID_OP_VERIFY) {
-                    if (s_rfid_db_count == 0) {
+                    if (lock_rfid_count() == 0) {
                         res->ok = false;
                         snprintf(res->msg, sizeof(res->msg), "No cards enrolled");
-                    } else if (rfid_db_find(uid) >= 0) {
+                    } else if (lock_rfid_find_uid(uid) >= 0) {
                         res->ok = true;
                         snprintf(res->msg, sizeof(res->msg), "Card accepted");
                     } else {
@@ -875,10 +2014,10 @@ static void rfid_worker(void *arg)
                         snprintf(res->msg, sizeof(res->msg), "Card not authorized");
                     }
                 } else if (cmd.op == RFID_OP_ENROLL) {
-                    res->ok = rfid_db_add(uid);
+                    res->ok = lock_rfid_add_uid(uid, NULL);
                     snprintf(res->msg, sizeof(res->msg), res->ok ? "Card enrolled" : "Enroll failed (DB full)");
                 } else if (cmd.op == RFID_OP_DELETE) {
-                    res->ok = rfid_db_remove(uid);
+                    res->ok = lock_rfid_remove_uid(uid);
                     snprintf(res->msg, sizeof(res->msg), res->ok ? "Card deleted" : "Card not found");
                 }
             }
@@ -905,42 +2044,98 @@ static bool rfid_submit(rfid_cmd_t cmd)
 
 static void rfid_back_to_choose(lv_event_t *e) { (void)e; nav_to(s_choose); }
 static void rfid_back_to_unlock(lv_event_t *e) { (void)e; nav_to(s_rfid_unlock); }
-static void rfid_open_manage_cb(lv_event_t *e) { (void)e; nav_to(s_rfid_manage); }
+
+static void rfid_open_manage_cb(lv_event_t *e)
+{
+    (void)e;
+    s_rfid_sel_mask = 0;
+    s_rfid_page = 0;
+    nav_to(s_rfid_manage);
+    rfid_manage_rebuild_list_ui();
+    set_label(s_rfid_manage_status, "Ready", c_sub());
+}
+
+static void rfid_manage_refresh_cb(lv_event_t *e)
+{
+    (void)e;
+    s_rfid_sel_mask = 0;
+    s_rfid_page = 0;
+    rfid_manage_rebuild_list_ui();
+    set_label(s_rfid_manage_status, "List refreshed", c_good());
+}
+
+static void rfid_prev_page_cb(lv_event_t *e)
+{
+    (void)e;
+    if (s_rfid_page > 0) s_rfid_page--;
+    rfid_manage_rebuild_list_ui();
+}
+
+static void rfid_next_page_cb(lv_event_t *e)
+{
+    (void)e;
+    const uint16_t page_size = 8u;
+    uint8_t total = lock_rfid_count();
+    uint16_t pages = ((uint16_t)total + page_size - 1u) / page_size;
+    if (pages == 0) pages = 1;
+    if ((s_rfid_page + 1u) < pages) s_rfid_page++;
+    rfid_manage_rebuild_list_ui();
+}
 
 static void rfid_verify_cb(lv_event_t *e)
 {
     (void)e;
-    set_label(s_rfid_unlock_status, "Tap card to unlock…", c_warn());
+    set_label(s_rfid_unlock_status, "Tap card to unlock...", c_warn());
     if (!rfid_submit((rfid_cmd_t){.op = RFID_OP_VERIFY})) {
-        set_label(s_rfid_unlock_status, "Busy…", c_bad());
+        set_label(s_rfid_unlock_status, "Busy...", c_bad());
     }
 }
 
-static void rfid_enroll_cb(lv_event_t *e)
+static void rfid_scan_enroll_cb(lv_event_t *e)
 {
     (void)e;
-    set_label(s_rfid_manage_status, "Tap card to enroll…", c_warn());
+    set_label(s_rfid_manage_status, "Tap card to enroll...", c_warn());
     if (!rfid_submit((rfid_cmd_t){.op = RFID_OP_ENROLL})) {
-        set_label(s_rfid_manage_status, "Busy…", c_bad());
+        set_label(s_rfid_manage_status, "Busy...", c_bad());
     }
 }
 
-static void rfid_delete_cb(lv_event_t *e)
+static void rfid_delete_selected_cb(lv_event_t *e)
 {
     (void)e;
-    set_label(s_rfid_manage_status, "Tap card to delete…", c_warn());
-    if (!rfid_submit((rfid_cmd_t){.op = RFID_OP_DELETE})) {
-        set_label(s_rfid_manage_status, "Busy…", c_bad());
+    uint8_t total = lock_rfid_count();
+    if (total == 0) {
+        ui_toast("No cards enrolled", c_text(), 900);
+        return;
     }
+
+    uint8_t removed = 0;
+    for (uint8_t i = 0; i < total && i < 32u; i++) {
+        if ((s_rfid_sel_mask & (1u << i)) == 0u) continue;
+        lock_rfid_entry_t entry;
+        if (lock_rfid_get(i, &entry)) {
+            if (lock_rfid_remove_uid(entry.uid)) removed++;
+        }
+    }
+
+    s_rfid_sel_mask = 0;
+    rfid_manage_rebuild_list_ui();
+
+    char msg[48];
+    snprintf(msg, sizeof(msg), "Removed %u card(s)", (unsigned)removed);
+    ui_modal_result("RFID updated", msg, true, 1500);
+    set_label(s_rfid_manage_status, msg, c_good());
 }
 
-static void rfid_clear_cb(lv_event_t *e)
+static void rfid_clear_all_cb(lv_event_t *e)
 {
     (void)e;
-    set_label(s_rfid_manage_status, "Clearing…", c_warn());
-    if (!rfid_submit((rfid_cmd_t){.op = RFID_OP_CLEAR})) {
-        set_label(s_rfid_manage_status, "Busy…", c_bad());
-    }
+    lock_rfid_clear();
+    s_rfid_sel_mask = 0;
+    s_rfid_page = 0;
+    rfid_manage_rebuild_list_ui();
+    ui_modal_result("RFID cleared", "All cards removed", true, 1500);
+    set_label(s_rfid_manage_status, "All cards cleared", c_good());
 }
 
 static void rfid_apply_cb(void *user_data)
@@ -961,11 +2156,15 @@ static void rfid_apply_cb(void *user_data)
     if (res->op == RFID_OP_VERIFY) {
         set_label(s_rfid_unlock_status, res->msg, col);
         if (res->ok) {
-            ui_toast("Unlocked (RFID)", c_good(), 1200);
+            ui_modal_result("Unlocked", "RFID verified", true, 1500);
             nav_to(s_home);
+        } else {
+            ui_modal_result("Access denied", "RFID not authorized", false, 1500);
         }
     } else {
         set_label(s_rfid_manage_status, res->msg, col);
+        /* Keep manage list in sync with the store */
+        rfid_manage_rebuild_list_ui();
     }
 
     s_rfid_busy = false;
@@ -1044,63 +2243,140 @@ static void build_rfid_manage(void)
 
     lv_obj_t *card = lv_obj_create(s_rfid_manage);
     lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_size(card, 760, 340);
-    lv_obj_align(card, LV_ALIGN_CENTER, 0, 10);
+    lv_obj_set_size(card, 760, 360);
+    lv_obj_align(card, LV_ALIGN_CENTER, 0, 12);
     lv_obj_set_style_radius(card, 24, 0);
     lv_obj_set_style_bg_color(card, c_card(), 0);
     lv_obj_set_style_border_width(card, 1, 0);
-    lv_obj_set_style_border_color(card, lv_color_hex(0x233152), 0);
+    lv_obj_set_style_border_color(card, lv_color_hex(0x24304A), 0);
     lv_obj_set_style_pad_all(card, 22, 0);
+    lv_obj_set_style_pad_gap(card, 12, 0);
 
     lv_obj_t *info = lv_label_create(card);
-    lv_label_set_text(info, "Tap card to Enroll/Delete. Stored in RAM (dev only).");
+    lv_label_set_text(info, "Tap card to enroll. Tap list to select, then delete.");
     lv_obj_set_style_text_color(info, c_sub(), 0);
     lv_obj_set_style_text_font(info, &lv_font_montserrat_14, 0);
     lv_obj_align(info, LV_ALIGN_TOP_LEFT, 0, 0);
 
     lv_obj_t *btn1 = lv_btn_create(card);
-    lv_obj_set_size(btn1, 220, 56);
-    lv_obj_align(btn1, LV_ALIGN_TOP_LEFT, 0, 66);
+    lv_obj_set_size(btn1, 240, 54);
+    lv_obj_align(btn1, LV_ALIGN_TOP_LEFT, 0, 34);
     lv_obj_set_style_radius(btn1, 18, 0);
     lv_obj_set_style_bg_color(btn1, c_accent(), 0);
     lv_obj_set_style_border_width(btn1, 0, 0);
-    lv_obj_add_event_cb(btn1, rfid_enroll_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(btn1, rfid_scan_enroll_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *t1 = lv_label_create(btn1);
-    lv_label_set_text(t1, LV_SYMBOL_PLUS "  Enroll");
+    lv_label_set_text(t1, LV_SYMBOL_PLUS "  Scan to Enroll");
     lv_obj_set_style_text_color(t1, lv_color_white(), 0);
+    lv_obj_set_style_text_font(t1, &lv_font_montserrat_16, 0);
     lv_obj_center(t1);
 
-    lv_obj_t *btn2 = lv_btn_create(card);
-    lv_obj_set_size(btn2, 220, 56);
-    lv_obj_align(btn2, LV_ALIGN_TOP_LEFT, 250, 66);
-    lv_obj_set_style_radius(btn2, 18, 0);
-    lv_obj_set_style_bg_color(btn2, c_card2(), 0);
-    lv_obj_set_style_border_width(btn2, 1, 0);
-    lv_obj_set_style_border_color(btn2, lv_color_hex(0x233152), 0);
-    lv_obj_add_event_cb(btn2, rfid_delete_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *t2 = lv_label_create(btn2);
-    lv_label_set_text(t2, LV_SYMBOL_TRASH "  Delete");
-    lv_obj_set_style_text_color(t2, c_text(), 0);
-    lv_obj_center(t2);
+    lv_obj_t *btn_refresh = lv_btn_create(card);
+    lv_obj_set_size(btn_refresh, 200, 54);
+    lv_obj_align(btn_refresh, LV_ALIGN_TOP_LEFT, 270, 34);
+    lv_obj_set_style_radius(btn_refresh, 18, 0);
+    lv_obj_set_style_bg_color(btn_refresh, c_card2(), 0);
+    lv_obj_set_style_border_width(btn_refresh, 1, 0);
+    lv_obj_set_style_border_color(btn_refresh, lv_color_hex(0x24304A), 0);
+    lv_obj_add_event_cb(btn_refresh, rfid_manage_refresh_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *tr = lv_label_create(btn_refresh);
+    lv_label_set_text(tr, LV_SYMBOL_REFRESH "  Refresh");
+    lv_obj_set_style_text_color(tr, c_text(), 0);
+    lv_obj_set_style_text_font(tr, &lv_font_montserrat_16, 0);
+    lv_obj_center(tr);
 
-    lv_obj_t *btn3 = lv_btn_create(card);
-    lv_obj_set_size(btn3, 220, 56);
-    lv_obj_align(btn3, LV_ALIGN_TOP_LEFT, 500, 66);
-    lv_obj_set_style_radius(btn3, 18, 0);
-    lv_obj_set_style_bg_color(btn3, c_card2(), 0);
-    lv_obj_set_style_border_width(btn3, 1, 0);
-    lv_obj_set_style_border_color(btn3, lv_color_hex(0x233152), 0);
-    lv_obj_add_event_cb(btn3, rfid_clear_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *t3 = lv_label_create(btn3);
-    lv_label_set_text(t3, LV_SYMBOL_CLOSE "  Clear All");
-    lv_obj_set_style_text_color(t3, c_text(), 0);
-    lv_obj_center(t3);
+    lv_obj_t *btn_clear = lv_btn_create(card);
+    lv_obj_set_size(btn_clear, 200, 54);
+    lv_obj_align(btn_clear, LV_ALIGN_TOP_LEFT, 500, 34);
+    lv_obj_set_style_radius(btn_clear, 18, 0);
+    lv_obj_set_style_bg_color(btn_clear, c_card2(), 0);
+    lv_obj_set_style_border_width(btn_clear, 1, 0);
+    lv_obj_set_style_border_color(btn_clear, lv_color_hex(0x24304A), 0);
+    lv_obj_add_event_cb(btn_clear, rfid_clear_all_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *tc = lv_label_create(btn_clear);
+    lv_label_set_text(tc, LV_SYMBOL_CLOSE "  Clear All");
+    lv_obj_set_style_text_color(tc, c_text(), 0);
+    lv_obj_set_style_text_font(tc, &lv_font_montserrat_16, 0);
+    lv_obj_center(tc);
+
+    s_rfid_list = lv_obj_create(card);
+    lv_obj_clear_flag(s_rfid_list, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(s_rfid_list, 716, 188);
+    lv_obj_align(s_rfid_list, LV_ALIGN_TOP_LEFT, 0, 98);
+    lv_obj_set_style_bg_opa(s_rfid_list, LV_OPA_0, 0);
+    lv_obj_set_style_border_width(s_rfid_list, 0, 0);
+    lv_obj_set_style_pad_all(s_rfid_list, 0, 0);
+    lv_obj_set_style_pad_gap(s_rfid_list, 12, 0);
+    lv_obj_set_flex_flow(s_rfid_list, LV_FLEX_FLOW_ROW_WRAP);
+    lv_obj_set_flex_align(s_rfid_list, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+
+    lv_obj_t *page_bar = lv_obj_create(card);
+    lv_obj_clear_flag(page_bar, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(page_bar, 716, 46);
+    lv_obj_align(page_bar, LV_ALIGN_TOP_LEFT, 0, 298);
+    lv_obj_set_style_bg_opa(page_bar, LV_OPA_0, 0);
+    lv_obj_set_style_border_width(page_bar, 0, 0);
+    lv_obj_set_style_pad_all(page_bar, 0, 0);
+
+    lv_obj_t *btn_prev = lv_btn_create(page_bar);
+    lv_obj_set_size(btn_prev, 120, 42);
+    lv_obj_align(btn_prev, LV_ALIGN_LEFT_MID, 0, 0);
+    lv_obj_set_style_radius(btn_prev, 16, 0);
+    lv_obj_set_style_bg_color(btn_prev, c_card2(), 0);
+    lv_obj_set_style_border_width(btn_prev, 1, 0);
+    lv_obj_set_style_border_color(btn_prev, lv_color_hex(0x24304A), 0);
+    lv_obj_add_event_cb(btn_prev, rfid_prev_page_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *lp = lv_label_create(btn_prev);
+    lv_label_set_text(lp, LV_SYMBOL_LEFT "  Prev");
+    lv_obj_set_style_text_color(lp, c_text(), 0);
+    lv_obj_center(lp);
+
+    s_rfid_page_lbl = lv_label_create(page_bar);
+    lv_label_set_text(s_rfid_page_lbl, "Page 1/1");
+    lv_obj_set_style_text_color(s_rfid_page_lbl, c_sub(), 0);
+    lv_obj_set_style_text_font(s_rfid_page_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_align(s_rfid_page_lbl, LV_ALIGN_CENTER, 0, 0);
+
+    s_rfid_sel_lbl = lv_label_create(page_bar);
+    lv_label_set_text(s_rfid_sel_lbl, "Selected: 0");
+    lv_obj_set_style_text_color(s_rfid_sel_lbl, c_sub(), 0);
+    lv_obj_set_style_text_font(s_rfid_sel_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_align(s_rfid_sel_lbl, LV_ALIGN_RIGHT_MID, -140, 0);
+
+    lv_obj_t *btn_next = lv_btn_create(page_bar);
+    lv_obj_set_size(btn_next, 120, 42);
+    lv_obj_align(btn_next, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_set_style_radius(btn_next, 16, 0);
+    lv_obj_set_style_bg_color(btn_next, c_card2(), 0);
+    lv_obj_set_style_border_width(btn_next, 1, 0);
+    lv_obj_set_style_border_color(btn_next, lv_color_hex(0x24304A), 0);
+    lv_obj_add_event_cb(btn_next, rfid_next_page_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *ln = lv_label_create(btn_next);
+    lv_label_set_text(ln, "Next  " LV_SYMBOL_RIGHT);
+    lv_obj_set_style_text_color(ln, c_text(), 0);
+    lv_obj_center(ln);
+
+    lv_obj_t *btn_del_sel = lv_btn_create(card);
+    lv_obj_set_size(btn_del_sel, 260, 56);
+    lv_obj_align(btn_del_sel, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    lv_obj_set_style_radius(btn_del_sel, 18, 0);
+    lv_obj_set_style_bg_color(btn_del_sel, lv_color_hex(0x24304A), 0);
+    lv_obj_set_style_border_width(btn_del_sel, 1, 0);
+    lv_obj_set_style_border_color(btn_del_sel, lv_color_hex(0x24304A), 0);
+    lv_obj_add_event_cb(btn_del_sel, rfid_delete_selected_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *td = lv_label_create(btn_del_sel);
+    lv_label_set_text(td, LV_SYMBOL_TRASH "  Delete Selected");
+    lv_obj_set_style_text_color(td, c_text(), 0);
+    lv_obj_set_style_text_font(td, &lv_font_montserrat_16, 0);
+    lv_obj_center(td);
 
     s_rfid_manage_status = lv_label_create(card);
     lv_label_set_text(s_rfid_manage_status, "Ready");
     lv_obj_set_style_text_color(s_rfid_manage_status, c_sub(), 0);
     lv_obj_set_style_text_font(s_rfid_manage_status, &lv_font_montserrat_14, 0);
-    lv_obj_align(s_rfid_manage_status, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    lv_obj_align(s_rfid_manage_status, LV_ALIGN_BOTTOM_LEFT, 0, -64);
+
+    rfid_manage_rebuild_list_ui();
 }
 
 static void choose_to_fp(lv_event_t *e) { (void)e; nav_to(s_fp_unlock); }
@@ -1148,18 +2424,28 @@ void ui_lock_init(void)
 {
     LOG_I("UI_LOCK", "init");
 
+    lock_data_init();
+    if (lock_pin_count() == 0) {
+        (void)lock_pin_add("1234", 0, "default", NULL);
+    }
+
     /* AS608 service init (async worker will use it) */
     AS608_Port_BindUart(&huart4);
     as608_svc_rc_t rc = AS608_Service_Init(0xFFFFFFFF, 0x00000000);
     LOG_I("UI_LOCK", "AS608_Service_Init rc=%d", (int)rc);
 
+    /* Build Home with its own palette, then use subpage palette for the rest. */
+    ui_use_palette(&s_pal_home);
     build_home();
+
+    ui_use_palette(&s_pal_sub);
     build_choose();
     build_fp_unlock();
     build_fp_manage();
     build_rfid_unlock();
     build_rfid_manage();
     build_pin_unlock();
+    build_pin_manage();
 
     if (!s_fp_q) s_fp_q = xQueueCreate(4, sizeof(fp_cmd_t));
     if (s_fp_q && !s_fp_task) {

@@ -21,6 +21,16 @@
 static TaskHandle_t lvgl_task_handle = NULL;
 static SemaphoreHandle_t lvgl_mutex = NULL;
 
+/* LVGL integration model (important for stability):
+ * - Only the `lvgl_handler_task` should call LVGL APIs directly in a loop.
+ * - Other tasks should NOT touch LVGL objects directly; instead use `lv_async_call()` to
+ *   schedule UI updates back onto the LVGL thread, or guard access with `lvgl_lock()`.
+ *
+ * Priorities:
+ * - `lvgl_tick_task` keeps LVGL timing accurate (animations, indev processing, timers).
+ * - `lvgl_handler_task` runs `lv_timer_handler()` frequently; keep it reasonably high to
+ *   avoid “sometimes touch has no effect” when CPU is busy.
+ */
 static void lvgl_tick_task(void *arg) {
     (void) arg;
     TickType_t xLastWakeTime = xTaskGetTickCount();

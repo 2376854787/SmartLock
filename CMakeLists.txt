@@ -84,6 +84,7 @@ add_executable(${CMAKE_PROJECT_NAME}
         Drivers/BSP/rc522/rc522_my.c
         components/log/log_port.c
         Drivers/BSP/lvgl_port/lvgl_port.c
+        Application/Src/lock_data.c
         Application/Src/ui_lock.c
         Application/Src/lvgl_task.c
         Middlewares/LVGL/src/core/lv_disp.c
@@ -155,6 +156,9 @@ add_executable(${CMAKE_PROJECT_NAME}
         Middlewares/LVGL/src/font/lv_font_loader.c
         Middlewares/LVGL/src/font/lv_font_montserrat_14.c
         Middlewares/LVGL/src/font/lv_font_montserrat_16.c
+        # NOTE: This project lists LVGL sources manually. When enabling a font in `lv_conf.h`,
+        # also add its corresponding `lv_font_montserrat_XX.c` here, otherwise it will compile
+        # but fail at link-time with missing font symbols.
         Middlewares/LVGL/src/font/lv_font_montserrat_20.c
         Middlewares/LVGL/src/font/lv_font_montserrat_48.c
         Middlewares/LVGL/src/extra/lv_extra.c

@@ -34,7 +34,12 @@
 
 #define LV_MEM_CUSTOM 0
 #if LV_MEM_CUSTOM == 0
-    #define LV_MEM_SIZE (64U * 1024U)
+    /* LVGL internal heap (RAM). Reduce to save RAM, increase if you hit alloc/assert failures.
+     * Typical RAM consumers in this project:
+     * - LVGL internal heap (this pool)
+     * - Display draw buffer in `Drivers/BSP/lvgl_port/lvgl_port.c`
+     */
+    #define LV_MEM_SIZE (48U * 1024U)
     #define LV_MEM_ADR 0
     #if LV_MEM_ADR == 0
         #undef LV_MEM_POOL_INCLUDE
@@ -47,7 +52,8 @@
     #define LV_MEM_CUSTOM_REALLOC realloc
 #endif
 
-#define LV_MEM_BUF_MAX_NUM 8
+/* Maximum number of memory buffers (internal). Smaller saves some overhead. */
+#define LV_MEM_BUF_MAX_NUM 4
 #define LV_MEMCPY_MEMSET_STD 0
 
 /*====================
@@ -69,8 +75,11 @@
     #define LV_CIRCLE_CACHE_SIZE 4
 #endif
 
-#define LV_LAYER_SIMPLE_BUF_SIZE          (4 * 1024)
-#define LV_LAYER_SIMPLE_FALLBACK_BUF_SIZE (1 * 1024)
+/* Layer buffers are additional RAM used for some draw-layer operations.
+ * Reduce to save RAM (may reduce performance in some cases).
+ */
+#define LV_LAYER_SIMPLE_BUF_SIZE          (2 * 1024)
+#define LV_LAYER_SIMPLE_FALLBACK_BUF_SIZE (512)
 #define LV_IMG_CACHE_DEF_SIZE 0
 #define LV_GRADIENT_MAX_STOPS 2
 #define LV_GRAD_CACHE_DEF_SIZE 0
@@ -169,7 +178,7 @@
 #define LV_FONT_MONTSERRAT_14 1
 #define LV_FONT_MONTSERRAT_16 1
 #define LV_FONT_MONTSERRAT_18 0
-#define LV_FONT_MONTSERRAT_20 1
+#define LV_FONT_MONTSERRAT_20 1 /* Used by the lock UI titles/buttons (Application/Src/ui_lock.c) */
 #define LV_FONT_MONTSERRAT_22 0
 #define LV_FONT_MONTSERRAT_24 0
 #define LV_FONT_MONTSERRAT_26 0
@@ -183,7 +192,7 @@
 #define LV_FONT_MONTSERRAT_42 0
 #define LV_FONT_MONTSERRAT_44 0
 #define LV_FONT_MONTSERRAT_46 0
-#define LV_FONT_MONTSERRAT_48 1
+#define LV_FONT_MONTSERRAT_48 1 /* Used by the lock UI large time on Home screen */
 
 #define LV_FONT_MONTSERRAT_12_SUBPX      0
 #define LV_FONT_MONTSERRAT_28_COMPRESSED 0
@@ -224,7 +233,7 @@
 #define LV_USE_ARC        0
 #define LV_USE_BAR        0
 #define LV_USE_BTN        1
-#define LV_USE_BTNMATRIX  1
+#define LV_USE_BTNMATRIX  1 /* Used by PIN keypad (btnmatrix) */
 #define LV_USE_CANVAS     0
 #define LV_USE_CHECKBOX   0
 #define LV_USE_DROPDOWN   0
@@ -300,7 +309,7 @@
  * Layouts
  *----------*/
 
-#define LV_USE_FLEX 1
+#define LV_USE_FLEX 1 /* Used by choose-method screen layout */
 #define LV_USE_GRID 0
 
 /*==================

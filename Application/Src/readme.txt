@@ -1,16 +1,37 @@
-- 已把新“智能锁多模态 UI”接到 LVGL 启动流程：Application/Src/lvgl_task.c:44 调用 ui_lock_init()，UI 主实现为 Application/Src/ui_lock.c:1（首页信息→方式选择→指纹/RFID/密码+CRUD占位）。
-  - 为了让新 UI 能编译，打开了 LVGL 必需组件/字体：Middlewares/LVGL/lv_conf.h:227（LV_USE_BTNMATRIX=1，密码键盘用）、Middlewares/LVGL/lv_conf.h:303（LV_USE_FLEX=1，选择页卡片布局用）、
-    Middlewares/LVGL/lv_conf.h:172（LV_FONT_MONTSERRAT_20=1，标题/按钮用）、Middlewares/LVGL/lv_conf.h:186（LV_FONT_MONTSERRAT_48=1，首页大时间用）。
-  - 同步补了字体源文件到工程：CMakeLists.txt:158、CMakeLists.txt:159（否则宏开了也会缺符号）。
-  - 修了一个 LVGL 不存在的透明度宏导致的编译错误：Application/Src/ui_lock.c:226（LV_OPA_15→LV_OPA_20）；现在 ui_lock.c 已可通过编译，当前失败点停在你工程原有的链接脚本符号缺失（_estack/
-    _sidata/_sdata/_sbss/_ebss），与 UI 无关。
+SmartLock - LVGL/UI quick notes (ASCII; safe for Windows codepages)
 
-  你问的“config 新增宏 & 作用”主要是这些（按位置）：
+1) LVGL startup path
+- `Application/Src/lvgl_task.c`
+  - `lvgl_tick_task`: calls `lv_tick_inc()` periodically (LVGL timebase)
+  - `lvgl_handler_task`: `lv_init()` -> `lv_port_disp_init()`/`lv_port_indev_init()` -> `ui_lock_init()` -> loop `lv_timer_handler()`
 
-  - Middlewares/LVGL/lv_conf.h:227 LV_USE_BTNMATRIX：启用 lv_btnmatrix，用于密码数字键盘。
-  - Middlewares/LVGL/lv_conf.h:303 LV_USE_FLEX：启用 Flex 布局，选择页三种解锁方式用更整齐的自适应排版。
-  - Middlewares/LVGL/lv_conf.h:172 / Middlewares/LVGL/lv_conf.h:186：启用更大字体 20/48，分别用于标题与首页大时间显示。
-  - Application/Src/lvgl_task.c:12 / Application/Src/lvgl_task.c:16：LVGL_HANDLER_TASK_PRIORITY/LVGL_TICK_TASK_PRIORITY，用来把 LVGL handler/tick 任务的优先级显式拉高（减少“有时点了没反
-    应”的调度饥饿问题）。
-  - 触摸横屏左右/上下反了时，对应的是触摸驱动里的编译宏：Drivers/BSP/touch/gt9xxx.c:289（TOUCH_LANDSCAPE_INVERT_X 左右翻转）、Drivers/BSP/touch/gt9xxx.c:292（TOUCH_LANDSCAPE_INVERT_Y 上下
-    翻转）、Drivers/BSP/touch/gt9xxx.c:329（TOUCH_POLL_INTERVAL_MS 触摸轮询节流间隔）。
+2) UI entry
+- `Application/Src/lvgl_task.c`: calls `ui_lock_init()` after LVGL is ready
+- `Application/Src/ui_lock.c`: multimodal smart-lock UI (dev stage)
+  - Home (time/date/weather placeholders) -> tap to enter
+  - Choose: Fingerprint / RFID / Password(PIN)
+  - Each method has an unlock page + a manage(CRUD) page
+- `Application/Inc/lock_data.h` + `Application/Src/lock_data.c`: in-RAM credential store (RFID cards + PINs) with stable IDs, designed for future MQTT/cloud sync
+
+3) Touch mapping (landscape mirror / wrong hitbox)
+- LVGL indev: `Drivers/BSP/lvgl_port/lvgl_port.c` -> `gt9147_read_point()`
+- Raw->screen mapping: `Drivers/BSP/touch/gt9xxx.c` (`gt9xxx_map_point()`)
+  - Landscape swaps axes via `tp_dev.touchtype & 0x01`
+  - Fix left/right or up/down mirroring with:
+    - `TOUCH_LANDSCAPE_INVERT_X`
+    - `TOUCH_LANDSCAPE_INVERT_Y`
+
+4) LVGL config macros used by this UI
+- `Middlewares/LVGL/lv_conf.h`
+  - `LV_USE_BTNMATRIX`: PIN keypad uses `lv_btnmatrix`
+  - `LV_USE_FLEX`: choose-method page uses flex layout
+  - `LV_FONT_MONTSERRAT_20` / `LV_FONT_MONTSERRAT_48`: titles + big time
+
+IMPORTANT build note
+This project manually lists LVGL sources in `CMakeLists.txt`.
+If you enable a widget/font in `lv_conf.h`, also add its `*.c` to `CMakeLists.txt`.
+
+More notes:
+- `Middlewares/LVGL/PROJECT_NOTES.md`
+- `Drivers/BSP/lvgl_port/AI_NOTES.md`
+- `Drivers/BSP/touch/AI_NOTES.md`

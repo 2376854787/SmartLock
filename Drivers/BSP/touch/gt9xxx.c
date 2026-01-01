@@ -279,6 +279,12 @@ static void gt9xxx_map_point(uint16_t raw_x, uint16_t raw_y, uint16_t *x_out, ui
      * tp_dev.touchtype:
      *  - b0: 0 portrait (X=L/R, Y=U/D); 1 landscape (X=U/D, Y=L/R)
      *  - b7: 1 capacitive
+     *
+     * If you see “touch works but hits the wrong widget” in landscape, it is usually because
+     * the logical screen orientation is swapped/mirrored relative to the touch controller.
+     * Use the invert macros below to fix mirror issues without rewriting the mapping logic:
+     * - TOUCH_LANDSCAPE_INVERT_X / TOUCH_LANDSCAPE_INVERT_Y
+     * - TOUCH_PORTRAIT_INVERT_X   / TOUCH_PORTRAIT_INVERT_Y
      */
     if (tp_dev.touchtype & 0x01u) {
         /* landscape: swap axes */
