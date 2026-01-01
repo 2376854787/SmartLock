@@ -16,7 +16,7 @@
 
 extern SPI_HandleTypeDef hspi1;
 
-#define fac_us 72   //时钟频率，单位MHZ
+#define fac_us 168   //时钟频率，单位MHZ
 
 /*微秒级延时函数*/
 void delay_us1(uint32_t nus)

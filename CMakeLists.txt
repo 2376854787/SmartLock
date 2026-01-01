@@ -63,8 +63,6 @@ add_executable(${CMAKE_PROJECT_NAME}
         components/hfsm/HFSM.c
         Drivers/BSP/Keys/KEY.c
         Drivers/BSP/lcd/lcd.c
-        Drivers/BSP/gt9147/gt9147.c
-        Drivers/BSP/rc522/rc522.c
         Drivers/BSP/ESP01s/ESP01S.c
         Application/Src/wifi_mqtt_task.c
         Application/Src/mqtt_at_task.c
@@ -82,7 +80,6 @@ add_executable(${CMAKE_PROJECT_NAME}
         Drivers/BSP/as608/Core/Src/as608_port.c
         Drivers/BSP/as608/Core/Src/as608_service.c
         Application/Src/as608_test_task.c
-        Application/Src/rc522_test_task.c
         Application/Src/rc522_my_test_task.c
         components/log/log_port.c
         Drivers/BSP/lvgl_port/lvgl_port.c
@@ -195,6 +192,14 @@ add_executable(${CMAKE_PROJECT_NAME}
         Middlewares/LVGL/src/extra/widgets/tileview/lv_tileview.c
         Middlewares/LVGL/src/extra/widgets/win/lv_win.c
         Drivers/BSP/rc522/rc522_my.c
+        Drivers/BSP/touch/touch_port.c
+        Drivers/BSP/touch/ctiic.c
+        Drivers/BSP/touch/gt9xxx.c
+        Drivers/BSP/touch/touch.c
+        Drivers/BSP/touch/gt9147_compat.c
+        components/osal/osal_cmsis2.c
+        components/core_base/assert_cus.c
+        platform/STM32/ports/hal_time_port.c
 
 )
 
@@ -263,6 +268,9 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         Middlewares/LVGL/src/extra/widgets/tabview
         Middlewares/LVGL/src/extra/widgets/tileview
         Middlewares/LVGL/src/extra/widgets/win
+        Drivers/BSP/touch
+        components/osal
+        components/hal/include
 
 
 )

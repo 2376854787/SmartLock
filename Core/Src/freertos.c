@@ -32,7 +32,6 @@
 
 #include "as608_port.h"
 #include "as608_test_task.h"
-#include "rc522_test_task.h"
 #include "rc522_my_test_task.h"
 #include "ESP01S.h"
 #include "KEY.h"
@@ -226,7 +225,14 @@ void vApplicationMallocFailedHook(void) {
     heap available to pvPortMalloc() is defined by configTOTAL_HEAP_SIZE in
     FreeRTOSConfig.h, and the xPortGetFreeHeapSize() API function can be used
     to query the size of free heap space that remains (although it does not
-    provide information on how the remaining heap might be fragmented). */
+     provide information on how the remaining heap might be fragmented). */
+    printf("Malloc failed! free=%lu minEver=%lu\r\n",
+           (unsigned long)xPortGetFreeHeapSize(),
+           (unsigned long)xPortGetMinimumEverFreeHeapSize());
+    taskDISABLE_INTERRUPTS();
+    for (;;)
+    {
+    }
 }
 
 /* USER CODE END 5 */
@@ -265,7 +271,8 @@ void MX_FREERTOS_Init(void) {
     uartTaskHandle = osThreadNew(StartTask02, NULL, &uartTask_attributes);
 
     /* creation of lcdTask */
-    lcdTaskHandle = osThreadNew(StartTask_LCD, NULL, &lcdTask_attributes);
+    /* NOTE: When LVGL is enabled, avoid running legacy LCD direct-draw task to prevent display conflicts and save heap. */
+    // lcdTaskHandle = osThreadNew(StartTask_LCD, NULL, &lcdTask_attributes);
 
     /* USER CODE BEGIN RTOS_THREADS */
     /* add threads, ... */
@@ -284,10 +291,9 @@ void MX_FREERTOS_Init(void) {
     at_core_task_init(&g_at_manager, &huart3);
     /* as608指纹模块测试函数 - 已停用，使用LVGL界面 */
    //  osThreadNew(AS608_TestTask, NULL, &as608TestTask_attr);
-   //  osThreadNew(RC522_TestTask, NULL, &rc522TestTask_attr);
-     osThreadNew(RC522_MyTestTask, NULL, &rc522MyTestTask_attr);
+    // osThreadNew(RC522_MyTestTask, NULL, &rc522MyTestTask_attr);
   /* LVGL任务 */
-    //lvgl_init();
+    lvgl_init();
 
     /* USER CODE END RTOS_THREADS */
 
@@ -364,8 +370,8 @@ void StartTask_LCD(void *argument) {
     LOG_I("StartTask_LCD", "启动完成");
     LOG_I("111", "启动完成");
     for (;;) {
-        sniprintf(buffer, 128, "Time:%lu", HAL_GetTick());
-        lcd_show_string(50, 300, 240, 32, 32, buffer, BLACK);
+       // sniprintf(buffer, 128, "Time:%lu", HAL_GetTick());
+       // lcd_show_string(50, 300, 240, 32, 32, buffer, BLACK);
 
         // UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
         // printf("lcdTask high watermark = %lu\r\n", (unsigned long) watermark);

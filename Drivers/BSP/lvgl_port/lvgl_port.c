@@ -1,7 +1,7 @@
 #include "lvgl_port.h"
 #include "lvgl.h"
 #include "lcd.h"
-#include "gt9147.h"
+#include "gt9147_compat.h"
 #include "log.h"
 
 static lv_disp_draw_buf_t draw_buf;
@@ -10,6 +10,7 @@ static lv_color_t buf1[LV_HOR_RES_MAX * LVGL_BUF_LINES];
 static lv_coord_t last_x = 0;
 static lv_coord_t last_y = 0;
 static bool touch_ready = false;
+static bool last_pressed = false;
 
 static void disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p) {
     uint16_t x, y;
@@ -44,15 +45,20 @@ static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data) {
     if (pressed) {
         last_x = (lv_coord_t)x;
         last_y = (lv_coord_t)y;
+        if (!last_pressed) {
+            LOG_D("TOUCH", "pressed: x=%u y=%u (disp %ux%u dir=%u)",
+                  (unsigned)x, (unsigned)y, (unsigned)lcddev.width, (unsigned)lcddev.height, (unsigned)lcddev.dir);
+        }
         data->state = LV_INDEV_STATE_PRESSED;
         data->point.x = last_x;
         data->point.y = last_y;
-        LOG_I("TOUCH", "Touch pressed: x=%d, y=%d", (int)last_x, (int)last_y);
     } else {
         data->state = LV_INDEV_STATE_RELEASED;
         data->point.x = last_x;
         data->point.y = last_y;
     }
+
+    last_pressed = pressed;
 }
 
 void lv_port_disp_init(void) {
@@ -74,13 +80,13 @@ void lv_port_disp_init(void) {
 void lv_port_indev_init(void) {
     static lv_indev_drv_t indev_drv;
 
-    LOG_I("TOUCH", "Initializing GT9147 touch controller...");
+    LOG_I("TOUCH", "Initializing GT9xxx touch controller...");
     touch_ready = gt9147_init();
     
     if (touch_ready) {
-        LOG_I("TOUCH", "GT9147 initialized successfully");
+        LOG_I("TOUCH", "GT9xxx initialized successfully");
     } else {
-        LOG_E("TOUCH", "GT9147 initialization failed");
+        LOG_E("TOUCH", "GT9xxx initialization failed");
     }
 
     lv_indev_drv_init(&indev_drv);

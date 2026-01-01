@@ -1,3 +1,6 @@
+#include "APP_config.h"
+#ifdef  USED_STM32_PLATFORM
+
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -91,3 +94,5 @@ uint32_t hal_get_tick_us32(void) {
     const uint32_t us = (uint32_t) DWT->CYCCNT / cycles_per_us;
     return us;
 }
+
+#endif
