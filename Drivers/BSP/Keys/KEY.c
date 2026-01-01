@@ -1,4 +1,13 @@
 #include "KEY.h"
+/* 全局代码启用配置宏 */
+#ifdef  ENABLE_KEYS
+#include <stdint.h>
+
+#include "cmsis_gcc.h"
+#include "HFSM.h"
+#include "stm32f4xx_hal_gpio.h"
+
+#include "KEY.h"
 #include <stdio.h> // 用于 printf 调试
 
 /********************************************************************************************************************************************
@@ -300,11 +309,11 @@ static bool WAITING_NEXTCLICK_EventHandle(StateMachine *fsm, const Event *event)
                     HFSM_Transition(fsm, (State *) &TRIPLE_CLICK);
                     return true;
                 default:
-                    KEY_LOGE("出现异常\n");
+                    KEY_LOGE("出现异常/未定义行为\n");
                     HFSM_Transition(fsm, (State *) &IDLE);
             }
             break;
-        default: KEY_LOGE("出现未定义行为\n");;
+        default: KEY_LOGE("出现未定义事件\n");;
     }
     return false;
 }
@@ -509,3 +518,6 @@ void KEY_Tasks(void) {
         }
     }
 }
+
+
+#endif

@@ -1,9 +1,5 @@
-//
-// Created by yan on 2025/12/6.
-//
-
-#ifndef SMARTCLOCK_LOG_H
-#define SMARTCLOCK_LOG_H
+#ifndef LOG_H
+#define LOG_H
 #include <stdint.h>
 /* ================= 配置区域 ================= */
 /* 日志控制宏可以控制调试信息的输出 全局*/
@@ -87,4 +83,4 @@ Log_Hexdump((level), __FILE__, __LINE__, (tag), (buf), (uint32_t)(len))
 #define LOG_HEX(tag, level, buf, len)
 #endif
 
-#endif //SMARTCLOCK_LOG_H
+#endif //LOG_H

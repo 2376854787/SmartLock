@@ -3,6 +3,7 @@
 #include  "main.h"
 #include "HFSM.h"
 #include "log.h"
+#include "config_cus.h"
 /* 默认 TAG，可以按需改 */
 #ifndef KEY_LOG_TAG
 #define KEY_LOG_TAG  "KEY"
