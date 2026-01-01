@@ -31,6 +31,7 @@
 #include <string.h>
 
 #include "as608_port.h"
+#include "as608_service.h"
 #include "as608_test_task.h"
 #include "rc522_my_test_task.h"
 #include "ESP01S.h"
@@ -290,6 +291,7 @@ void MX_FREERTOS_Init(void) {
     /* 串口AT解析任务 创建信号量、创建任务*/
     at_core_task_init(&g_at_manager, &huart3);
     /* as608指纹模块测试函数 - 已停用，使用LVGL界面 */
+
    //  osThreadNew(AS608_TestTask, NULL, &as608TestTask_attr);
     // osThreadNew(RC522_MyTestTask, NULL, &rc522MyTestTask_attr);
   /* LVGL任务 */

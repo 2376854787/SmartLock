@@ -5,17 +5,62 @@
 #include "usart.h"
 #include "lvgl_task.h"
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "FreeRTOS.h"
+#include "queue.h"
+#include "task.h"
+#include "log.h"
 
 static lv_obj_t *main_screen = NULL;
 static lv_obj_t *enroll_screen = NULL;
 static lv_obj_t *verify_screen = NULL;
 static lv_obj_t *manage_screen = NULL;
 
-static lv_obj_t *status_label = NULL;
-static lv_obj_t *id_label = NULL;
-static lv_obj_t *score_label = NULL;
+static lv_obj_t *main_status_label = NULL;
+static lv_obj_t *enroll_status_label = NULL;
+static lv_obj_t *verify_status_label = NULL;
+static lv_obj_t *manage_status_label = NULL;
+
+static lv_obj_t *verify_id_label = NULL;
+static lv_obj_t *verify_score_label = NULL;
 static lv_obj_t *id_input = NULL;
 static lv_obj_t *id_display = NULL;
+
+typedef enum {
+    FP_OP_ENROLL = 0,
+    FP_OP_VERIFY,
+    FP_OP_DELETE,
+    FP_OP_CLEAR,
+} fp_op_t;
+
+typedef struct {
+    fp_op_t op;
+    uint16_t id;
+} fp_cmd_t;
+
+typedef struct {
+    fp_op_t op;
+    uint16_t id;
+    as608_svc_rc_t rc;
+    as608_status_t status;
+    uint16_t found_id;
+    uint16_t score;
+} fp_result_t;
+
+static QueueHandle_t s_fp_cmd_q = NULL;
+static TaskHandle_t s_fp_worker_task = NULL;
+static volatile bool s_fp_busy = false;
+static uint16_t s_fp_capacity = 162;
+
+static void fp_worker_task(void *arg);
+static void fp_lvgl_apply_result_cb(void *user_data);
+static void fp_set_label_text_color(lv_obj_t *label, const char *text, lv_color_t color);
+static bool fp_submit(fp_cmd_t cmd);
+static void fp_set_busy(bool busy);
+static const char *fp_rc_str(as608_svc_rc_t rc);
+static const char *fp_status_str(as608_status_t st);
 
 static void create_main_screen(void);
 static void create_enroll_screen(void);
@@ -63,10 +108,10 @@ static void create_main_screen(void) {
     lv_obj_center(label_manage);
     lv_obj_add_event_cb(btn_manage, manage_btn_event_handler, LV_EVENT_CLICKED, NULL);
     
-    status_label = lv_label_create(main_screen);
-    lv_label_set_text(status_label, "Ready");
-    lv_obj_align(status_label, LV_ALIGN_BOTTOM_MID, 0, -30);
-    lv_obj_set_style_text_color(status_label, lv_color_hex(0x00FF00), 0);
+    main_status_label = lv_label_create(main_screen);
+    lv_label_set_text(main_status_label, "Ready");
+    lv_obj_align(main_status_label, LV_ALIGN_BOTTOM_MID, 0, -30);
+    lv_obj_set_style_text_color(main_status_label, lv_color_hex(0x00FF00), 0);
 }
 
 static void create_enroll_screen(void) {
@@ -104,10 +149,10 @@ static void create_enroll_screen(void) {
     lv_obj_center(label_start);
     lv_obj_add_event_cb(btn_start, enroll_start_event_handler, LV_EVENT_CLICKED, NULL);
     
-    status_label = lv_label_create(enroll_screen);
-    lv_label_set_text(status_label, "Place finger on sensor");
-    lv_obj_align(status_label, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_set_style_text_color(status_label, lv_color_hex(0xFFFF00), 0);
+    enroll_status_label = lv_label_create(enroll_screen);
+    lv_label_set_text(enroll_status_label, "Place finger on sensor");
+    lv_obj_align(enroll_status_label, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_text_color(enroll_status_label, lv_color_hex(0xFFFF00), 0);
 }
 
 static void create_verify_screen(void) {
@@ -118,15 +163,13 @@ static void create_verify_screen(void) {
     lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 20);
     
-    lv_obj_t *id_label_title = lv_label_create(verify_screen);
-    lv_label_set_text(id_label_title, "ID: -");
-    lv_obj_align(id_label_title, LV_ALIGN_TOP_MID, 0, 80);
-    id_label = id_label_title;
+    verify_id_label = lv_label_create(verify_screen);
+    lv_label_set_text(verify_id_label, "ID: -");
+    lv_obj_align(verify_id_label, LV_ALIGN_TOP_MID, 0, 80);
     
-    lv_obj_t *score_label_title = lv_label_create(verify_screen);
-    lv_label_set_text(score_label_title, "Score: -");
-    lv_obj_align(score_label_title, LV_ALIGN_TOP_MID, 0, 120);
-    score_label = score_label_title;
+    verify_score_label = lv_label_create(verify_screen);
+    lv_label_set_text(verify_score_label, "Score: -");
+    lv_obj_align(verify_score_label, LV_ALIGN_TOP_MID, 0, 120);
     
     lv_obj_t *btn_back = lv_btn_create(verify_screen);
     lv_obj_set_size(btn_back, 120, 50);
@@ -144,10 +187,10 @@ static void create_verify_screen(void) {
     lv_obj_center(label_start);
     lv_obj_add_event_cb(btn_start, verify_start_event_handler, LV_EVENT_CLICKED, NULL);
     
-    status_label = lv_label_create(verify_screen);
-    lv_label_set_text(status_label, "Place finger on sensor");
-    lv_obj_align(status_label, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_set_style_text_color(status_label, lv_color_hex(0xFFFF00), 0);
+    verify_status_label = lv_label_create(verify_screen);
+    lv_label_set_text(verify_status_label, "Place finger on sensor");
+    lv_obj_align(verify_status_label, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_text_color(verify_status_label, lv_color_hex(0xFFFF00), 0);
 }
 
 static void create_manage_screen(void) {
@@ -193,16 +236,35 @@ static void create_manage_screen(void) {
     lv_obj_center(label_back);
     lv_obj_add_event_cb(btn_back, back_btn_event_handler, LV_EVENT_CLICKED, NULL);
     
-    status_label = lv_label_create(manage_screen);
-    lv_label_set_text(status_label, "Ready");
-    lv_obj_align(status_label, LV_ALIGN_BOTTOM_MID, 0, -80);
-    lv_obj_set_style_text_color(status_label, lv_color_hex(0x00FF00), 0);
+    manage_status_label = lv_label_create(manage_screen);
+    lv_label_set_text(manage_status_label, "Ready");
+    lv_obj_align(manage_status_label, LV_ALIGN_BOTTOM_MID, 0, -80);
+    lv_obj_set_style_text_color(manage_status_label, lv_color_hex(0x00FF00), 0);
 }
 
 void ui_fingerprint_init(void) {
     AS608_Port_BindUart(&huart4);
-    AS608_Service_Init(0xFFFFFFFF, 0x00000000);
-    
+    as608_svc_rc_t init_rc = AS608_Service_Init(0xFFFFFFFF, 0x00000000);
+    LOG_I("UI_FP", "AS608_Service_Init rc=%d", (int)init_rc);
+
+    s_fp_capacity = AS608_Get_Capacity();
+    if (s_fp_capacity == 0) {
+        s_fp_capacity = 162;
+    }
+
+    if (s_fp_cmd_q == NULL) {
+        s_fp_cmd_q = xQueueCreate(4, sizeof(fp_cmd_t));
+        if (s_fp_cmd_q == NULL) {
+            LOG_E("UI_FP", "xQueueCreate(fp_cmd_q) failed");
+        }
+    }
+    if ((s_fp_worker_task == NULL) && (s_fp_cmd_q != NULL)) {
+        BaseType_t ok = xTaskCreate(fp_worker_task, "fp_worker", 768, NULL, (tskIDLE_PRIORITY + 2), &s_fp_worker_task);
+        if (ok != pdPASS) {
+            LOG_E("UI_FP", "xTaskCreate(fp_worker) failed");
+        }
+    }
+
     create_main_screen();
     create_enroll_screen();
     create_verify_screen();
@@ -229,103 +291,275 @@ void back_btn_event_handler(lv_event_t *e) {
 }
 
 void enroll_start_event_handler(lv_event_t *e) {
+    (void)e;
     const char *id_str = lv_textarea_get_text(id_input);
     uint16_t id = (uint16_t)atoi(id_str);
-    if (id < 1 || id > 162) {
-        lv_label_set_text(status_label, "Invalid ID (1-162)");
-        lv_obj_set_style_text_color(status_label, lv_color_hex(0xFF0000), 0);
+    if (id < 1 || id >= s_fp_capacity) {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "Invalid ID (1-%u)", (unsigned)(s_fp_capacity - 1u));
+        fp_set_label_text_color(enroll_status_label, buf, lv_color_hex(0xFF0000));
         return;
     }
-    
-    as608_status_t status;
-    
-    lv_label_set_text(status_label, "Enrolling...");
-    lv_obj_set_style_text_color(status_label, lv_color_hex(0xFFFF00), 0);
-    
-    as608_svc_rc_t rc = AS608_CRUD_Create(id, 10000, &status);
-    
-    if (rc == AS608_SVC_OK) {
-        char buf[64];
-        snprintf(buf, sizeof(buf), "Enrolled! ID: %d", id);
-        lv_label_set_text(status_label, buf);
-        lv_obj_set_style_text_color(status_label, lv_color_hex(0x00FF00), 0);
-    } else if (rc == AS608_SVC_TIMEOUT) {
-        lv_label_set_text(status_label, "Timeout! Try again.");
-        lv_obj_set_style_text_color(status_label, lv_color_hex(0xFF0000), 0);
-    } else {
-        lv_label_set_text(status_label, "Enroll Failed!");
-        lv_obj_set_style_text_color(status_label, lv_color_hex(0xFF0000), 0);
+
+    if (s_fp_busy) {
+        fp_set_label_text_color(enroll_status_label, "Busy...", lv_color_hex(0xFF0000));
+        return;
+    }
+
+    LOG_I("UI_FP", "Enroll start id=%u", (unsigned)id);
+    fp_set_label_text_color(enroll_status_label, "Enrolling... (press finger twice)", lv_color_hex(0xFFFF00));
+    fp_set_busy(true);
+    if (!fp_submit((fp_cmd_t){.op = FP_OP_ENROLL, .id = id})) {
+        fp_set_label_text_color(enroll_status_label, "Queue full", lv_color_hex(0xFF0000));
+        fp_set_busy(false);
     }
 }
 
 void verify_start_event_handler(lv_event_t *e) {
-    as608_status_t status;
-    uint16_t found_id;
-    uint16_t score;
-    
-    lv_label_set_text(status_label, "Verifying...");
-    lv_obj_set_style_text_color(status_label, lv_color_hex(0xFFFF00), 0);
-    
-    as608_svc_rc_t rc = AS608_CRUD_Read(5000, &found_id, &score, &status);
-    
-    if (rc == AS608_SVC_OK) {
-        char buf[64];
-        snprintf(buf, sizeof(buf), "ID: %d", found_id);
-        lv_label_set_text(id_label, buf);
-        
-        snprintf(buf, sizeof(buf), "Score: %d", score);
-        lv_label_set_text(score_label, buf);
-        
-        lv_label_set_text(status_label, "Verified!");
-        lv_obj_set_style_text_color(status_label, lv_color_hex(0x00FF00), 0);
-    } else {
-        lv_label_set_text(id_label, "ID: -");
-        lv_label_set_text(score_label, "Score: -");
-        lv_label_set_text(status_label, "Not Found!");
-        lv_obj_set_style_text_color(status_label, lv_color_hex(0xFF0000), 0);
+    (void)e;
+    if (s_fp_busy) {
+        fp_set_label_text_color(verify_status_label, "Busy...", lv_color_hex(0xFF0000));
+        return;
+    }
+
+    if (verify_id_label) lv_label_set_text(verify_id_label, "ID: -");
+    if (verify_score_label) lv_label_set_text(verify_score_label, "Score: -");
+
+    LOG_I("UI_FP", "Verify start");
+    fp_set_label_text_color(verify_status_label, "Verifying...", lv_color_hex(0xFFFF00));
+    fp_set_busy(true);
+    if (!fp_submit((fp_cmd_t){.op = FP_OP_VERIFY, .id = 0})) {
+        fp_set_label_text_color(verify_status_label, "Queue full", lv_color_hex(0xFF0000));
+        fp_set_busy(false);
     }
 }
 
 void delete_id_event_handler(lv_event_t *e) {
+    (void)e;
     const char *id_str = lv_textarea_get_text(id_display);
     uint16_t id = (uint16_t)atoi(id_str);
-    if (id < 1 || id > 162) {
-        lv_label_set_text(status_label, "Invalid ID (1-162)");
-        lv_obj_set_style_text_color(status_label, lv_color_hex(0xFF0000), 0);
+    if (id < 1 || id >= s_fp_capacity) {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "Invalid ID (1-%u)", (unsigned)(s_fp_capacity - 1u));
+        fp_set_label_text_color(manage_status_label, buf, lv_color_hex(0xFF0000));
         return;
     }
-    
-    as608_status_t status;
-    
-    lv_label_set_text(status_label, "Deleting...");
-    lv_obj_set_style_text_color(status_label, lv_color_hex(0xFFFF00), 0);
-    
-    as608_svc_rc_t rc = AS608_CRUD_Delete(id, &status);
-    
-    if (rc == AS608_SVC_OK) {
-        char buf[64];
-        snprintf(buf, sizeof(buf), "Deleted! ID: %d", id);
-        lv_label_set_text(status_label, buf);
-        lv_obj_set_style_text_color(status_label, lv_color_hex(0x00FF00), 0);
-    } else {
-        lv_label_set_text(status_label, "Delete Failed!");
-        lv_obj_set_style_text_color(status_label, lv_color_hex(0xFF0000), 0);
+
+    if (s_fp_busy) {
+        fp_set_label_text_color(manage_status_label, "Busy...", lv_color_hex(0xFF0000));
+        return;
+    }
+
+    LOG_I("UI_FP", "Delete start id=%u", (unsigned)id);
+    fp_set_label_text_color(manage_status_label, "Deleting...", lv_color_hex(0xFFFF00));
+    fp_set_busy(true);
+    if (!fp_submit((fp_cmd_t){.op = FP_OP_DELETE, .id = id})) {
+        fp_set_label_text_color(manage_status_label, "Queue full", lv_color_hex(0xFF0000));
+        fp_set_busy(false);
     }
 }
 
 void clear_library_event_handler(lv_event_t *e) {
-    as608_status_t status;
-    
-    lv_label_set_text(status_label, "Clearing...");
-    lv_obj_set_style_text_color(status_label, lv_color_hex(0xFFFF00), 0);
-    
-    as608_svc_rc_t rc = AS608_CRUD_ClearAll(&status);
-    
-    if (rc == AS608_SVC_OK) {
-        lv_label_set_text(status_label, "Library Cleared!");
-        lv_obj_set_style_text_color(status_label, lv_color_hex(0x00FF00), 0);
-    } else {
-        lv_label_set_text(status_label, "Clear Failed!");
-        lv_obj_set_style_text_color(status_label, lv_color_hex(0xFF0000), 0);
+    (void)e;
+    if (s_fp_busy) {
+        fp_set_label_text_color(manage_status_label, "Busy...", lv_color_hex(0xFF0000));
+        return;
+    }
+
+    LOG_I("UI_FP", "ClearAll start");
+    fp_set_label_text_color(manage_status_label, "Clearing...", lv_color_hex(0xFFFF00));
+    fp_set_busy(true);
+    if (!fp_submit((fp_cmd_t){.op = FP_OP_CLEAR, .id = 0})) {
+        fp_set_label_text_color(manage_status_label, "Queue full", lv_color_hex(0xFF0000));
+        fp_set_busy(false);
+    }
+}
+
+static void fp_set_label_text_color(lv_obj_t *label, const char *text, lv_color_t color)
+{
+    if (label == NULL) {
+        return;
+    }
+    lv_label_set_text(label, text ? text : "");
+    lv_obj_set_style_text_color(label, color, 0);
+}
+
+static void fp_set_busy(bool busy)
+{
+    s_fp_busy = busy;
+}
+
+static bool fp_submit(fp_cmd_t cmd)
+{
+    if (s_fp_cmd_q == NULL) {
+        LOG_E("UI_FP", "submit failed: cmd queue not created");
+        return false;
+    }
+    return xQueueSend(s_fp_cmd_q, &cmd, 0) == pdTRUE;
+}
+
+static void fp_worker_task(void *arg)
+{
+    (void)arg;
+
+    for (;;) {
+        fp_cmd_t cmd;
+        if (xQueueReceive(s_fp_cmd_q, &cmd, portMAX_DELAY) != pdTRUE) {
+            continue;
+        }
+
+        uint32_t start = xTaskGetTickCount();
+        fp_result_t *res = (fp_result_t *)pvPortMalloc(sizeof(fp_result_t));
+        if (res == NULL) {
+            lvgl_lock();
+            fp_set_label_text_color(main_status_label, "OOM", lv_color_hex(0xFF0000));
+            lvgl_unlock();
+            fp_set_busy(false);
+            continue;
+        }
+
+        memset(res, 0, sizeof(*res));
+        res->op = cmd.op;
+        res->id = cmd.id;
+        res->status = AS608_STATUS_UNKNOWN;
+
+        switch (cmd.op) {
+            case FP_OP_ENROLL:
+                LOG_I("UI_FP", "AS608 enroll id=%u", (unsigned)cmd.id);
+                res->rc = AS608_CRUD_Create(cmd.id, 15000, &res->status);
+                break;
+            case FP_OP_VERIFY:
+                LOG_I("UI_FP", "AS608 verify");
+                res->rc = AS608_CRUD_Read(8000, &res->found_id, &res->score, &res->status);
+                break;
+            case FP_OP_DELETE:
+                LOG_I("UI_FP", "AS608 delete id=%u", (unsigned)cmd.id);
+                res->rc = AS608_CRUD_Delete(cmd.id, &res->status);
+                break;
+            case FP_OP_CLEAR:
+                LOG_I("UI_FP", "AS608 clear all");
+                res->rc = AS608_CRUD_ClearAll(&res->status);
+                break;
+            default:
+                res->rc = AS608_SVC_ERR;
+                break;
+        }
+
+        uint32_t cost = (uint32_t)(xTaskGetTickCount() - start);
+        LOG_I("UI_FP", "AS608 done op=%u rc=%d(%s) st=0x%02X(%s) cost=%lums",
+              (unsigned)cmd.op, (int)res->rc, fp_rc_str(res->rc), (unsigned)res->status, fp_status_str(res->status),
+              (unsigned long)cost);
+
+        /* Schedule UI update in LVGL task context */
+        lvgl_lock();
+        if (lv_async_call(fp_lvgl_apply_result_cb, res) != LV_RES_OK) {
+            lvgl_unlock();
+            fp_set_busy(false);
+            vPortFree(res);
+            continue;
+        }
+        lvgl_unlock();
+    }
+}
+
+static void fp_lvgl_apply_result_cb(void *user_data)
+{
+    fp_result_t *res = (fp_result_t *)user_data;
+    if (res == NULL) {
+        fp_set_busy(false);
+        return;
+    }
+
+    switch (res->op) {
+        case FP_OP_ENROLL: {
+            if (res->rc == AS608_SVC_OK && res->status == AS608_STATUS_OK) {
+                char buf[64];
+                snprintf(buf, sizeof(buf), "Enrolled! ID: %u", (unsigned)res->id);
+                fp_set_label_text_color(enroll_status_label, buf, lv_color_hex(0x00FF00));
+                fp_set_label_text_color(main_status_label, "Enroll OK", lv_color_hex(0x00FF00));
+            } else if (res->rc == AS608_SVC_TIMEOUT) {
+                fp_set_label_text_color(enroll_status_label, "Timeout! Try again.", lv_color_hex(0xFF0000));
+            } else {
+                char buf[96];
+                snprintf(buf, sizeof(buf), "Enroll failed rc=%s st=%s", fp_rc_str(res->rc), fp_status_str(res->status));
+                fp_set_label_text_color(enroll_status_label, buf, lv_color_hex(0xFF0000));
+            }
+            break;
+        }
+        case FP_OP_VERIFY: {
+            if (res->rc == AS608_SVC_OK && res->status == AS608_STATUS_OK) {
+                char buf[64];
+                snprintf(buf, sizeof(buf), "ID: %u", (unsigned)res->found_id);
+                if (verify_id_label) lv_label_set_text(verify_id_label, buf);
+                snprintf(buf, sizeof(buf), "Score: %u", (unsigned)res->score);
+                if (verify_score_label) lv_label_set_text(verify_score_label, buf);
+                fp_set_label_text_color(verify_status_label, "Verified!", lv_color_hex(0x00FF00));
+                fp_set_label_text_color(main_status_label, "Verify OK", lv_color_hex(0x00FF00));
+            } else if (res->rc == AS608_SVC_TIMEOUT) {
+                fp_set_label_text_color(verify_status_label, "Timeout", lv_color_hex(0xFF0000));
+            } else {
+                if (verify_id_label) lv_label_set_text(verify_id_label, "ID: -");
+                if (verify_score_label) lv_label_set_text(verify_score_label, "Score: -");
+                {
+                    char buf[96];
+                    snprintf(buf, sizeof(buf), "Fail rc=%s st=%s", fp_rc_str(res->rc), fp_status_str(res->status));
+                    fp_set_label_text_color(verify_status_label, buf, lv_color_hex(0xFF0000));
+                }
+            }
+            break;
+        }
+        case FP_OP_DELETE: {
+            if (res->rc == AS608_SVC_OK && res->status == AS608_STATUS_OK) {
+                char buf[64];
+                snprintf(buf, sizeof(buf), "Deleted! ID: %u", (unsigned)res->id);
+                fp_set_label_text_color(manage_status_label, buf, lv_color_hex(0x00FF00));
+                fp_set_label_text_color(main_status_label, "Delete OK", lv_color_hex(0x00FF00));
+            } else {
+                char buf[96];
+                snprintf(buf, sizeof(buf), "Delete failed rc=%s st=%s", fp_rc_str(res->rc), fp_status_str(res->status));
+                fp_set_label_text_color(manage_status_label, buf, lv_color_hex(0xFF0000));
+            }
+            break;
+        }
+        case FP_OP_CLEAR: {
+            if (res->rc == AS608_SVC_OK && res->status == AS608_STATUS_OK) {
+                fp_set_label_text_color(manage_status_label, "Library cleared!", lv_color_hex(0x00FF00));
+                fp_set_label_text_color(main_status_label, "Library cleared", lv_color_hex(0x00FF00));
+            } else {
+                char buf[96];
+                snprintf(buf, sizeof(buf), "Clear failed rc=%s st=%s", fp_rc_str(res->rc), fp_status_str(res->status));
+                fp_set_label_text_color(manage_status_label, buf, lv_color_hex(0xFF0000));
+            }
+            break;
+        }
+        default:
+            break;
+    }
+
+    fp_set_busy(false);
+    vPortFree(res);
+}
+
+static const char *fp_rc_str(as608_svc_rc_t rc)
+{
+    switch (rc) {
+        case AS608_SVC_OK: return "OK";
+        case AS608_SVC_ERR: return "ERR";
+        case AS608_SVC_TIMEOUT: return "TIMEOUT";
+        case AS608_SVC_NOT_READY: return "NOT_READY";
+        default: return "UNKNOWN";
+    }
+}
+
+static const char *fp_status_str(as608_status_t st)
+{
+    switch (st) {
+        case AS608_STATUS_OK: return "OK";
+        case AS608_STATUS_NO_FINGERPRINT: return "NO_FINGER";
+        case AS608_STATUS_NOT_FOUND: return "NOT_FOUND";
+        case AS608_STATUS_NOT_MATCH: return "NOT_MATCH";
+        case AS608_STATUS_FRAME_ERROR: return "FRAME_ERROR";
+        case AS608_STATUS_COMMAND_INVALID: return "CMD_INVALID";
+        default: return "OTHER";
     }
 }

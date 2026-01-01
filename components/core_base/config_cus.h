@@ -28,16 +28,16 @@
 
 #define USED_STM32_PLATFORM       /* 启用STM32平台 */
 
-/* ================= Touch/LVGL input tuning =================
- * GT9xxx (GT9147...) touch coordinate mapping can vary by module wiring.
- * For this project the LCD defaults to landscape (800x480), and the touch
- * coordinate is typically mirrored in X after swap.
+/* ================= 触摸/LVGL 输入调谐=================
+ * GT9xxx（GT9147...）触控坐标映射可能因模块布线而异。
+ * 本项目中，LCD默认为横屏（800x480），触控键
+ * 坐标通常在交换后镜像在 X 中。
  */
 #ifndef TOUCH_POLL_INTERVAL_MS
 #define TOUCH_POLL_INTERVAL_MS 5u
 #endif
 
-/* Apply after X/Y swap when LCD is landscape (lcddev.dir==1) */
+/* 在 X / Y 切换后应用，当 LCD 为横向时 （lcddev.dir==1） */
 #ifndef TOUCH_LANDSCAPE_INVERT_X
 #define TOUCH_LANDSCAPE_INVERT_X 1
 #endif
