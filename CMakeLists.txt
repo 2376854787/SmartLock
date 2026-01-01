@@ -81,9 +81,10 @@ add_executable(${CMAKE_PROJECT_NAME}
         Drivers/BSP/as608/Core/Src/as608_service.c
         Application/Src/as608_test_task.c
         Application/Src/rc522_my_test_task.c
+        Drivers/BSP/rc522/rc522_my.c
         components/log/log_port.c
         Drivers/BSP/lvgl_port/lvgl_port.c
-        Application/Src/ui_fingerprint.c
+        Application/Src/ui_lock.c
         Application/Src/lvgl_task.c
         Middlewares/LVGL/src/core/lv_disp.c
         Middlewares/LVGL/src/core/lv_group.c
@@ -154,6 +155,8 @@ add_executable(${CMAKE_PROJECT_NAME}
         Middlewares/LVGL/src/font/lv_font_loader.c
         Middlewares/LVGL/src/font/lv_font_montserrat_14.c
         Middlewares/LVGL/src/font/lv_font_montserrat_16.c
+        Middlewares/LVGL/src/font/lv_font_montserrat_20.c
+        Middlewares/LVGL/src/font/lv_font_montserrat_48.c
         Middlewares/LVGL/src/extra/lv_extra.c
         Middlewares/LVGL/src/extra/layouts/flex/lv_flex.c
         Middlewares/LVGL/src/extra/layouts/grid/lv_grid.c

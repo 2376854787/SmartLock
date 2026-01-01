@@ -1,7 +1,7 @@
 #include "lvgl_task.h"
 #include "lvgl.h"
 #include "lvgl_port.h"
-#include "ui_fingerprint.h"
+#include "ui_lock.h"
 #include "FreeRTOS.h"
 #include "log.h"
 #include "task.h"
@@ -41,7 +41,7 @@ static void lvgl_handler_task(void *arg) {
     LOG_I("LVGL", "[LVGL] Display driver initialized");
     lv_port_indev_init();
     LOG_I("LVGL", "[LVGL] Input driver initialized");
-    ui_fingerprint_init();
+    ui_lock_init();
     LOG_I("LVGL", "[LVGL] UI initialized");
 
     while (1) {
