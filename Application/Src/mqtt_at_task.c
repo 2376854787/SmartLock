@@ -275,6 +275,87 @@ static bool mqtt_publish(const char *topic, const char *payload)
     return at_send_ok(cmd, 12000);
 }
 
+static bool mqtt_publish_raw(const char *topic, const char *payload, size_t payload_len)
+{
+    if (!topic || !payload) return false;
+    if (payload_len == 0) return false;
+
+    /* ESP-AT: publish raw payload without quoting/escaping. */
+    char cmd[AT_CMD_MAX_LEN];
+    const int n = snprintf(cmd, sizeof(cmd),
+                           "AT+MQTTPUBRAW=0,\"%s\",%u,1,0\r\n",
+                           topic,
+                           (unsigned)payload_len);
+    if (n <= 0 || (size_t)n >= sizeof(cmd)) {
+        LOG_E("mqtt", "MQTTPUBRAW cmd too long (topic=%u len=%u)",
+              (unsigned)strlen(topic),
+              (unsigned)payload_len);
+        return false;
+    }
+
+    const AT_Resp_t r1 = AT_SendCmd(&g_at_manager, cmd, ">", 5000);
+    if (r1 != AT_RESP_OK) {
+        LOG_E("mqtt", "MQTTPUBRAW no prompt r=%d", (int)r1);
+        return false;
+    }
+
+    /* Send exactly <payload_len> bytes. Our payload is a C string without NUL. */
+    if (strlen(payload) != payload_len) {
+        LOG_E("mqtt", "MQTTPUBRAW len mismatch strlen=%u payload_len=%u",
+              (unsigned)strlen(payload),
+              (unsigned)payload_len);
+        return false;
+    }
+
+    const AT_Resp_t r2 = AT_SendCmd(&g_at_manager, payload, "OK", 12000);
+    if (r2 != AT_RESP_OK) {
+        LOG_E("mqtt", "MQTTPUBRAW payload send failed r=%d", (int)r2);
+        return false;
+    }
+
+    return true;
+}
+
+static bool mqtt_publish_json(const char *topic, const char *json_payload)
+{
+    if (!topic || !json_payload) return false;
+
+    /* JSON contains quotes, which `AT+MQTTPUB` cannot safely carry on this ESP-AT build.
+     * Use RAW publish instead.
+     */
+    const size_t len = strlen(json_payload);
+    if (len == 0 || len >= WIFI_MQTT_PAYLOAD_MAX) return false;
+    return mqtt_publish_raw(topic, json_payload, len);
+}
+
+static uint32_t prng_next_u32(uint32_t *state)
+{
+    uint32_t x = state ? *state : 0x12345678u;
+    x = x * 1664525u + 1013904223u;
+    if (state) *state = x;
+    return x;
+}
+
+static bool iotda_report_temperature_once(void)
+{
+    char topic[WIFI_MQTT_TOPIC_MAX];
+    huawei_iot_build_up_topic(topic, sizeof(topic));
+
+    uint32_t seed = (uint32_t)osKernelGetTickCount();
+    const int temp = (int)(prng_next_u32(&seed) % 11u) + 25; /* 25..35 */
+
+    char json[WIFI_MQTT_PAYLOAD_MAX];
+    const int n = snprintf(json, sizeof(json),
+                           "{\"services\":[{\"service_id\":\"%s\",\"properties\":{\"%s\":%d}}]}",
+                           HUAWEI_IOT_SERVICE_ID,
+                           HUAWEI_IOT_PROP_TEMP_NAME,
+                           temp);
+    if (n <= 0 || (size_t)n >= sizeof(json)) return false;
+
+    LOG_I("mqtt", "report property 温度=%d service=%s", temp, HUAWEI_IOT_SERVICE_ID);
+    return mqtt_publish_json(topic, json);
+}
+
 static bool kv_get(const char *s, const char *key, char *out, size_t out_sz)
 {
     if (!s || !key || !out || out_sz == 0) return false;
@@ -341,6 +422,12 @@ static void handle_user_command(const char *payload)
 
     if (strcmp(cmd, "ping") == 0) {
         publish_user_cmd_ack(0, "pong");
+        return;
+    }
+
+    if (strcmp(cmd, "temp") == 0) {
+        (void)iotda_report_temperature_once();
+        publish_user_cmd_ack(0, "temp_reported");
         return;
     }
 
@@ -429,6 +516,11 @@ void StartMqttAtTask(void *argument)
     const uint32_t epoch_s_utc = lock_time_now_s();
     if (!mqtt_setup_and_connect(epoch_s_utc)) {
         LOG_E("mqtt", "connect failed (check iot config/firmware)");
+    }
+
+    /* Demo: report one random temperature property so IoTDA console can refresh. */
+    if (s_ctx.mqtt_connected) {
+        (void)iotda_report_temperature_once();
     }
 
     for (;;) {

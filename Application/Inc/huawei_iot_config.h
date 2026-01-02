@@ -55,7 +55,12 @@
 
 /* 属性上报的默认 service_id（可改成与你产品模型一致）。 */
 #ifndef HUAWEI_IOT_SERVICE_ID
-#define HUAWEI_IOT_SERVICE_ID "SmartLock"
+#define HUAWEI_IOT_SERVICE_ID "stm32"
+#endif
+
+/* Demo property name for sys/properties/report. Must match your product model property name. */
+#ifndef HUAWEI_IOT_PROP_TEMP_NAME
+#define HUAWEI_IOT_PROP_TEMP_NAME "温度"
 #endif
 
 /* password 编码方式：
