@@ -1,12 +1,11 @@
 #include "huawei_iot.h"
 
+#include <stdio.h>
 #include <string.h>
 
-#include "base64.h"
 #include "hmac_sha256.h"
 #include "lock_data.h"
 
-#if !HUAWEI_IOT_PASSWORD_BASE64
 static void bytes_to_hex(const uint8_t *in, size_t in_len, char *out, size_t out_sz)
 {
     static const char *hex = "0123456789abcdef";
@@ -25,7 +24,6 @@ static void bytes_to_hex(const uint8_t *in, size_t in_len, char *out, size_t out
     }
     out[in_len * 2u] = '\0';
 }
-#endif
 
 uint64_t huawei_iot_timestamp_ms(void)
 {
@@ -33,21 +31,47 @@ uint64_t huawei_iot_timestamp_ms(void)
     return s * 1000ull;
 }
 
-static bool build_sign_content(uint64_t ts_ms, char *out, size_t out_sz)
+static bool build_auth_ts_utc_yyyymmddhh(uint32_t epoch_s_utc, char out[11])
 {
-    if (!out || out_sz == 0) return false;
+    if (!out) return false;
 
-    /* TODO：根据你在华为云 IoTDA 选择的接入方式，确认“签名源串”的拼接规则。
-     * 常见拼接方式示例：
-     * - "<device_id><timestamp>"
-     * - "<device_id>\\n<timestamp>"
-     * 如果鉴权失败/连接失败，优先调整这里。
-     */
-    const int n = snprintf(out, out_sz, "%s%llu", HUAWEI_IOT_DEVICE_ID, (unsigned long long)ts_ms);
-    return (n > 0) && ((size_t)n < out_sz);
+    uint32_t days = epoch_s_utc / 86400u;
+    const uint32_t sec_of_day = epoch_s_utc - days * 86400u;
+    const uint32_t hour = sec_of_day / 3600u;
+
+    uint32_t y = 1970u;
+    for (;;) {
+        const bool leap = ((y % 400u) == 0u) || (((y % 4u) == 0u) && ((y % 100u) != 0u));
+        const uint32_t diy = leap ? 366u : 365u;
+        if (days < diy) break;
+        days -= diy;
+        y++;
+        if (y > 2099u) return false;
+    }
+
+    static const uint8_t mdays_norm[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    uint32_t m = 1u;
+    for (uint32_t i = 0; i < 12u; i++) {
+        uint32_t d = mdays_norm[i];
+        const bool leap = ((y % 400u) == 0u) || (((y % 4u) == 0u) && ((y % 100u) != 0u));
+        if (i == 1u && leap) d = 29u;
+        if (days < d) {
+            m = i + 1u;
+            break;
+        }
+        days -= d;
+    }
+
+    const uint32_t day = days + 1u;
+    const int n = snprintf(out, 11, "%04lu%02lu%02lu%02lu",
+                           (unsigned long)y,
+                           (unsigned long)m,
+                           (unsigned long)day,
+                           (unsigned long)hour);
+    return (n == 10);
 }
 
-bool huawei_iot_build_mqtt_auth(uint64_t ts_ms,
+bool huawei_iot_build_mqtt_auth(uint32_t epoch_s_utc,
                                 char *out_client_id,
                                 size_t client_id_sz,
                                 char *out_username,
@@ -58,26 +82,25 @@ bool huawei_iot_build_mqtt_auth(uint64_t ts_ms,
     if (!out_client_id || !out_username || !out_password) return false;
     if (client_id_sz == 0 || username_sz == 0 || password_sz == 0) return false;
 
-    const int n1 = snprintf(out_client_id, client_id_sz, "%s_0_0_%llu", HUAWEI_IOT_DEVICE_ID,
-                            (unsigned long long)ts_ms);
+    char ts[11];
+    if (!build_auth_ts_utc_yyyymmddhh(epoch_s_utc, ts)) return false;
+
+    const int n1 = snprintf(out_client_id, client_id_sz, "%s_0_%u_%s",
+                            HUAWEI_IOT_DEVICE_ID,
+                            (unsigned)HUAWEI_IOT_AUTH_SIGN_TYPE,
+                            ts);
     const int n2 = snprintf(out_username, username_sz, "%s", HUAWEI_IOT_DEVICE_ID);
     if (n1 <= 0 || (size_t)n1 >= client_id_sz) return false;
     if (n2 <= 0 || (size_t)n2 >= username_sz) return false;
 
-    char sign_src[128];
-    if (!build_sign_content(ts_ms, sign_src, sizeof(sign_src))) return false;
-
+    /* IoTDA: Password = HMACSHA256(key=YYYYMMDDHH, msg=secret), output as hex */
     uint8_t mac[32];
-    hmac_sha256((const uint8_t *)HUAWEI_IOT_DEVICE_SECRET, strlen(HUAWEI_IOT_DEVICE_SECRET),
-                (const uint8_t *)sign_src, strlen(sign_src), mac);
+    hmac_sha256((const uint8_t *)ts, strlen(ts),
+                (const uint8_t *)HUAWEI_IOT_DEVICE_SECRET, strlen(HUAWEI_IOT_DEVICE_SECRET),
+                mac);
 
-#if HUAWEI_IOT_PASSWORD_BASE64
-    const size_t enc = base64_encode(mac, sizeof(mac), out_password, password_sz);
-    return enc != 0;
-#else
     bytes_to_hex(mac, sizeof(mac), out_password, password_sz);
     return out_password[0] != '\0';
-#endif
 }
 
 void huawei_iot_build_up_topic(char *out, size_t out_sz)
@@ -269,7 +292,15 @@ bool huawei_iot_parse_sntp_time_to_epoch_s(const char *line, uint32_t *out_epoch
     const uint32_t y = year;
     const uint32_t m = (uint32_t)month;
     const uint32_t days = days_before_year(y) + days_before_month(y, m) + (day - 1u);
-    const uint32_t epoch_s = days * 86400u + hour * 3600u + min * 60u + sec;
-    *out_epoch_s = epoch_s;
+    const uint32_t epoch_s_local = days * 86400u + hour * 3600u + min * 60u + sec;
+
+    /* After AT+CIPSNTPCFG=1,<tz>,... ESP AT returns local time in +CIPSNTPTIME.
+ * Convert it back to UTC epoch for cloud auth. */
+    {
+        const int32_t tz_h = (int32_t)HUAWEI_IOT_TIMEZONE;
+        int64_t utc = (int64_t)epoch_s_local - (int64_t)tz_h * 3600ll;
+        if (utc < 0) utc = 0;
+        *out_epoch_s = (uint32_t)utc;
+    }
     return true;
 }

@@ -13,7 +13,12 @@ extern "C" {
 
 uint64_t huawei_iot_timestamp_ms(void);
 
-bool huawei_iot_build_mqtt_auth(uint64_t ts_ms,
+/* Huawei IoTDA MQTT auth:
+ * - ClientId: <device_id>_0_<sign_type>_<YYYYMMDDHH> (UTC)
+ * - Username: <device_id>
+ * - Password: HMAC-SHA256(key=YYYYMMDDHH, msg=secret), output as hex string
+ */
+bool huawei_iot_build_mqtt_auth(uint32_t epoch_s_utc,
                                 char *out_client_id,
                                 size_t client_id_sz,
                                 char *out_username,

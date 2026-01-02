@@ -28,7 +28,7 @@
 - `HUAWEI_IOT_DEVICE_SECRET`：设备密钥
 - `HUAWEI_IOT_MQTT_HOST`：IoTDA 区域接入点
 - `HUAWEI_IOT_MQTT_PORT`：端口（默认 8883）
-- `HUAWEI_IOT_MQTT_SCHEME`：0=TCP，1=TLS（取决于你的 ESP8266 AT 固件是否支持 TLS）
+- `HUAWEI_IOT_MQTT_SCHEME`：以 `AT+MQTTUSERCFG=?` 输出为准（常见 ESP-AT：1=TCP，2=TLS）
 
 ### 控制台字段如何映射到本工程配置
 
@@ -37,7 +37,7 @@ IoTDA 控制台/设备接入信息里通常会给出：`clientId` / `username` /
 
 - `hostname` → `HUAWEI_IOT_MQTT_HOST`
 - `port` → `HUAWEI_IOT_MQTT_PORT`（`8883` 对应 TLS）
-- `protocol=MQTTS` → `HUAWEI_IOT_MQTT_SCHEME=1`
+- `protocol=MQTTS` → `HUAWEI_IOT_MQTT_SCHEME` 设为 TLS 对应的 scheme（常见为 2）
 - `username` → `HUAWEI_IOT_DEVICE_ID`
 - `password` → 不是直接填写到宏里；固件会用 `HUAWEI_IOT_DEVICE_SECRET` + “时间戳”动态生成（见 `Application/Src/huawei_iot.c` 的 `huawei_iot_build_mqtt_auth()`）
 - `clientId` → 固件会在上电后自动生成（见 `Application/Src/huawei_iot.c` 的 `huawei_iot_build_mqtt_auth()`）

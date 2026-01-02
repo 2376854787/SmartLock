@@ -21,7 +21,7 @@
 
 /* 8883 为 TLS；1883 为明文 TCP（不建议用于正式环境）。 */
 #ifndef HUAWEI_IOT_MQTT_PORT
-#define HUAWEI_IOT_MQTT_PORT 8883u
+#define HUAWEI_IOT_MQTT_PORT 1883u
 #endif
 
 /* ESP8266 AT 的 `AT+MQTTUSERCFG` scheme：
@@ -29,7 +29,16 @@
  * - 1：MQTT over TLS（取决于 AT 固件是否带 TLS）
  */
 #ifndef HUAWEI_IOT_MQTT_SCHEME
+/* NOTE: `AT+MQTTUSERCFG` scheme values vary across ESP-AT versions.
+ * If `AT+MQTTUSERCFG=...` returns `ERROR`, run `AT+MQTTUSERCFG=?` to confirm.
+ * Common mapping: 1=MQTT over TCP, 2=MQTT over TLS.
+ */
 #define HUAWEI_IOT_MQTT_SCHEME 1u
+#endif
+
+/* Dump ESP-AT capabilities on boot (AT+GMR / AT+MQTTUSERCFG=? / AT+MQTTCONN=?). */
+#ifndef HUAWEI_IOT_AT_CAP_DUMP
+#define HUAWEI_IOT_AT_CAP_DUMP 1u
 #endif
 
 /* SNTP 校时配置（ESP8266 AT：AT+CIPSNTPCFG）
@@ -54,7 +63,15 @@
  * - 0：Hex(HMAC-SHA256)
  */
 #ifndef HUAWEI_IOT_PASSWORD_BASE64
-#define HUAWEI_IOT_PASSWORD_BASE64 1u
+#define HUAWEI_IOT_PASSWORD_BASE64 0u
+#endif
+
+/* IoTDA clientId 第 3 段：密码签名类型
+ * - 0：HMACSHA256 不校验时间戳（仍需携带时间戳）
+ * - 1：HMACSHA256 校验时间戳
+ */
+#ifndef HUAWEI_IOT_AUTH_SIGN_TYPE
+#define HUAWEI_IOT_AUTH_SIGN_TYPE 1u
 #endif
 
 #endif /* SMARTLOCK_HUAWEI_IOT_CONFIG_H */

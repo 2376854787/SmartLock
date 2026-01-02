@@ -165,27 +165,78 @@ static bool at_send_ok_retry(const char *cmd, uint32_t timeout_ms, uint8_t retri
     return false;
 }
 
-static bool mqtt_setup_and_connect(uint64_t ts_ms)
+static void at_dump_esp_at_caps(void)
+{
+#if defined(HUAWEI_IOT_AT_CAP_DUMP) && (HUAWEI_IOT_AT_CAP_DUMP)
+    static uint8_t dumped = 0;
+    if (dumped) return;
+    dumped = 1;
+
+    LOG_I("AT", "ESP-AT cap dump: AT+GMR");
+    (void)AT_SendCmd(&g_at_manager, "AT+GMR\r\n", "OK", 3000);
+    LOG_I("AT", "ESP-AT cap dump: AT+MQTTUSERCFG=?");
+    (void)AT_SendCmd(&g_at_manager, "AT+MQTTUSERCFG=?\r\n", "OK", 3000);
+    LOG_I("AT", "ESP-AT cap dump: AT+MQTTCONN=?");
+    (void)AT_SendCmd(&g_at_manager, "AT+MQTTCONN=?\r\n", "OK", 3000);
+#endif
+}
+
+static bool mqtt_usercfg_with_scheme(uint8_t scheme, const char *client_id, const char *username, const char *password)
+{
+    char cmd[AT_CMD_MAX_LEN];
+    const int n = snprintf(cmd, sizeof(cmd),
+                           "AT+MQTTUSERCFG=0,%u,\"%s\",\"%s\",\"%s\",0,0,\"\"\r\n",
+                           (unsigned)scheme,
+                           client_id,
+                           username,
+                           password);
+    if (n <= 0 || (size_t)n >= sizeof(cmd)) return false;
+    return at_send_ok_retry(cmd, 10000, 3, 500);
+}
+
+static bool mqtt_usercfg_auto(const char *client_id, const char *username, const char *password)
+{
+    const uint8_t candidates[] = {
+        (uint8_t)HUAWEI_IOT_MQTT_SCHEME,
+        2u,
+        1u,
+        0u,
+    };
+
+    for (size_t i = 0; i < (sizeof(candidates) / sizeof(candidates[0])); i++) {
+        const uint8_t scheme = candidates[i];
+        bool dup = false;
+        for (size_t j = 0; j < i; j++) {
+            if (candidates[j] == scheme) {
+                dup = true;
+                break;
+            }
+        }
+        if (dup) continue;
+
+        LOG_I("mqtt", "MQTTUSERCFG try scheme=%u", (unsigned)scheme);
+        if (mqtt_usercfg_with_scheme(scheme, client_id, username, password)) return true;
+        LOG_W("mqtt", "MQTTUSERCFG scheme=%u rejected, try next", (unsigned)scheme);
+    }
+
+    return false;
+}
+
+static bool mqtt_setup_and_connect(uint32_t epoch_s_utc)
 {
     char client_id[128];
     char username[96];
     char password[128];
-    if (!huawei_iot_build_mqtt_auth(ts_ms, client_id, sizeof(client_id), username, sizeof(username), password,
+    if (!huawei_iot_build_mqtt_auth(epoch_s_utc, client_id, sizeof(client_id), username, sizeof(username), password,
                                    sizeof(password))) {
         LOG_E("huawei", "build auth failed");
         return false;
     }
 
-    char cmd[AT_CMD_MAX_LEN];
-    const int n1 = snprintf(cmd, sizeof(cmd),
-                   "AT+MQTTUSERCFG=0,%u,\"%s\",\"%s\",\"%s\",0,0,\"\"\r\n",
-                   (unsigned)HUAWEI_IOT_MQTT_SCHEME,
-                   client_id,
-                   username,
-                   password);
-    if (n1 <= 0 || (size_t)n1 >= sizeof(cmd)) return false;
-    if (!at_send_ok_retry(cmd, 10000, 3, 500)) return false;
+    at_dump_esp_at_caps();
+    if (!mqtt_usercfg_auto(client_id, username, password)) return false;
 
+    char cmd[AT_CMD_MAX_LEN];
     const int n2 = snprintf(cmd, sizeof(cmd),
                    "AT+MQTTCONN=0,\"%s\",%u,1\r\n",
                    HUAWEI_IOT_MQTT_HOST,
@@ -345,6 +396,8 @@ void StartMqttAtTask(void *argument)
     /* 拉起 Wi-Fi（必要时走 SmartConfig）。 */
     osDelay(1500);
     esp01s_Init(&huart3, 1024);
+    osDelay(200);
+    at_dump_esp_at_caps();
 
     /* 校时：用于基于时间戳的鉴权/签名。 */
     {
@@ -368,8 +421,13 @@ void StartMqttAtTask(void *argument)
     }
 
     /* 连接华为云 IoTDA（MQTT）。 */
-    uint64_t ts_ms = huawei_iot_timestamp_ms();
-    if (!mqtt_setup_and_connect(ts_ms)) {
+    if (!lock_time_has_epoch()) {
+        LOG_E("mqtt", "no SNTP epoch, skip connect");
+        return;
+    }
+
+    const uint32_t epoch_s_utc = lock_time_now_s();
+    if (!mqtt_setup_and_connect(epoch_s_utc)) {
         LOG_E("mqtt", "connect failed (check iot config/firmware)");
     }
 
