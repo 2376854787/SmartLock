@@ -343,6 +343,15 @@ static void AT_OnLine(AT_Manager_t *mgr, const char *line) {
             LOG_D("AT", "match result=%d line=%s", c->result, line);
             return;
         }
+        if (strstr(line, "busy p") || strstr(line, "busy s")) {
+            c->result = AT_RESP_BUSY;
+            mgr->curr_cmd = NULL;
+            OSAL_sem_give(c->done_sem);
+            if (mgr->core_task) OSAL_thread_flags_set(mgr->core_task, AT_FLAG_TX);
+            LOG_D("AT", "match result=%d line=%s", c->result, line);
+            return;
+        }
+
 
         /* 2、未命中：很可能是 URC/中间行，交给 URC 回调（如果有）*/
         if (mgr->urc_cb) {
