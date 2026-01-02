@@ -1,5 +1,5 @@
 //
-// Created by yan on 2025/12/3.
+// 创建：yan，2025/12/3
 //
 
 #ifndef SMARTCLOCK_WATER_ADC_H

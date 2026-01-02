@@ -4,8 +4,8 @@
 
 ## 1. 项目做什么
 
-- 目标：在 **STM32F407** 上实现带屏幕的智能门锁面板：**触摸 UI + 本地开锁（指纹/RC522 RFID/密码）**，并预留 **Wi‑Fi/MQTT** 联网能力。
-- GUI：LVGL（v8.x），RTOS：FreeRTOS（通过 CMSIS‑RTOS2 包装层）。
+- 目标：在 **STM32F407** 上实现带屏幕的智能门锁面板：**触摸 UI + 本地开锁（指纹/RC522 RFID/密码）**，并预留 **Wi-Fi/MQTT** 联网能力（ESP-01S AT 框架）。
+- GUI：LVGL（v8.x），RTOS：FreeRTOS（通过 CMSIS-RTOS2 包装层）。
 
 ## 2. 模块分层（建议按“职责”阅读）
 
@@ -15,7 +15,7 @@
 - **components（可复用组件）**：log、AT、ring_buffer、HFSM、OSAL、静态内存池等
 - **platform（平台移植层）**：目前主要实现了 `hal_time` 的 STM32 端口
 
-## 3. 启动与任务链路（Top‑Down）
+## 3. 启动与任务链路（Top-Down）
 
 ```mermaid
 flowchart TD
@@ -65,6 +65,8 @@ flowchart TD
 - 门锁业务数据（RFID/PIN 存储）：`docs/developer-guide/modules/lock-data.md`
 - USART1 DMA→RingBuffer 数据通道：`docs/developer-guide/modules/uart1-dma-ringbuffer.md`
 - 传感器与联网（Light/Water/ESP01S）：`docs/developer-guide/modules/sensors-and-network.md`
+- 华为云 IoTDA（ESP-01S + AT + MQTT）：`docs/developer-guide/modules/cloud-huawei-iotda.md`
+- 云端 MQTT 控制协议（云端下发/设备应答）：`docs/mqtt-control.md`
 - 日志系统：`docs/developer-guide/modules/components-log.md`
 - AT 框架（USART3）：`docs/developer-guide/modules/components-at.md`
 - 指纹 AS608（端口+服务封装）：`docs/developer-guide/modules/drivers-as608.md`

@@ -1,8 +1,8 @@
 /*
- * RC522.c
+ * RC522 驱动（MFRC522，SPI）
  *
- *  Created on: Mar 23, 2022
- *      Author: LX
+ * 创建时间：2022-03-23
+ * 作者：LX
  */
 
 #include "rc522_my.h"

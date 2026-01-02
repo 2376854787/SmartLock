@@ -2,20 +2,19 @@
 
 #include "lvgl.h"
 
-/* UI: Multimodal Smart Lock (dev stage)
+/* UI：多模态智能门锁（开发阶段）
  *
- * Screen flow:
- * - Home: time/date/weather (placeholders for future RTC/network)
- * - Choose: select unlock method (Fingerprint / RFID / PIN)
- * - Each method has:
- *   - Unlock page (verify)
- *   - Manage page (CRUD: enroll/delete/clear; kept for development)
+ * 页面流程：
+ * - Home：首页时间/日期/天气（当前为占位，后续可接 RTC/网络）
+ * - Choose：选择开锁方式（指纹 / RFID / 密码）
+ * - 每种方式包含：
+ *   - Unlock：验证页
+ *   - Manage：管理页（增/删/清空等 CRUD，便于开发调试）
  *
- * Concurrency model:
- * - LVGL must be accessed from the LVGL handler task. Any background work (AS608 / RC522)
- *   runs in worker tasks and reports results back to UI via `lv_async_call()`.
- * - If you later add networking/time updates, follow the same pattern: do work in a task,
- *   then schedule UI updates on the LVGL thread.
+ * 并发模型：
+ * - LVGL 必须在 LVGL handler 任务中访问；后台工作（AS608/RC522）放在 worker task 里执行，
+ *   再通过 `lv_async_call()` 把结果回传到 UI。
+ * - 后续如果加入联网/时间刷新，也遵循同样模式：任务里做耗时工作，UI 更新投递回 LVGL 线程。
  */
 
 #include <stdbool.h>
@@ -44,7 +43,7 @@ typedef struct {
     lv_color_t accent;
 } ui_palette_t;
 
-/* Home and subpages use different palettes (per UX requirement). */
+/* 根据交互需求：首页与子页面使用不同配色方案。 */
 static const ui_palette_t s_pal_home = {
     .bg = LV_COLOR_MAKE(0x0B, 0x10, 0x20),
     .card = LV_COLOR_MAKE(0x14, 0x1B, 0x2D),
@@ -93,7 +92,7 @@ static void nav_to(lv_obj_t *scr)
     lv_scr_load(scr);
 }
 
-/* ================= Toast ================= */
+/* ================= Toast（提示条） ================= */
 
 typedef struct {
     lv_obj_t *root;
@@ -135,7 +134,7 @@ static void ui_toast(const char *text, lv_color_t color, uint32_t ms)
     (void)lv_timer_create(toast_close_cb, ms ? ms : 1200, ctx);
 }
 
-/* ================= Modal / Popup ================= */
+/* ================= 弹窗（Modal/Popup） ================= */
 
 typedef struct {
     lv_obj_t *overlay;
@@ -322,7 +321,7 @@ static void ui_popup_keypad_num(const char *title, const char *initial, uint8_t 
     lv_obj_set_style_text_font(m, &lv_font_montserrat_16, LV_PART_ITEMS);
 }
 
-/* ================= Shared UI Widgets ================= */
+/* ================= 通用 UI 组件 ================= */
 
 static lv_obj_t *ui_make_topbar(lv_obj_t *parent, const char *title, lv_event_cb_t back_cb)
 {
@@ -396,7 +395,7 @@ static void set_label(lv_obj_t *lbl, const char *text, lv_color_t color)
     lv_obj_set_style_text_color(lbl, color, 0);
 }
 
-/* ================= Screens ================= */
+/* ================= 页面（Screens） ================= */
 
 static lv_obj_t *s_home = NULL;
 static lv_obj_t *s_choose = NULL;
@@ -499,7 +498,7 @@ static void build_home(void)
     (void)lv_timer_create(home_tick_cb, 1000, NULL);
 }
 
-/* Forward: builders */
+/* 前置声明：builder */
 static void build_home(void);
 static void build_choose(void);
 static void build_fp_unlock(void);
@@ -509,7 +508,7 @@ static void build_rfid_manage(void);
 static void build_pin_unlock(void);
 static void build_pin_manage(void);
 
-/* ================= PIN ================= */
+/* ================= 密码（PIN） ================= */
 
 static lv_obj_t *s_pin_status = NULL;
 static lv_obj_t *s_pin_ta = NULL;
@@ -1029,7 +1028,7 @@ static void build_pin_manage(void)
     pin_manage_rebuild_list_ui();
 }
 
-/* ================= Fingerprint (AS608) ================= */
+/* ================= 指纹（AS608） ================= */
 
 typedef enum {
     FP_OP_VERIFY = 0,
@@ -1062,7 +1061,7 @@ static volatile bool s_fp_busy = false;
 static lv_obj_t *s_fp_unlock_status = NULL;
 static lv_obj_t *s_fp_manage_status = NULL;
 
-/* Fingerprint manage UI state */
+/* 指纹管理页 UI 状态 */
 static uint16_t s_fp_capacity = 0;
 static uint16_t s_fp_target_id = 1;
 static uint8_t s_fp_index_bits[128];
@@ -1077,7 +1076,7 @@ static lv_obj_t *s_fp_list = NULL;
 static lv_obj_t *s_fp_page_lbl = NULL;
 static lv_obj_t *s_fp_sel_lbl = NULL;
 
-/* Batch delete (sequential; keeps AS608 single-operation semantics) */
+/* 批量删除（串行执行，保持 AS608 “一次只做一个操作”的语义） */
 static bool s_fp_del_batch_active = false;
 static uint16_t s_fp_del_batch_ids[64];
 static uint8_t s_fp_del_batch_count = 0;
@@ -1218,7 +1217,7 @@ static void fp_manage_rebuild_list_ui(void)
         lv_obj_set_style_text_font(lbl, &lv_font_montserrat_16, 0);
         lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 14, 0);
 
-        /* Store ID in event user_data via pointer cast */
+        /* 通过指针强转把 ID 存进 event user_data（轻量传参） */
         lv_obj_add_event_cb(btn, fp_item_click_cb, LV_EVENT_CLICKED, (void *)(uintptr_t)id);
         lv_obj_add_event_cb(btn, fp_item_long_cb, LV_EVENT_LONG_PRESSED, (void *)(uintptr_t)id);
     }
@@ -1664,7 +1663,7 @@ static void build_fp_manage(void)
     lv_obj_set_style_pad_all(card, 22, 0);
     lv_obj_set_style_pad_gap(card, 12, 0);
 
-    /* ID input (tap to edit) */
+    /* ID 输入框（点击编辑） */
     s_fp_id_btn = lv_btn_create(card);
     lv_obj_set_size(s_fp_id_btn, 340, 54);
     lv_obj_align(s_fp_id_btn, LV_ALIGN_TOP_LEFT, 0, 0);
@@ -1707,7 +1706,7 @@ static void build_fp_manage(void)
     lv_obj_set_style_text_font(tr, &lv_font_montserrat_16, 0);
     lv_obj_center(tr);
 
-    /* Existing IDs list (paged) */
+    /* 已存在的 ID 列表（分页） */
     s_fp_list = lv_obj_create(card);
     lv_obj_clear_flag(s_fp_list, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_size(s_fp_list, 716, 188);
@@ -1765,7 +1764,7 @@ static void build_fp_manage(void)
     lv_obj_set_style_text_color(ln, c_text(), 0);
     lv_obj_center(ln);
 
-    /* Actions */
+    /* 操作区 */
     lv_obj_t *btn_del_sel = lv_btn_create(card);
     lv_obj_set_size(btn_del_sel, 260, 56);
     lv_obj_align(btn_del_sel, LV_ALIGN_BOTTOM_LEFT, 0, 0);
@@ -1801,7 +1800,7 @@ static void build_fp_manage(void)
     lv_obj_align(s_fp_manage_status, LV_ALIGN_BOTTOM_LEFT, 0, -64);
 }
 
-/* ================= RFID (MFRC522) ================= */
+/* ================= RFID（MFRC522） ================= */
 
 typedef enum {
     RFID_OP_VERIFY = 0,
@@ -1829,7 +1828,7 @@ static lv_obj_t *s_rfid_unlock_status = NULL;
 static lv_obj_t *s_rfid_manage_status = NULL;
 static lv_obj_t *s_rfid_last_uid = NULL;
 
-/* RFID manage UI state */
+/* RFID 管理页 UI 状态 */
 static lv_obj_t *s_rfid_list = NULL;
 static lv_obj_t *s_rfid_page_lbl = NULL;
 static lv_obj_t *s_rfid_sel_lbl = NULL;
@@ -2163,7 +2162,7 @@ static void rfid_apply_cb(void *user_data)
         }
     } else {
         set_label(s_rfid_manage_status, res->msg, col);
-        /* Keep manage list in sync with the store */
+        /* 让管理列表与存储内容保持同步 */
         rfid_manage_rebuild_list_ui();
     }
 
@@ -2429,12 +2428,12 @@ void ui_lock_init(void)
         (void)lock_pin_add("1234", 0, "default", NULL);
     }
 
-    /* AS608 service init (async worker will use it) */
+    /* 初始化 AS608 服务（异步 worker 会用到） */
     AS608_Port_BindUart(&huart4);
     as608_svc_rc_t rc = AS608_Service_Init(0xFFFFFFFF, 0x00000000);
     LOG_I("UI_LOCK", "AS608_Service_Init rc=%d", (int)rc);
 
-    /* Build Home with its own palette, then use subpage palette for the rest. */
+    /* Home 使用独立配色；其余子页面使用子页面配色。 */
     ui_use_palette(&s_pal_home);
     build_home();
 

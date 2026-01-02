@@ -7,7 +7,7 @@
 #include "task.h"
 #include "semphr.h"
 
-#define LVGL_TASK_STACK_SIZE  1024 /* words (xTaskCreate stack depth), i.e. 4KB on Cortex-M4 */
+#define LVGL_TASK_STACK_SIZE  1024 /* 以 word 为单位（xTaskCreate 栈深度），在 Cortex-M4 上约等于 4KB */
 #ifndef LVGL_HANDLER_TASK_PRIORITY
 #define LVGL_HANDLER_TASK_PRIORITY (configMAX_PRIORITIES - 3)
 #endif
@@ -21,15 +21,14 @@
 static TaskHandle_t lvgl_task_handle = NULL;
 static SemaphoreHandle_t lvgl_mutex = NULL;
 
-/* LVGL integration model (important for stability):
- * - Only the `lvgl_handler_task` should call LVGL APIs directly in a loop.
- * - Other tasks should NOT touch LVGL objects directly; instead use `lv_async_call()` to
- *   schedule UI updates back onto the LVGL thread, or guard access with `lvgl_lock()`.
+/* LVGL 集成模型
+ * - 只有 `lvgl_handler_task` 在循环中直接调用 LVGL API。
+ * - 其他任务不要直接操作 LVGL 对象；请用 `lv_async_call()` 把 UI 更新投递回 LVGL 线程，
+ *   或使用 `lvgl_lock()`/`lvgl_unlock()` 做互斥保护。
  *
- * Priorities:
- * - `lvgl_tick_task` keeps LVGL timing accurate (animations, indev processing, timers).
- * - `lvgl_handler_task` runs `lv_timer_handler()` frequently; keep it reasonably high to
- *   avoid “sometimes touch has no effect” when CPU is busy.
+ * 优先级说明：
+ * - `lvgl_tick_task` 负责 LVGL 的时间基准（动画/输入设备处理/定时器）。
+ * - `lvgl_handler_task` 频繁调用 `lv_timer_handler()`；建议较高优先级，避免 CPU 忙时触摸无响应。
  */
 static void lvgl_tick_task(void *arg) {
     (void) arg;
@@ -100,3 +99,4 @@ void lvgl_unlock(void) {
         xSemaphoreGive(lvgl_mutex);
     }
 }
+

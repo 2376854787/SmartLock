@@ -450,7 +450,7 @@ static void fp_worker_task(void *arg)
               (unsigned)cmd.op, (int)res->rc, fp_rc_str(res->rc), (unsigned)res->status, fp_status_str(res->status),
               (unsigned long)cost);
 
-        /* Schedule UI update in LVGL task context */
+        /* UI 更新必须回到 LVGL 任务上下文执行 */
         lvgl_lock();
         if (lv_async_call(fp_lvgl_apply_result_cb, res) != LV_RES_OK) {
             lvgl_unlock();

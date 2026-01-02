@@ -1,5 +1,5 @@
 //
-// Created by yan on 2025/12/31.
+// 创建：yan，2025/12/31
 //
 
 #ifndef SMARTLOCK_HAL_UART_H

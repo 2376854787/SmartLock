@@ -20,7 +20,7 @@
 static void test_led_toggle(void) { HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin); }
 #else
 static void test_led_toggle(void) {
-    /* no-op */
+    /* 空操作 */
 }
 #endif
 

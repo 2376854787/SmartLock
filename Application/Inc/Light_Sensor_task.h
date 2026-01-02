@@ -1,5 +1,5 @@
 //
-// Created by yan on 2025/11/15.
+// 创建：yan，2025/11/15
 //
 
 #ifndef SMARTCLOCK_LIGHT_SENSOR_TASK_H

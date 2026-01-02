@@ -1,6 +1,6 @@
 # SmartClock / SmartLock（STM32F407 智能门锁面板）
 
-这是一套运行在 **STM32F407** 上的带屏幕“门锁控制面板”固件：它把 **本地开锁（指纹 / RFID / 密码）**、**触摸 UI**、以及 **联网（Wi‑Fi + MQTT，持续完善中）** 集成到一块板子上，让“开门/管理权限/查看状态”更直观。
+这是一套运行在 **STM32F407** 上的带屏幕“门锁控制面板”固件：它把 **本地开锁（指纹 / RFID / 密码）**、**触摸 UI**、以及 **联网（Wi-Fi + MQTT，持续完善中）** 集成到一块板子上，让“开门/管理权限/查看状态”更直观。
 
 ## 文档导航（按功能模块）
 
@@ -28,9 +28,11 @@
   - 驱动：`Drivers/BSP/rc522/rc522_my.c`
   - 任务（测试/联调）：`Application/Src/rc522_my_test_task.c`
 - **联网与云端（ESP-01S + AT + MQTT）**
-  - Wi‑Fi 模块驱动：`Drivers/BSP/ESP01s/ESP01S.c`
+  - Wi-Fi 模块驱动：`Drivers/BSP/ESP01s/ESP01S.c`
   - AT 框架：`components/AT/AT.c`
   - 相关任务入口：`Application/Inc/wifi_mqtt_task.h`、`Application/Src/wifi_mqtt_task.c`
+  - 华为云 IoTDA 接入说明：`docs/developer-guide/modules/cloud-huawei-iotda.md`
+  - 云端 MQTT 控制命令协议：`docs/mqtt-control.md`
 - **人机输入与传感器**
   - 按键：`Drivers/BSP/Keys/KEY.c`
   - 光照：`Drivers/BSP/Light_Sensor/LightSeneor.c`、`Application/Src/Light_Sensor_task.c`
@@ -48,8 +50,8 @@
 
 ## 技术概览
 
-- **MCU**：STM32F407ZGT6（Cortex‑M4F）
-- **RTOS**：FreeRTOS Kernel **V10.3.1**（通过 **CMSIS‑RTOS v2**：`cmsis_os2`）
+- **MCU**：STM32F407ZGT6（Cortex-M4F）
+- **RTOS**：FreeRTOS Kernel **V10.3.1**（通过 **CMSIS-RTOS v2**：`cmsis_os2`）
 - **GUI**：LVGL **v8.3.6**
 - **HAL/CMSIS**：STM32CubeF4 HAL（`Drivers/STM32F4xx_HAL_Driver`）+ CMSIS（`Drivers/CMSIS`）
 - **构建方式**：CMake（适配 GCC 工具链），同时保留 CubeMX `.ioc` 配置源
@@ -66,10 +68,18 @@
   - 外设联调入口：
     - 指纹：`Application/Src/as608_test_task.c`、`Drivers/BSP/as608/`
     - RFID：`Application/Src/rc522_my_test_task.c`、`Drivers/BSP/rc522/`
-    - Wi‑Fi/MQTT：`Drivers/BSP/ESP01s/`、`components/AT/`
+    - Wi-Fi/MQTT：`Drivers/BSP/ESP01s/`、`components/AT/`
 
 ## 重要提示（避免踩坑）
 
 - **触摸坐标镜像/点不准**：优先检查 `Drivers/BSP/touch/gt9xxx.c` 的映射逻辑（项目笔记见 `Application/Src/readme.txt`）。
 - **启用 LVGL 组件后编译报缺符号**：本项目在 `CMakeLists.txt` 中**手工列举** LVGL 源文件；修改 `Middlewares/LVGL/lv_conf.h` 后，可能还需要同步更新 CMake 的源文件列表。
 
+## 云端交互（MQTT 控制命令）
+
+云端交互协议见 `docs/mqtt-control.md`（当前固件使用 `key=value` 逗号分隔格式，便于 ESP8266 `AT+MQTTPUB` 直接发送）。
+
+- 下发命令 Topic：`$oc/devices/<device_id>/user/cmd`
+- 设备应答 Topic：`$oc/devices/<device_id>/user/cmd/ack`
+- 门事件上报 Topic：`$oc/devices/<device_id>/user/events/door`
+- `<device_id>` 来源：`Application/Inc/huawei_iot_config.h` 中的 `HUAWEI_IOT_DEVICE_ID`

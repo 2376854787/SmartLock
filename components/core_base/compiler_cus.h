@@ -1,5 +1,5 @@
 //
-// Created by yan on 2025/12/20.
+// 创建：yan，2025/12/20
 //
 
 #ifndef SMARTLOCK_COMPILER_CUS_H
@@ -12,8 +12,8 @@ extern "C" {
 
 #endif
 
-/* ================= Compiler detection =================
- * Support: GCC/Clang, ARMCLANG, ARMCC5, IAR
+/* ================= 编译器检测 =================
+ * 支持：GCC/Clang、ARMCLANG、ARMCC5、IAR
  */
 #if defined(__ICCARM__)
 #define COMPILER_IAR 1
@@ -33,7 +33,7 @@ extern "C" {
 #error "Unsupported compiler"
 #endif
 
-/* ================= Basic keywords ================= */
+/* ================= 基础关键字/属性宏 ================= */
 #if defined(COMPILER_GCC) || defined(COMPILER_CLANG) || defined(COMPILER_ARMCLANG)
 
 #ifndef __INLINE
@@ -85,10 +85,10 @@ extern "C" {
 #define __BARRIER()       __asm volatile ("" ::: "memory")
 #endif
 
-/* ================= Common helpers ================= */
+/* ================= 通用辅助宏 ================= */
 #define CORE__UNUSED(x)      (void)(x)                                           /* 消除未使用警告 */
 
-/* Static assert (C11 or fallback) */
+/* 静态断言（C11 或降级实现） */
 #define CORE_STR_IMPL(x) #x
 #define CORE_STR(x) CORE_STR_IMPL(x)
 

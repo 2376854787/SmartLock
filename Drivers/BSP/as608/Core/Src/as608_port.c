@@ -60,7 +60,7 @@ static void rb_push(uint8_t b)
     uint16_t next = rb_next(s_rx_head);
     if (next == s_rx_tail)
     {
-        /* overflow: 丢弃最旧数据（tail++） */
+        /* 缓冲区满：丢弃最旧数据（tail++） */
         s_rx_tail = rb_next(s_rx_tail);
     }
     s_rx_ring[s_rx_head] = b;

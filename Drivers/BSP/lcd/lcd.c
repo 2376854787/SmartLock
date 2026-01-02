@@ -898,7 +898,7 @@ void lcd_fill_circle(uint16_t x, uint16_t y, uint16_t r, uint16_t color) {
 
     for (i = 1; i <= imax; i++) {
         if ((i * i + xr * xr) > sqmax) {
-            /* draw lines from outside */
+            /* 从外侧画线 */
             if (xr > imax) {
                 lcd_draw_hline(x - i + 1, y + xr, 2 * (i - 1), color);
                 lcd_draw_hline(x - i + 1, y - xr, 2 * (i - 1), color);
@@ -907,7 +907,7 @@ void lcd_fill_circle(uint16_t x, uint16_t y, uint16_t r, uint16_t color) {
             xr--;
         }
 
-        /* draw lines from inside (center) */
+        /* 从内侧（圆心）画线 */
         lcd_draw_hline(x - xr, y + i, 2 * xr, color);
         lcd_draw_hline(x - xr, y - i, 2 * xr, color);
     }

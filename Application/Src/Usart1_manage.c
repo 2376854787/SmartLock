@@ -1,5 +1,5 @@
 //
-// Created by yan on 2025/12/5.
+// 创建：yan，2025/12/5
 //
 
 #include "Usart1_manage.h"

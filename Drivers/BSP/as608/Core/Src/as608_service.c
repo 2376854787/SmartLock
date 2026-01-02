@@ -45,13 +45,13 @@ typedef struct
 
     uint32_t timeout_ms;
 
-    /* out */
+    /* 输出参数 */
     as608_status_t status;
     uint16_t found_id;
     uint16_t score;
     uint8_t index_table[32];
 
-    /* sync */
+    /* 同步机制 */
     osSemaphoreId_t done;
     int32_t rc; /* as608_svc_rc_t */
 } as608_req_t;
@@ -98,7 +98,7 @@ static as608_svc_rc_t wait_done(osSemaphoreId_t sem, uint32_t timeout_ms)
 
 static uint8_t wait_finger_image(uint32_t addr, uint32_t timeout_ms, as608_status_t *status)
 {
-    /* Poll as608_get_image every 200ms. */
+    /* 每 200ms 轮询一次 as608_get_image()。 */
     const uint32_t step = 200u;
     const uint32_t start = osKernelGetTickCount();
 
@@ -116,7 +116,7 @@ static uint8_t wait_finger_image(uint32_t addr, uint32_t timeout_ms, as608_statu
         as608_interface_delay_ms(step);
     }
 
-    /* Timeout: keep status unchanged (typically NO_FINGERPRINT). */
+    /* 超时：保持 status 不变（通常是 NO_FINGERPRINT）。 */
     return 0xFEu;
 }
 
@@ -461,7 +461,7 @@ as608_svc_rc_t AS608_List_IndexTable(uint8_t num, uint8_t out_table[32], as608_s
 
 static void do_init(as608_req_t *req)
 {
-    /* link interface */
+    /* 绑定底层接口（UART/Delay/Debug） */
     DRIVER_AS608_LINK_INIT(&s_handle, as608_handle_t);
     DRIVER_AS608_LINK_UART_INIT(&s_handle, as608_interface_uart_init);
     DRIVER_AS608_LINK_UART_DEINIT(&s_handle, as608_interface_uart_deinit);
@@ -536,7 +536,7 @@ static void do_read(as608_req_t *req)
 {
     as608_status_t st;
 
-    /* 1) get image */
+    /* 1) 获取指纹图像 */
     uint8_t r = wait_finger_image(s_addr, req->timeout_ms, &st);
     req->status = st;
     if (r == 0xFEu)
@@ -550,7 +550,7 @@ static void do_read(as608_req_t *req)
         return;
     }
 
-    /* 2) gen feature -> buffer 1 */
+    /* 2) 生成特征到 buffer1 */
     r = as608_generate_feature(&s_handle, s_addr, AS608_BUFFER_NUMBER_1, &st);
     req->status = st;
     if (r != 0 || st != AS608_STATUS_OK)
@@ -559,7 +559,7 @@ static void do_read(as608_req_t *req)
         return;
     }
 
-    /* 3) search */
+    /* 3) 搜索匹配 */
     uint16_t found = 0;
     uint16_t score = 0;
 
@@ -596,7 +596,7 @@ static void do_update(as608_req_t *req)
         return;
     }
 
-    /* 1) delete one */
+    /* 1) 删除指定 ID */
     as608_status_t st;
     uint8_t r = as608_delete_feature(&s_handle, s_addr, req->id, 1, &st);
     req->status = st;
@@ -608,7 +608,7 @@ static void do_update(as608_req_t *req)
 
     /* 即使 NOT_FOUND，也允许继续录入覆盖 */
 
-    /* 2) create */
+    /* 2) 录入（Enroll/Create） */
     r = do_enroll_to_id(s_addr, req->id, req->timeout_ms, &st);
     req->status = st;
     if (r == 0)

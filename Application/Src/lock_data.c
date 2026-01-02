@@ -10,6 +10,10 @@ static SemaphoreHandle_t s_mutex = NULL;
 static lock_observer_t s_observer = NULL;
 static void *s_observer_ctx = NULL;
 
+static volatile bool s_epoch_valid = false;
+static volatile uint32_t s_epoch_base_s = 0;
+static volatile TickType_t s_epoch_tick_base = 0;
+
 static lock_rfid_entry_t s_rfid[LOCK_RFID_MAX];
 static uint8_t s_rfid_count = 0;
 
@@ -26,7 +30,26 @@ static void notify(lock_evt_t evt)
 
 uint32_t lock_time_now_s(void)
 {
-    return (uint32_t)(xTaskGetTickCount() / configTICK_RATE_HZ);
+    const TickType_t now_tick = xTaskGetTickCount();
+    if (!s_epoch_valid) {
+        return (uint32_t)(now_tick / configTICK_RATE_HZ);
+    }
+
+    const TickType_t delta_tick = now_tick - s_epoch_tick_base;
+    const uint32_t delta_s = (uint32_t)(delta_tick / configTICK_RATE_HZ);
+    return (uint32_t)(s_epoch_base_s + delta_s);
+}
+
+void lock_time_set_epoch_s(uint32_t epoch_s)
+{
+    s_epoch_base_s = epoch_s;
+    s_epoch_tick_base = xTaskGetTickCount();
+    s_epoch_valid = true;
+}
+
+bool lock_time_has_epoch(void)
+{
+    return s_epoch_valid;
 }
 
 void lock_data_init(void)
@@ -152,7 +175,7 @@ void lock_rfid_clear(void)
     notify(LOCK_EVT_RFID_CHANGED);
 }
 
-/* ---------------- PIN / Password ---------------- */
+/* ---------------- PIN / 密码 ---------------- */
 
 static bool is_digits_only(const char *s)
 {

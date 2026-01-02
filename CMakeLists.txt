@@ -66,6 +66,10 @@ add_executable(${CMAKE_PROJECT_NAME}
         Drivers/BSP/ESP01s/ESP01S.c
         Application/Src/wifi_mqtt_task.c
         Application/Src/mqtt_at_task.c
+        Application/Src/huawei_iot.c
+        components/crypto/sha256.c
+        components/crypto/hmac_sha256.c
+        components/crypto/base64.c
         Drivers/BSP/Beep/Beep.c
         Drivers/BSP/Light_Sensor/LightSeneor.c
         Application/Src/Light_Sensor_task.c
@@ -240,6 +244,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         Drivers/System/Inc
         components/log
         components/AT
+        components/crypto
         components/core_base
         Drivers/BSP/as608/Core/Inc
         Drivers/BSP/as608/ThirdParty/LibDriver_AS608

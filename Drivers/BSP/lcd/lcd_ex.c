@@ -250,7 +250,7 @@ void lcd_ex_nt35310_reginit(void)
     lcd_wr_regno(0xDF);
     lcd_wr_data(0x10);
 
-    /* VCOMvoltage */
+    /* VCOM 电压 */
     lcd_wr_regno(0xC4);
     lcd_wr_data(0x8F);  /* 5f */
 
@@ -1032,67 +1032,67 @@ void lcd_ex_nt35510_reginit(void)
     lcd_write_reg(0xF002, 0x52);
     lcd_write_reg(0xF003, 0x08);
     lcd_write_reg(0xF004, 0x01);
-    /* AVDD ratio */
+    /* AVDD 比例 */
     lcd_write_reg(0xB600, 0x34); /* 34 */
     lcd_write_reg(0xB601, 0x34); /* 34 */
     lcd_write_reg(0xB602, 0x34); /* 34 */
-    /* AVDD 5.2V */
+    /* AVDD：5.2V */
     lcd_write_reg(0xB000, 0x0D); /* 0C,减小，AVDD电压增大 */
     lcd_write_reg(0xB001, 0x0D); /* 0C */
     lcd_write_reg(0xB002, 0x0D); /* 0C */
      
-    /* AVEE ratio */
+    /* AVEE 比例 */
     lcd_write_reg(0xB700, 0x24); /* 24 */
     lcd_write_reg(0xB701, 0x24); /* 24 */
     lcd_write_reg(0xB702, 0x24); /* 24 */
-    /* AVEE -5.2V */
+    /* AVEE：-5.2V */
     lcd_write_reg(0xB100, 0x0D); /* 0C减小，AVEE电压增大 */
     lcd_write_reg(0xB101, 0x0D); /* 0C */
     lcd_write_reg(0xB102, 0x0D); /* 0C */
 
-    /* VCL */
+    /* VCL（负电源） */
     lcd_write_reg(0xB800, 0x24);
     lcd_write_reg(0xB801, 0x24);
     lcd_write_reg(0xB802, 0x24);
 
     lcd_write_reg(0xB200, 0x00);
 
-    /***************VGH ratio***************/
-    /* VGH ratio */
+    /*************** VGH 比例 ***************/
+    /* VGH 比例 */
     lcd_write_reg(0xB900, 0x24); /* 14 */
     lcd_write_reg(0xB901, 0x24); /* 14 */
     lcd_write_reg(0xB902, 0x24); /* 14 */
-    /* VGH 10.2V */
+    /* VGH：10.2V */
     lcd_write_reg(0xB300, 0x05); /* 08 */
     lcd_write_reg(0xB301, 0x05); /* 08 */
     lcd_write_reg(0xB302, 0x05); /* 08 */
 
-    /***************VGLX ratio***************/
-    /* VGLX ratio */
+    /*************** VGLX 比例 ***************/
+    /* VGLX 比例 */
     lcd_write_reg(0xBA00, 0x34);
     lcd_write_reg(0xBA01, 0x34);
     lcd_write_reg(0xBA02, 0x34);
-    /* VGL_REG -12.6V */
+    /* VGL_REG：-12.6V */
     lcd_write_reg(0xB500, 0x0B);
     lcd_write_reg(0xB501, 0x0B);
     lcd_write_reg(0xB502, 0x0B);
 
-    /***************VGMP/VGSP 4.5V***********/
+    /*************** VGMP/VGSP：4.5V ***********/
     lcd_write_reg(0xBC00, 0x00); /* 00 */
     lcd_write_reg(0xBC01, 0xA3); /* 80 */
     lcd_write_reg(0xBC02, 0x00); /* 00 */
 
-    /* GMN/VGSN -4.5V */
+    /* GMN/VGSN：-4.5V */
     lcd_write_reg(0xBD00, 0x00); /* 00 */
     lcd_write_reg(0xBD01, 0xA3); /* 80 */
     lcd_write_reg(0xBD02, 0x00); /* 00 */
 
-    /* VCOM  -1.25V */
+    /* VCOM：-1.25V */
     lcd_write_reg(0xBE00, 0x00);
     lcd_write_reg(0xBE01, 0x37); /* 64~2F */
 
 
-    /***************Gamma Setting***************/
+    /*************** Gamma 设置 ***************/
     lcd_write_reg(0xD100, 0x00);
     lcd_write_reg(0xD101, 0x37);
     lcd_write_reg(0xD102, 0x00);
@@ -1411,18 +1411,18 @@ void lcd_ex_nt35510_reginit(void)
     lcd_write_reg(0xD632, 0x03);
     lcd_write_reg(0xD633, 0xC1);
 
-    /***************LV2 Page 0 enable***************/
+    /*************** 使能 LV2 Page 0 ***************/
     lcd_write_reg(0xF000, 0x55);
     lcd_write_reg(0xF001, 0xAA);
     lcd_write_reg(0xF002, 0x52);
     lcd_write_reg(0xF003, 0x08);
     lcd_write_reg(0xF004, 0x00);
 
-    /***************480x800***************/
+    /*************** 480x800 ***************/
     //lcd_write_reg(0xB500, 0x50);
-    //RGB Internal mode
+    //RGB 内部模式
     //REGW 0xB30001
-    //RGB I/F Setting
+    //RGB 接口设置
 
     lcd_write_reg(0xB000, 0x00); 
     lcd_write_reg(0xB001, 0x05); 
@@ -1430,40 +1430,40 @@ void lcd_ex_nt35510_reginit(void)
     lcd_write_reg(0xB003, 0x05); 
     lcd_write_reg(0xB004, 0x02);
 
-    /*## SDT: */
+    /*## SDT： */
     lcd_write_reg(0xB600, 0x08);
     lcd_write_reg(0xB500, 0x50); /* 0x6b 480x854       0x50 480x800 */
 
-    /***************Display control***************/
+    /*************** 显示控制 ***************/
     //lcd_write_reg(0xB100, 0xCC);
     //lcd_write_reg(0xB101, 0x00);
 
-    /***************Source hold time***************/
+    /*************** Source 保持时间 ***************/
     lcd_write_reg(0xB600, 0x05);
 
-    /***************Gate EQ control***************/
+    /*************** Gate EQ 控制 ***************/
     lcd_write_reg(0xB700, 0x00);
     lcd_write_reg(0xB701, 0x00);
 
 
-    /***************Source EQ control (Mode 2)***************/
+    /*************** Source EQ 控制（模式 2） ***************/
     lcd_write_reg(0xB800, 0x01);
     lcd_write_reg(0xB801, 0x05);
     lcd_write_reg(0xB802, 0x05);
     lcd_write_reg(0xB803, 0x05);
                     
-    /***************Inversion mode  (2-dot)***************/
+    /*************** 反转模式（2-dot） ***************/
     lcd_write_reg(0xBC00, 0x02);//02,2-dot inversion
     lcd_write_reg(0xBC01, 0x00);
     lcd_write_reg(0xBC02, 0x00);
                      
 
-    /*************** BOE SETTING(DEFAULT) ***************/
+    /*************** BOE 设置（默认） ***************/
     lcd_write_reg(0xCC00, 0x03);
     lcd_write_reg(0xCC01, 0x00);
     lcd_write_reg(0xCC02, 0x00);
 
-    /***************Frame rate***************/
+    /*************** 帧率 ***************/
     lcd_write_reg(0xBD00, 0x01);
     lcd_write_reg(0xBD01, 0x84);
     lcd_write_reg(0xBD02, 0x07);  /* 0X1C   0x07 */
@@ -1478,7 +1478,7 @@ void lcd_ex_nt35510_reginit(void)
     lcd_write_reg(0xFF02, 0x25);
     lcd_write_reg(0xFF03, 0x01);
 
-    /*************** Timing control 4H w/ 4-Delayms ***************/
+    /*************** 时序控制：4H + 4*Delayms ***************/
     lcd_write_reg(0x3600, 0x40);
     lcd_write_reg(0x3500, 0x00);
 
@@ -1736,7 +1736,6 @@ void lcd_ex_ssd1963_reginit(void)
     lcd_wr_regno(0xBA);
     lcd_wr_data(0X01);  /* GPIO[1:0]=01,控制LCD方向 */
 }
-
 
 
 

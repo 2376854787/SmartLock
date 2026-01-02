@@ -18,7 +18,7 @@
 #include "stm32f4xx.h"
 #endif
 
-/* ========= Optional record (noinit) ========= */
+/* ========= 可选：断言记录（noinit 段） ========= */
 typedef struct {
     uint32_t magic;
     uint32_t count;
@@ -82,7 +82,7 @@ __WEAK void Assert_PlatformReset(void) {
 #if defined(NVIC_SystemReset)
 NVIC_SystemReset();
 #else
-/* fallback: halt */
+/* 降级处理：死循环停机 */
 while (1) { ; }
 #endif
 }

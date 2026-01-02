@@ -8,15 +8,14 @@
 extern "C" {
 #endif
 
-/* In-memory credential store (dev stage).
+/* 凭据/权限数据存储（开发阶段：仅内存）。
  *
- * Purpose:
- * - Centralize CRUD for RFID cards and PIN/passwords so UI and future MQTT/cloud code
- *   can share the same data model.
- * - Keep storage backend abstract: currently RAM-only; later can be flash/NVS + MQTT sync.
+ * 目的：
+ * - 统一管理 RFID/PIN 等凭据的 CRUD，让 UI 与后续 MQTT/云端逻辑复用同一份数据模型。
+ * - 抽象存储后端：当前仅 RAM；后续可替换为 Flash/NVS，并支持云端同步。
  *
- * Threading:
- * - Functions are safe to call from multiple FreeRTOS tasks (uses an internal mutex).
+ * 线程安全：
+ * - 接口可在多个 FreeRTOS 任务中调用（内部使用互斥锁保护）。
  */
 
 typedef enum {
@@ -29,8 +28,10 @@ typedef void (*lock_observer_t)(lock_evt_t evt, void *user_ctx);
 void lock_data_init(void);
 void lock_data_set_observer(lock_observer_t cb, void *user_ctx);
 
-/* Time base: seconds since boot (dev). Later can be replaced by RTC/NTP epoch. */
+/* 时间基准：未校时前为“上电后秒数”；SNTP/RTC 校时后可切换为 epoch 秒。 */
 uint32_t lock_time_now_s(void);
+void lock_time_set_epoch_s(uint32_t epoch_s);
+bool lock_time_has_epoch(void);
 
 /* ---------------- RFID ---------------- */
 
@@ -52,7 +53,7 @@ bool lock_rfid_add_uid(const uint8_t uid[LOCK_RFID_UID_LEN], const char *name_op
 bool lock_rfid_remove_uid(const uint8_t uid[LOCK_RFID_UID_LEN]);
 void lock_rfid_clear(void);
 
-/* ---------------- PIN / Password ---------------- */
+/* ---------------- PIN / 密码 ---------------- */
 
 #define LOCK_PIN_MAX 10u
 #define LOCK_PIN_MAX_LEN 6u

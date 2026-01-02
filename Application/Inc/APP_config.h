@@ -1,5 +1,5 @@
 //
-// Created by yan on 2025/12/9.
+// 创建：yan，2025/12/9
 //
 
 #ifndef SMARTLOCK_APP_CONFIG_H

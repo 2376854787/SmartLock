@@ -1,0 +1,376 @@
+#include "mqtt_at_task.h"
+
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "APP_config.h"
+#include "ESP01S.h"
+#include "AT.h"
+#include "AT_Core_Task.h"
+#include "huawei_iot.h"
+#include "log.h"
+#include "lock_data.h"
+#include "osal.h"
+#include "usart.h"
+#include "wifi_mqtt_task.h"
+
+/* 说明：
+ * - 本文件用于“先把华为云 IoTDA 跑通”的落脚点（ESP8266 AT + MQTT）。
+ * - 云端命令处理目前仅做占位（留 TODO 挂钩），后续再接入真实开锁/关锁逻辑。
+ */
+
+typedef struct {
+    volatile uint8_t mqtt_connected;
+    volatile uint8_t have_sntp_epoch;
+    uint32_t sntp_epoch_s;
+} mqtt_at_ctx_t;
+
+static mqtt_at_ctx_t s_ctx;
+
+static bool str_starts_with(const char *s, const char *prefix)
+{
+    if (!s || !prefix) return false;
+    const size_t n = strlen(prefix);
+    return strncmp(s, prefix, n) == 0;
+}
+
+static bool parse_quoted_field(const char **p_io, char *out, size_t out_sz)
+{
+    if (!p_io || !*p_io || !out || out_sz == 0) return false;
+    const char *p = *p_io;
+    while (*p == ' ' || *p == ',') p++;
+    if (*p != '\"') return false;
+    p++;
+    size_t i = 0;
+    while (*p && *p != '\"') {
+        if (i + 1u < out_sz) out[i++] = *p;
+        p++;
+    }
+    if (*p != '\"') return false;
+    out[i] = '\0';
+    p++; /* skip closing quote */
+    *p_io = p;
+    return true;
+}
+
+static uint8_t parse_u8(const char **p_io)
+{
+    const char *p = *p_io;
+    while (*p == ' ' || *p == ',') p++;
+    uint32_t v = 0;
+    while (*p >= '0' && *p <= '9') {
+        v = v * 10u + (uint32_t)(*p - '0');
+        p++;
+    }
+    *p_io = p;
+    if (v > 255u) v = 255u;
+    return (uint8_t)v;
+}
+
+static void wait_sntp_epoch(uint32_t timeout_ms)
+{
+    const uint32_t freq = osKernelGetTickFreq();
+    const uint32_t start = osKernelGetTickCount();
+    if (freq == 0u) return;
+
+    const uint32_t timeout_ticks = (uint32_t)(((uint64_t)timeout_ms * (uint64_t)freq + 999ull) / 1000ull);
+
+    while (!s_ctx.have_sntp_epoch) {
+        const uint32_t now = osKernelGetTickCount();
+        if ((uint32_t)(now - start) >= timeout_ticks) break;
+        osDelay(50);
+    }
+}
+
+static void urc_handler(AT_Manager_t *mgr, const char *line, void *user)
+{
+    (void)mgr;
+    mqtt_at_ctx_t *ctx = (mqtt_at_ctx_t *)user;
+    if (!ctx || !line) return;
+
+    /* MQTT 连接状态 */
+    if (strstr(line, "+MQTTCONNECTED:")) {
+        ctx->mqtt_connected = 1;
+        LOG_I("mqtt", "connected");
+        return;
+    }
+    if (strstr(line, "+MQTTDISCONNECTED:")) {
+        ctx->mqtt_connected = 0;
+        LOG_W("mqtt", "disconnected");
+        return;
+    }
+
+    /* SNTP 时间响应（通常来自 AT+CIPSNTPTIME? 的中间行） */
+    if (strstr(line, "+CIPSNTPTIME:")) {
+        uint32_t epoch_s = 0;
+        if (huawei_iot_parse_sntp_time_to_epoch_s(line, &epoch_s)) {
+            ctx->sntp_epoch_s = epoch_s;
+            ctx->have_sntp_epoch = 1;
+            lock_time_set_epoch_s(epoch_s);
+            LOG_I("time", "SNTP epoch=%lu", (unsigned long)epoch_s);
+        } else {
+            LOG_W("time", "SNTP parse failed: %s", line);
+        }
+        return;
+    }
+
+    /* MQTT 下行消息 */
+    if (str_starts_with(line, "+MQTTSUBRECV:")) {
+        /* 期望格式（ESP8266 AT）：+MQTTSUBRECV:<linkid>,\"topic\",\"payload\" */
+        const char *p = line + strlen("+MQTTSUBRECV:");
+        (void)parse_u8(&p); /* link id */
+
+        char topic[WIFI_MQTT_TOPIC_MAX];
+        char payload[WIFI_MQTT_PAYLOAD_MAX];
+        topic[0] = '\0';
+        payload[0] = '\0';
+        if (!parse_quoted_field(&p, topic, sizeof(topic))) return;
+        if (!parse_quoted_field(&p, payload, sizeof(payload))) {
+            /* 部分固件 payload 可能不带引号：这里退化为“取剩余整行”。 */
+            while (*p == ' ' || *p == ',') p++;
+            (void)snprintf(payload, sizeof(payload), "%s", p);
+        }
+
+        wifi_mqtt_msg_t msg;
+        memset(&msg, 0, sizeof(msg));
+        msg.type = WIFI_MQTT_MSG_CLOUD_RX;
+        msg.ts_s = lock_time_now_s();
+        (void)snprintf(msg.topic, sizeof(msg.topic), "%s", topic);
+        (void)snprintf(msg.payload, sizeof(msg.payload), "%s", payload);
+        (void)wifi_mqtt_mailbox_offer(&msg, 0);
+        return;
+    }
+}
+
+static bool at_send_ok(const char *cmd, uint32_t timeout_ms)
+{
+    const AT_Resp_t r = AT_SendCmd(&g_at_manager, cmd, "OK", timeout_ms);
+    if (r != AT_RESP_OK) {
+        LOG_W("AT", "cmd failed r=%d cmd=%s", (int)r, cmd);
+        return false;
+    }
+    return true;
+}
+
+static bool mqtt_setup_and_connect(uint64_t ts_ms)
+{
+    char client_id[128];
+    char username[96];
+    char password[128];
+    if (!huawei_iot_build_mqtt_auth(ts_ms, client_id, sizeof(client_id), username, sizeof(username), password,
+                                   sizeof(password))) {
+        LOG_E("huawei", "build auth failed");
+        return false;
+    }
+
+    char cmd[AT_CMD_MAX_LEN];
+    const int n1 = snprintf(cmd, sizeof(cmd),
+                   "AT+MQTTUSERCFG=0,%u,\"%s\",\"%s\",\"%s\",0,0,\"\"\r\n",
+                   (unsigned)HUAWEI_IOT_MQTT_SCHEME,
+                   client_id,
+                   username,
+                   password);
+    if (n1 <= 0 || (size_t)n1 >= sizeof(cmd)) return false;
+    if (!at_send_ok(cmd, 10000)) return false;
+
+    const int n2 = snprintf(cmd, sizeof(cmd),
+                   "AT+MQTTCONN=0,\"%s\",%u,1\r\n",
+                   HUAWEI_IOT_MQTT_HOST,
+                   (unsigned)HUAWEI_IOT_MQTT_PORT);
+    if (n2 <= 0 || (size_t)n2 >= sizeof(cmd)) return false;
+    if (!at_send_ok(cmd, 20000)) return false;
+
+    /* 订阅华为云 IoTDA 命令 Topic（下行）。 */
+    char sub_topic[WIFI_MQTT_TOPIC_MAX];
+    huawei_iot_build_cmd_sub_topic(sub_topic, sizeof(sub_topic));
+    const int n3 = snprintf(cmd, sizeof(cmd), "AT+MQTTSUB=0,\"%s\",1\r\n", sub_topic);
+    if (n3 > 0 && (size_t)n3 < sizeof(cmd)) {
+        (void)at_send_ok(cmd, 10000);
+    }
+
+    /* 订阅自定义 user/cmd：用于你在云端按本文档直接下发控制命令。 */
+    char user_cmd[WIFI_MQTT_TOPIC_MAX];
+    huawei_iot_build_user_cmd_topic(user_cmd, sizeof(user_cmd));
+    const int n4 = snprintf(cmd, sizeof(cmd), "AT+MQTTSUB=0,\"%s\",1\r\n", user_cmd);
+    if (n4 > 0 && (size_t)n4 < sizeof(cmd)) {
+        (void)at_send_ok(cmd, 10000);
+    }
+
+    return true;
+}
+
+static bool mqtt_publish(const char *topic, const char *payload)
+{
+    if (!topic || !payload) return false;
+    char cmd[AT_CMD_MAX_LEN];
+    const int n = snprintf(cmd, sizeof(cmd),
+                   "AT+MQTTPUB=0,\"%s\",\"%s\",1,0\r\n",
+                   topic,
+                   payload);
+    if (n <= 0 || (size_t)n >= sizeof(cmd)) return false;
+    return at_send_ok(cmd, 12000);
+}
+
+static bool kv_get(const char *s, const char *key, char *out, size_t out_sz)
+{
+    if (!s || !key || !out || out_sz == 0) return false;
+    out[0] = '\0';
+
+    const size_t klen = strlen(key);
+    const char *p = s;
+    while (*p) {
+        while (*p == ' ' || *p == ',') p++;
+        const char *seg = p;
+        const char *eq = strchr(seg, '=');
+        if (!eq) return false;
+        const size_t name_len = (size_t)(eq - seg);
+        if (name_len == klen && strncmp(seg, key, klen) == 0) {
+            const char *v = eq + 1;
+            const char *end = strchr(v, ',');
+            size_t vlen = end ? (size_t)(end - v) : strlen(v);
+            if (vlen >= out_sz) vlen = out_sz - 1u;
+            memcpy(out, v, vlen);
+            out[vlen] = '\0';
+            return true;
+        }
+        const char *next = strchr(p, ',');
+        if (!next) break;
+        p = next + 1;
+    }
+    return false;
+}
+
+static bool topic_is_iotda_sys_command(const char *topic)
+{
+    if (!topic) return false;
+    return strstr(topic, "/sys/commands/") != NULL;
+}
+
+static bool topic_is_user_cmd(const char *topic)
+{
+    char t[WIFI_MQTT_TOPIC_MAX];
+    huawei_iot_build_user_cmd_topic(t, sizeof(t));
+    return (topic && strcmp(topic, t) == 0);
+}
+
+static void publish_user_cmd_ack(uint32_t result_code, const char *result_desc)
+{
+    char ack_topic[WIFI_MQTT_TOPIC_MAX];
+    huawei_iot_build_user_cmd_ack_topic(ack_topic, sizeof(ack_topic));
+
+    char payload[WIFI_MQTT_PAYLOAD_MAX];
+    (void)snprintf(payload, sizeof(payload),
+                   "result_code=%lu,result_desc=%s,ts=%lu",
+                   (unsigned long)result_code,
+                   (result_desc && result_desc[0]) ? result_desc : "OK",
+                   (unsigned long)lock_time_now_s());
+    (void)mqtt_publish(ack_topic, payload);
+}
+
+static void handle_user_command(const char *payload)
+{
+    char cmd[32];
+    if (!kv_get(payload, "cmd", cmd, sizeof(cmd))) {
+        publish_user_cmd_ack(2, "missing_cmd");
+        return;
+    }
+
+    if (strcmp(cmd, "ping") == 0) {
+        publish_user_cmd_ack(0, "pong");
+        return;
+    }
+
+    if (strcmp(cmd, "time_sync") == 0) {
+        (void)at_send_ok("AT+CIPSNTPTIME?\r\n", 8000);
+        publish_user_cmd_ack(0, "time_sync_started");
+        return;
+    }
+
+    if (strcmp(cmd, "unlock") == 0) {
+        (void)wifi_mqtt_report_unlock_event(WIFI_MQTT_UNLOCK_CLOUD);
+        publish_user_cmd_ack(0, "unlock_accepted");
+        return;
+    }
+
+    if (strcmp(cmd, "door") == 0) {
+        char state[16];
+        if (!kv_get(payload, "state", state, sizeof(state))) {
+            publish_user_cmd_ack(2, "missing_state");
+            return;
+        }
+        const bool is_open = (strcmp(state, "open") == 0) || (strcmp(state, "1") == 0);
+        (void)wifi_mqtt_report_door_event(is_open, WIFI_MQTT_UNLOCK_CLOUD);
+        publish_user_cmd_ack(0, "door_event_accepted");
+        return;
+    }
+
+    /* 其他命令先占位，后续补齐实际控制逻辑 */
+    publish_user_cmd_ack(1, "todo");
+}
+
+static void handle_cloud_command_placeholder(const char *topic, const char *payload)
+{
+    /* TODO：解析 IoTDA 命令内容，并映射到实际门锁控制逻辑。 */
+    LOG_W("cloud", "RX topic=%s payload=%s", topic ? topic : "(null)", payload ? payload : "(null)");
+
+    /* 尽力而为：先对命令请求回一个占位 ACK，后续补齐真实结果。 */
+    char resp_topic[WIFI_MQTT_TOPIC_MAX];
+    if (!huawei_iot_build_cmd_resp_topic_from_request(topic, resp_topic, sizeof(resp_topic))) {
+        return;
+    }
+    (void)mqtt_publish(resp_topic, "result_code=0,result_desc=TODO");
+}
+
+void StartMqttAtTask(void *argument)
+{
+    (void)argument;
+
+    memset(&s_ctx, 0, sizeof(s_ctx));
+    wifi_mqtt_mailbox_init();
+    AT_SetUrcHandler(&g_at_manager, urc_handler, &s_ctx);
+
+    /* 拉起 Wi-Fi（必要时走 SmartConfig）。 */
+    osDelay(1500);
+    esp01s_Init(&huart3, 1024);
+
+    /* 校时：用于基于时间戳的鉴权/签名。 */
+    (void)at_send_ok("AT+CIPSNTPCFG=1,8,\"pool.ntp.org\"\r\n", 8000);
+    (void)at_send_ok("AT+CIPSNTPTIME?\r\n", 8000);
+    wait_sntp_epoch(6000);
+    if (!s_ctx.have_sntp_epoch) {
+        LOG_W("time", "SNTP not ready, continue with local uptime timestamp");
+    }
+
+    /* 连接华为云 IoTDA（MQTT）。 */
+    uint64_t ts_ms = huawei_iot_timestamp_ms();
+    if (!mqtt_setup_and_connect(ts_ms)) {
+        LOG_E("mqtt", "connect failed (check iot config/firmware)");
+    }
+
+    for (;;) {
+        wifi_mqtt_msg_t msg;
+        if (!wifi_mqtt_mailbox_take(&msg, 1000)) {
+            continue;
+        }
+
+        if (msg.type == WIFI_MQTT_MSG_PUBLISH) {
+            char up_topic[WIFI_MQTT_TOPIC_MAX];
+            huawei_iot_build_user_door_event_topic(up_topic, sizeof(up_topic));
+            (void)mqtt_publish(up_topic, msg.payload);
+            continue;
+        }
+
+        if (msg.type == WIFI_MQTT_MSG_CLOUD_RX) {
+            if (topic_is_user_cmd(msg.topic)) {
+                handle_user_command(msg.payload);
+            } else if (topic_is_iotda_sys_command(msg.topic)) {
+                handle_cloud_command_placeholder(msg.topic, msg.payload);
+            } else {
+                LOG_W("cloud", "unhandled topic=%s payload=%s", msg.topic, msg.payload);
+            }
+            continue;
+        }
+    }
+}

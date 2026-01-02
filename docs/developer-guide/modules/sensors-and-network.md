@@ -1,18 +1,26 @@
-# 模块指南：传感器与联网（光敏/水滴 ADC/ESP01S）
+# 模块指南：传感器与联网（光敏 / 水滴 ADC / ESP01S）
 
 ## 模块职责
 
 - 光敏：周期读取 ADC3，输出日志（可扩展为自动背光/夜间模式）。
-- 水滴/液体：通过 VREFINT 换算 VDDA，再读取 ADC1 通道 1，显示原始值与换算电压。
-- 联网：ESP‑01S 通过 AT 框架在 USART3 上联调（SmartConfig/联网检测）；MQTT 任务目前为占位（文件为空）。
+- 水滴/液体：通过 VREFINT 换算 VDDA，再读取 ADC1 通道 1，输出原始值与换算电压。
+- 联网：ESP-01S（ESP8266 AT）通过 AT 框架在 USART3 上联调并自动联网；在此基础上完成 SNTP 校时、MQTT 上云、云端命令下发与门事件上报。
 
-相关路径：
+## 相关路径
+
 - 光敏任务：`Application/Src/Light_Sensor_task.c`、`Application/Inc/Light_Sensor_task.h`
 - 光敏驱动：`Drivers/BSP/Light_Sensor/LightSeneor.c`、`Drivers/BSP/Light_Sensor/LightSensor.h`
-- 蜂鸣器：`Drivers/BSP/Beep/Beep.h`、`Drivers/BSP/Beep/Beep.c`
 - 水滴 ADC：`Application/Src/water_adc.c`、`Application/Inc/water_adc.h`
 - ESP01S：`Drivers/BSP/ESP01s/ESP01S.h`、`Drivers/BSP/ESP01s/ESP01S.c`
-- 占位：`Application/Src/wifi_mqtt_task.c`、`Application/Src/mqtt_at_task.c`（当前长度为 0）
+- AT 框架：`components/AT/AT.c`、`components/AT/AT_Core_Task.c`
+- MQTT（邮箱队列）：`Application/Inc/wifi_mqtt_task.h`、`Application/Src/wifi_mqtt_task.c`
+- MQTT（AT 上云任务）：`Application/Inc/mqtt_at_task.h`、`Application/Src/mqtt_at_task.c`
+- 华为云 IoTDA 辅助：`Application/Inc/huawei_iot_config.h`、`Application/Inc/huawei_iot.h`、`Application/Src/huawei_iot.c`
+
+## 相关文档
+
+- 华为云 IoTDA + MQTT：`docs/developer-guide/modules/cloud-huawei-iotda.md`
+- MQTT 控制命令（云端交互协议）：`docs/mqtt-control.md`
 
 ## 光敏任务流程（1s 周期）
 
@@ -22,7 +30,7 @@ flowchart TD
   B --> C[循环]
   C --> D[LightSensor_Read -> LightSensor_Data]
   D --> E[可选：Beep_control/背光控制]
-  E --> F[LOG_D 输出]
+  E --> F[LOG 输出]
   F --> G[osDelay(1000)]
   G --> C
 ```
@@ -52,29 +60,23 @@ flowchart TD
   D -->|成功| F[停止 SmartConfig<br/>AT+CWSTOPSMART]
 ```
 
-## Public API 速查表
+## ESP01S 上云流程（SNTP + MQTT + 云端命令）
 
-| 函数名 | 作用 | 关键参数 | 备注 |
-|---|---|---|---|
-| `StartLightSensorTask()` | 光敏任务入口 | `argument` | RTOS 线程入口函数 |
-| `LightSensor_Init()` | 启动 ADC3 | 无 | 当前实现每次循环都会调用一次（可优化） |
-| `LightSensor_Read()` | 读取 ADC3 值 | 无 | 轮询转换完成（10ms 超时） |
-| `Beep_control()` | 控制蜂鸣器 | `state` | 可在低光/告警时使用 |
-| `waterSensor_task()` | 水滴 ADC 任务入口 | `argument` | 使用 ADC1 轮询采样 |
-| `esp01s_Init()` | ESP01S 联调入口 | `huart`, `rb_size` | 实际发送走 `AT_SendCmd`（依赖 AT 框架已就绪） |
-| `command_send()` | 发送命令并等待响应 | `command`, `wait_rsu`, `max_wait_time` | 当前更推荐统一走 AT 框架接口 |
+> 设计目标：上电后自动“校时 → 上云 → 订阅命令 → 上报门事件”。
 
-## 关键参数（物理含义）
-
-| 配置项 | 位置 | 含义/影响 |
-|---|---|---|
-| `VREFINT_TYPICAL_MV` | `Application/Src/water_adc.c` | 内部参考电压典型值（mV），用于 VDDA 估算 |
-| `ADC_TIMEOUT_MS` | `Application/Src/water_adc.c` | ADC 轮询超时（ms） |
-| `ADC_FULL_SCALE` | `Application/Src/water_adc.c` | ADC 满量程（12bit=4095） |
+```mermaid
+flowchart TD
+  A[AT Core 就绪] --> B[esp01s_Init: 联网/SmartConfig]
+  B --> C[AT+CIPSNTPCFG + AT+CIPSNTPTIME?: SNTP 校时]
+  C --> D[生成时间戳签名: HMAC-SHA256]
+  D --> E[AT+MQTTUSERCFG + AT+MQTTCONN: 连接 IoTDA]
+  E --> F[AT+MQTTSUB: 订阅 sys/commands/# + user/cmd]
+  F --> G[邮箱队列取出 door 事件 -> 发布 user/events/door]
+  F --> H[收到 +MQTTSUBRECV -> 分发到命令处理]
+```
 
 ## Design Notes（为什么这么写）
 
-- **VDDA 自校准**：用 VREFINT 估算实际 VDDA，能把“原始 ADC 码值”换算为更可解释的“电压（mV）”，便于阈值标定。
-- **LCD 直写与 LVGL 的冲突**：`water_adc.c` 直接调用 `lcd_show_num()`；当 LVGL 接管 LCD 时，**不应在其它任务里直接画屏**，否则会出现显示撕裂/互相覆盖。推荐做法：把数据采样放在任务里，UI 显示用 `lv_async_call()` 回到 LVGL 线程更新。
-- **联网任务占位**：`wifi_mqtt_task.*`、`mqtt_at_task.*` 当前为空；建议在补齐实现前，先明确“AT 层负责连接维护、MQTT 层负责协议与重连策略”的边界。
+- **联网上云解耦**：上云/AT 指令发送都集中在 `Application/Src/mqtt_at_task.c`；其它模块只调用 `wifi_mqtt_report_*` 投递事件，避免 UI/业务任务被 AT 阻塞。
+- **上报协议先走“无引号”格式**：当前使用 `key=value` 逗号分隔，避免 ESP8266 `AT+MQTTPUB` 需要转义引号的问题；后续若切到 RAW 发布再升级为标准 JSON。
 

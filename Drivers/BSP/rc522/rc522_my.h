@@ -33,7 +33,7 @@
 
 #define DEF_FIFO_LENGTH       64                 //FIFO size=64byte
 
-// PAGE 0
+// 第 0 页（PAGE 0）
 #define     RFU00                 0x00
 #define     CommandReg            0x01
 #define     ComIEnReg             0x02
@@ -50,7 +50,7 @@
 #define     BitFramingReg         0x0D
 #define     CollReg               0x0E
 #define     RFU0F                 0x0F
-// PAGE 1
+// 第 1 页（PAGE 1）
 #define     RFU10                 0x10
 #define     ModeReg               0x11
 #define     TxModeReg             0x12
@@ -67,7 +67,7 @@
 #define     RFU1D                 0x1D
 #define     RFU1E                 0x1E
 #define     SerialSpeedReg        0x1F
-// PAGE 2
+// 第 2 页（PAGE 2）
 #define     RFU20                 0x20
 #define     CRCResultRegM         0x21
 #define     CRCResultRegL         0x22
@@ -84,7 +84,7 @@
 #define     TReloadRegL           0x2D
 #define     TCounterValueRegH     0x2E
 #define     TCounterValueRegL     0x2F
-// PAGE 3
+// 第 3 页（PAGE 3）
 #define     RFU30                 0x30
 #define     TestSel1Reg           0x31
 #define     TestSel2Reg           0x32
