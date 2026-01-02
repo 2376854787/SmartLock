@@ -63,7 +63,7 @@ static osPriority_t OSAL_map_prio(osal_priority_t p) {
 }
 
 /**
- *
+ * @note ? osKernelRunning ?????
  * @return 返回当前调度器是否启动
  */
 bool OSAL_kernel_is_running() {

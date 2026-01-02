@@ -102,6 +102,12 @@ void HardFault_Handler(void)
   while (1)
   {
     /* USER CODE BEGIN W1_HardFault_IRQn 0 */
+    /* 调试指示：如果程序跑到这里，说明发生了 HardFault（系统会“卡死”在此循环）。
+     * 用 LED 闪烁来辅助定位：LED0/LED1 交替闪烁。
+     */
+    HAL_GPIO_TogglePin(LED0_GPIO_Port, LED0_Pin);
+    HAL_GPIO_TogglePin(LED1_GPIO_Port, LED1_Pin);
+    for (volatile uint32_t i = 0; i < 200000; i++) { __NOP(); }
     /* USER CODE END W1_HardFault_IRQn 0 */
   }
 }
@@ -117,6 +123,8 @@ void MemManage_Handler(void)
   while (1)
   {
     /* USER CODE BEGIN W1_MemoryManagement_IRQn 0 */
+    HAL_GPIO_TogglePin(LED0_GPIO_Port, LED0_Pin);
+    for (volatile uint32_t i = 0; i < 400000; i++) { __NOP(); }
     /* USER CODE END W1_MemoryManagement_IRQn 0 */
   }
 }
@@ -132,6 +140,8 @@ void BusFault_Handler(void)
   while (1)
   {
     /* USER CODE BEGIN W1_BusFault_IRQn 0 */
+    HAL_GPIO_TogglePin(LED1_GPIO_Port, LED1_Pin);
+    for (volatile uint32_t i = 0; i < 400000; i++) { __NOP(); }
     /* USER CODE END W1_BusFault_IRQn 0 */
   }
 }

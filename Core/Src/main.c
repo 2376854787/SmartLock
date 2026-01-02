@@ -134,7 +134,15 @@ void MX_FREERTOS_Init(void);
 #define PUTCHAR_PROTOTYPE int fputc(int ch, FILE *f)
 #endif
 PUTCHAR_PROTOTYPE {
-    HAL_UART_Transmit(&huart1, (uint8_t *) &ch, 1, HAL_MAX_DELAY); // 修改为你的UART句柄，例如 huart1
+    /* 说明：
+     * - 本工程日志系统（components/log）使用 USART1 DMA 异步发送。
+     * - 若 printf 在 RTOS 运行中仍走阻塞发送，会与 DMA 发送互相抢占，导致日志任务/系统看起来“卡死”。
+     * - 因此：RTOS 运行后关闭 printf 的底层串口输出（请使用 LOG_* 宏打印）。
+     */
+    if (osKernelGetState() == osKernelRunning) {
+        return ch;
+    }
+    (void)HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, 10);
     return ch;
 }
 

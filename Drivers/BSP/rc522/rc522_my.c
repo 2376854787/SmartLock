@@ -6,7 +6,7 @@
  */
 
 #include "rc522_my.h"
-#include "stdio.h"
+#include "log.h"
 
 #define RC522_RST_HIGH HAL_GPIO_WritePin(GPIOG, GPIO_PIN_7, GPIO_PIN_SET);
 #define RC522_RST_LOW HAL_GPIO_WritePin(GPIOG, GPIO_PIN_7, GPIO_PIN_RESET);
@@ -90,9 +90,9 @@ void RC522_Init(void)
 	HAL_Delay(10);
 	PcdAntennaOff();//关闭天线发射
 	HAL_Delay(10);
-    PcdAntennaOn();//开启天线发射
+	PcdAntennaOn();//开启天线发射
 
-	printf("RFID-MFRC522 初始化完成\r\nFindCard Starting ...\r\n");  //测试引脚初始化完成
+	LOG_I("RC522", "RFID-MFRC522 初始化完成，开始寻卡");
 }
 
 //功    能：寻卡

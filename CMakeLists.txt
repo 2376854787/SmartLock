@@ -290,6 +290,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # Add project symbols (macros)
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
         # Add user defined symbols
+        LV_USE_LOG=0
 )
 
 # Remove wrong libob.a library dependency when using cpp files
@@ -322,11 +323,21 @@ if (CMAKE_OBJCOPY)
     message(STATUS "Found objcopy: ${CMAKE_OBJCOPY}")
     add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD
             # 使用 ${CMAKE_PROJECT_NAME} 作为目标名
-            COMMAND ${CMAKE_OBJCOPY} -O binary $<TARGET_FILE:${CMAKE_PROJECT_NAME}> $<TARGET_FILE_DIR:${CMAKE_PROJECT_NAME}>.bin
+            COMMAND ${CMAKE_OBJCOPY} -O binary
+                    $<TARGET_FILE:${CMAKE_PROJECT_NAME}>
+                    $<TARGET_FILE_DIR:${CMAKE_PROJECT_NAME}>/$<TARGET_FILE_BASE_NAME:${CMAKE_PROJECT_NAME}>.bin
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    $<TARGET_FILE_DIR:${CMAKE_PROJECT_NAME}>/$<TARGET_FILE_BASE_NAME:${CMAKE_PROJECT_NAME}>.bin
+                    ${CMAKE_SOURCE_DIR}/build.bin
             COMMENT "Generating .bin file")
 
     add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD
-            COMMAND ${CMAKE_OBJCOPY} -O ihex $<TARGET_FILE:${CMAKE_PROJECT_NAME}> $<TARGET_FILE_DIR:${CMAKE_PROJECT_NAME}>.hex
+            COMMAND ${CMAKE_OBJCOPY} -O ihex
+                    $<TARGET_FILE:${CMAKE_PROJECT_NAME}>
+                    $<TARGET_FILE_DIR:${CMAKE_PROJECT_NAME}>/$<TARGET_FILE_BASE_NAME:${CMAKE_PROJECT_NAME}>.hex
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    $<TARGET_FILE_DIR:${CMAKE_PROJECT_NAME}>/$<TARGET_FILE_BASE_NAME:${CMAKE_PROJECT_NAME}>.hex
+                    ${CMAKE_SOURCE_DIR}/build.hex
             COMMENT "Generating .hex file")
 
     add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD

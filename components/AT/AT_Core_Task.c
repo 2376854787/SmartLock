@@ -63,11 +63,14 @@ static void AT_Core_Task(void *argument)
             }
         }
 
+#if defined(AT_TX_USE_DMA) && (AT_TX_USE_DMA == 1)
     timeout_check:
+#endif
         if (mgr->curr_cmd) {
             const uint32_t now = OSAL_tick_get();
             if ((int32_t)(now - mgr->curr_deadline_tick) >= 0) {
                 AT_Command_t *c = mgr->curr_cmd;
+                LOG_W("AT", "timeout cmd=%s", c->cmd_buf);
                 c->result = AT_RESP_TIMEOUT;
                 mgr->curr_cmd = NULL;
                 OSAL_sem_give(c->done_sem);
@@ -81,7 +84,7 @@ void at_core_task_init(AT_Manager_t *at, UART_HandleTypeDef *uart)
 {
     const osal_thread_attr_t at_attr = {
         .name = "AT_Core_Task",
-        .stack_size = 256 * 6,
+        .stack_size = 256 * 10,
         .priority = (osal_priority_t)OSAL_PRIO_NORMAL,
     };
 
@@ -127,7 +130,9 @@ static bool Uart_send(AT_Manager_t *mgr, const uint8_t *data, uint16_t len)
     }
 #endif
 
-    return (HAL_UART_Transmit(mgr->uart, (uint8_t *)data, len, HAL_MAX_DELAY) == HAL_OK);
+    /* 阻塞发送：务必使用有限超时，避免 UART 异常时“整机卡死”。 */
+    const uint32_t timeout_ms = AT_TxTimeoutMs(mgr, len);
+    return (HAL_UART_Transmit(mgr->uart, (uint8_t *)data, len, timeout_ms) == HAL_OK);
 }
 
 void AT_Manage_TxCpltCallback(UART_HandleTypeDef *huart)

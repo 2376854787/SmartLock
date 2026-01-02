@@ -57,10 +57,8 @@ static osal_mutex_t s_logMutex = NULL;
 #if LOG_ASYNC_ENABLE
 /* 异步模式资源 */
 static RingBuffer s_logRB; /* 环形缓冲区实例 */
-
 /* 后台发送任务的线程 ID */
 static osal_thread_t s_logTaskHandle = NULL;
-
 #else
 /* 同步模式下的互斥量属性 */
 static const osMutexAttr_t logMutex_attr = {"LogMutex", osMutexRecursive, NULL, 0};
@@ -90,6 +88,7 @@ static inline const log_backend_t *Log_GetBackend(void) {
 void Log_Task_Entry(void *argument) {
     static uint8_t send_buf[128];
     uint32_t read_len;
+    (void)argument;
 
     for (;;) {
         /* 等待：有新日志 或 上一笔发送完成（都可能触发继续flush） */
@@ -104,24 +103,32 @@ void Log_Task_Entry(void *argument) {
 
             if (!Log_BackendReady()) {
                 /* 后端未就绪：丢弃 */
-                printf("LOG发送端待就位！！！\r\n");
                 continue;
             }
 
             const log_backend_t *b = Log_GetBackend();
 
-            /* 启动发送：若忙则等待完成再重试 */
-            int rc;
-            do {
-                rc = b->send_async(send_buf, (uint16_t) read_len, b->user);
+            /* 启动发送：避免因为后端异常导致“永远等待 TX_DONE”进而让日志系统卡死。 */
+            int rc = RET_E_FAIL;
+            for (uint8_t tries = 0; tries < 10; tries++) {
+                rc = b->send_async(send_buf, (uint16_t)read_len, b->user);
+                if (rc == RET_OK) break;
                 if (rc == RET_E_BUSY) {
-                    printf("LOG发送BUSY！！！\r\n");
-                    (void) OSAL_thread_flags_wait(LOG_TX_DONE_FLAG, OSAL_FLAGS_WAIT_ANY, OSAL_WAIT_FOREVER);
+                    /* 等待一小段时间，给 DMA TX 完成回调机会；超时则继续重试 */
+                    (void)OSAL_thread_flags_wait(LOG_TX_DONE_FLAG, OSAL_FLAGS_WAIT_ANY, 50);
+                    continue;
                 }
-            } while (rc == RET_E_BUSY);
 
-            /* 启动成功后必须等这笔发送完成，才能复用 send_buf 读下一段 */
-            (void) OSAL_thread_flags_wait(LOG_TX_DONE_FLAG, OSAL_FLAGS_WAIT_ANY, OSAL_WAIT_FOREVER);
+                /* 其它错误：丢弃该段，避免死锁 */
+                break;
+            }
+
+            if (rc != RET_OK) {
+                continue;
+            }
+
+            /* 只在“确实启动成功”时等待发送完成；超时则允许继续（避免卡死） */
+            (void)OSAL_thread_flags_wait(LOG_TX_DONE_FLAG, OSAL_FLAGS_WAIT_ANY, 300);
         }
     }
 }
@@ -251,7 +258,7 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
                 }
             } else {
                 /* 缓冲区已满：可以选择丢弃，或者在此处强制改为阻塞发送(会影响实时性) */
-                printf("缓冲区已满！！！%s \r\n", log_buf);
+              //  printf("缓冲区已满！！！%s \r\n", log_buf);
             }
         } else {
             /* 如果调度器没启动 (例如在 Log_Init 前使用)，强制使用同步发送 */
@@ -276,7 +283,7 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
             }
         } else {
             /* 缓冲区已满：可以选择丢弃，或者在此处强制改为阻塞发送(会影响实时性) */
-            printf("缓冲区已满！！！%s \r\n", log_buf);
+          //  printf("缓冲区已满！！！%s \r\n", log_buf);
         }
 
         /* 发送数据到缓冲区 日志 */
@@ -290,7 +297,7 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
         } else {
             /* 缓冲区已满：可以选择丢弃，或者在此处强制改为阻塞发送(会影响实时性) */
             /* 采用阻塞式的代码发生 */
-            printf("缓冲区已满！！！%s \r\n", log_buf);
+           // printf("缓冲区已满！！！%s \r\n", log_buf);
         }
     }
 
@@ -514,7 +521,7 @@ void Log_SetBackend(log_backend_t b) {
 }
 
 /**
- * @brief 通知任务消息存储入缓冲区完成
+ * @brief 通知任务消息存储入DMA缓冲区完成
  */
 void Log_OnTxDoneISR(void) {
 #if LOG_ASYNC_ENABLE

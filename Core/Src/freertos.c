@@ -25,6 +25,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "My_delay.h"
 #include "RingBuffer.h"
 #include "usart.h"
 #include <stdio.h>
@@ -207,7 +208,7 @@ void vApplicationTickHook(void) {
 
 /* USER CODE BEGIN 4 */
 void vApplicationStackOverflowHook(xTaskHandle xTask, signed char *pcTaskName) {
-    printf("Stack overflow in task: %s\r\n", pcTaskName);
+    LOG_E("FreeRTOS", "Stack overflow in task: %s\r\n", pcTaskName);
     taskDISABLE_INTERRUPTS();
     for (;;) {
     }
@@ -313,6 +314,9 @@ void MX_FREERTOS_Init(void) {
   */
 /* USER CODE END Header_StartDefaultTask */
 void StartDefaultTask(void *argument) {
+    (void)argument;
+    delay_osrunning = true;
+
     /* USER CODE BEGIN StartDefaultTask */
     /* Infinite loop */
     for (;;) {
@@ -368,9 +372,7 @@ void StartTask_LCD(void *argument) {
     /* Infinite loop */
     char buffer[128];
     osDelay(2000);
-    esp01s_Init(&huart3, 1024);
     LOG_I("StartTask_LCD", "启动完成");
-    LOG_I("111", "启动完成");
     for (;;) {
        // sniprintf(buffer, 128, "Time:%lu", HAL_GetTick());
        // lcd_show_string(50, 300, 240, 32, 32, buffer, BLACK);

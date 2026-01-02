@@ -24,7 +24,8 @@ void StartLightSensorTask(void *argument) {
         //sniprintf(buffer, sizeof(buffer), "当前光敏电阻值为 %u\r\n", (unsigned)LightSensor_Data);
        // HAL_UART_Transmit_DMA(&huart1, (uint8_t *)buffer, sizeof(LightSensor_Data));
         LOG_D("光敏","当前光敏电阻值为 %u\r\n", (unsigned)LightSensor_Data);
-        LOG_HEX("哈哈",LOG_LEVEL_ERROR,"666@",4);
+        /* 说明：Hexdump 会产生大量日志，联调 AT/MQTT 时建议先关闭，避免刷爆串口。 */
+        // LOG_HEX("光敏RAW", LOG_LEVEL_DEBUG, "666@", 4);
         osDelay(1000); // 1s 读一次，完全够用
     }
 }

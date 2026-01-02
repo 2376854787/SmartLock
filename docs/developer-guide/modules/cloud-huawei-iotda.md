@@ -30,6 +30,22 @@
 - `HUAWEI_IOT_MQTT_PORT`：端口（默认 8883）
 - `HUAWEI_IOT_MQTT_SCHEME`：0=TCP，1=TLS（取决于你的 ESP8266 AT 固件是否支持 TLS）
 
+### 控制台字段如何映射到本工程配置
+
+IoTDA 控制台/设备接入信息里通常会给出：`clientId` / `username` / `password` / `hostname` / `port` / `protocol`。
+本工程中你**不需要手工填写** `clientId`/`username`/`password`，它们会在启动时由固件生成并用于 `AT+MQTTUSERCFG`：
+
+- `hostname` → `HUAWEI_IOT_MQTT_HOST`
+- `port` → `HUAWEI_IOT_MQTT_PORT`（`8883` 对应 TLS）
+- `protocol=MQTTS` → `HUAWEI_IOT_MQTT_SCHEME=1`
+- `username` → `HUAWEI_IOT_DEVICE_ID`
+- `password` → 不是直接填写到宏里；固件会用 `HUAWEI_IOT_DEVICE_SECRET` + “时间戳”动态生成（见 `Application/Src/huawei_iot.c` 的 `huawei_iot_build_mqtt_auth()`）
+- `clientId` → 固件会在上电后自动生成（见 `Application/Src/huawei_iot.c` 的 `huawei_iot_build_mqtt_auth()`）
+
+> 如果你能用 PC 端 MQTT 客户端用控制台给的 `clientId/username/password` 连上云，但板子连不上，优先排查：
+> - SNTP 是否校时成功（`AT+CIPSNTPTIME?` 是否有回包）
+> - 鉴权签名源串拼接规则是否一致（见 `Application/Src/huawei_iot.c` 的 `build_sign_content()`）
+
 ## AT 指令序列（关键步骤）
 
 `Application/Src/mqtt_at_task.c` 的核心逻辑：
@@ -77,4 +93,3 @@ flowchart TD
     F --> G[AT+MQTTPUB: cmd/ack]
   end
 ```
-

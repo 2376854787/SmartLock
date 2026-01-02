@@ -1,6 +1,5 @@
 #include "huawei_iot.h"
 
-#include <stdio.h>
 #include <string.h>
 
 #include "base64.h"
@@ -184,16 +183,82 @@ bool huawei_iot_parse_sntp_time_to_epoch_s(const char *line, uint32_t *out_epoch
 
     const char *p = strstr(line, "+CIPSNTPTIME:");
     if (!p) return false;
-    p = strchr(p, '\"');
-    if (!p) return false;
-    p++;
 
-    /* 格式示例："Thu Nov 05 23:02:10 2020" */
-    char dow[4] = {0};
+    /*
+     * Support both formats:
+     * - +CIPSNTPTIME:"Thu Nov 05 23:02:10 2020"
+     * - +CIPSNTPTIME:Thu Nov 05 23:02:10 2020
+     *
+     * Avoid sscanf here (newlib sscanf is stack-heavy and can trigger task stack overflow).
+     */
+    p += strlen("+CIPSNTPTIME:");
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p == '\"') p++;
+
     char mon[4] = {0};
-    unsigned day = 0, hour = 0, min = 0, sec = 0, year = 0;
-    if (sscanf(p, "%3s %3s %u %u:%u:%u %u", dow, mon, &day, &hour, &min, &sec, &year) != 7) return false;
-    (void)dow;
+    uint32_t day = 0, hour = 0, min = 0, sec = 0, year = 0;
+
+    const char *s = p;
+
+    /* DOW */
+    for (uint32_t i = 0; i < 3u; i++) {
+        if (s[i] == '\0') return false;
+    }
+    s += 3;
+    if (*s != ' ') return false;
+    while (*s == ' ') s++;
+
+    /* MON */
+    for (uint32_t i = 0; i < 3u; i++) {
+        if (s[i] == '\0') return false;
+        mon[i] = s[i];
+    }
+    mon[3] = '\0';
+    s += 3;
+    if (*s != ' ') return false;
+    while (*s == ' ') s++;
+
+    /* DD (ESP firmware may pad with extra spaces) */
+    if (*s < '0' || *s > '9') return false;
+    while (*s >= '0' && *s <= '9') {
+        day = day * 10u + (uint32_t)(*s - '0');
+        s++;
+    }
+    if (*s != ' ') return false;
+    while (*s == ' ') s++;
+
+    /* HH:MM:SS */
+    if (*s < '0' || *s > '9') return false;
+    while (*s >= '0' && *s <= '9') {
+        hour = hour * 10u + (uint32_t)(*s - '0');
+        s++;
+    }
+    if (*s != ':') return false;
+    s++;
+
+    if (*s < '0' || *s > '9') return false;
+    while (*s >= '0' && *s <= '9') {
+        min = min * 10u + (uint32_t)(*s - '0');
+        s++;
+    }
+    if (*s != ':') return false;
+    s++;
+
+    if (*s < '0' || *s > '9') return false;
+    while (*s >= '0' && *s <= '9') {
+        sec = sec * 10u + (uint32_t)(*s - '0');
+        s++;
+    }
+
+    if (*s != ' ') return false;
+    while (*s == ' ') s++;
+
+    /* YYYY */
+    if (*s < '0' || *s > '9') return false;
+    while (*s >= '0' && *s <= '9') {
+        year = year * 10u + (uint32_t)(*s - '0');
+        s++;
+    }
 
     const int month = month_from_abbr(mon);
     if (month < 1) return false;
@@ -201,10 +266,10 @@ bool huawei_iot_parse_sntp_time_to_epoch_s(const char *line, uint32_t *out_epoch
     if (day < 1u || day > 31u) return false;
     if (hour > 23u || min > 59u || sec > 59u) return false;
 
-    const uint32_t y = (uint32_t)year;
+    const uint32_t y = year;
     const uint32_t m = (uint32_t)month;
-    const uint32_t days = days_before_year(y) + days_before_month(y, m) + ((uint32_t)day - 1u);
-    const uint32_t epoch_s = days * 86400u + (uint32_t)hour * 3600u + (uint32_t)min * 60u + (uint32_t)sec;
+    const uint32_t days = days_before_year(y) + days_before_month(y, m) + (day - 1u);
+    const uint32_t epoch_s = days * 86400u + hour * 3600u + min * 60u + sec;
     *out_epoch_s = epoch_s;
     return true;
 }

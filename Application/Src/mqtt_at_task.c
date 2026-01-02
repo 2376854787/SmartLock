@@ -154,6 +154,17 @@ static bool at_send_ok(const char *cmd, uint32_t timeout_ms)
     return true;
 }
 
+static bool at_send_ok_retry(const char *cmd, uint32_t timeout_ms, uint8_t retries, uint32_t retry_delay_ms)
+{
+    for (uint8_t i = 0; i <= retries; i++) {
+        const AT_Resp_t r = AT_SendCmd(&g_at_manager, cmd, "OK", timeout_ms);
+        if (r == AT_RESP_OK) return true;
+        LOG_W("AT", "cmd failed r=%d try=%u cmd=%s", (int)r, (unsigned)i, cmd);
+        osDelay(retry_delay_ms);
+    }
+    return false;
+}
+
 static bool mqtt_setup_and_connect(uint64_t ts_ms)
 {
     char client_id[128];
@@ -173,14 +184,14 @@ static bool mqtt_setup_and_connect(uint64_t ts_ms)
                    username,
                    password);
     if (n1 <= 0 || (size_t)n1 >= sizeof(cmd)) return false;
-    if (!at_send_ok(cmd, 10000)) return false;
+    if (!at_send_ok_retry(cmd, 10000, 3, 500)) return false;
 
     const int n2 = snprintf(cmd, sizeof(cmd),
                    "AT+MQTTCONN=0,\"%s\",%u,1\r\n",
                    HUAWEI_IOT_MQTT_HOST,
                    (unsigned)HUAWEI_IOT_MQTT_PORT);
     if (n2 <= 0 || (size_t)n2 >= sizeof(cmd)) return false;
-    if (!at_send_ok(cmd, 20000)) return false;
+    if (!at_send_ok_retry(cmd, 20000, 3, 800)) return false;
 
     /* 订阅华为云 IoTDA 命令 Topic（下行）。 */
     char sub_topic[WIFI_MQTT_TOPIC_MAX];
@@ -283,7 +294,7 @@ static void handle_user_command(const char *payload)
     }
 
     if (strcmp(cmd, "time_sync") == 0) {
-        (void)at_send_ok("AT+CIPSNTPTIME?\r\n", 8000);
+        (void)at_send_ok_retry("AT+CIPSNTPTIME?\r\n", 3000, 1, 500);
         publish_user_cmd_ack(0, "time_sync_started");
         return;
     }
@@ -336,11 +347,24 @@ void StartMqttAtTask(void *argument)
     esp01s_Init(&huart3, 1024);
 
     /* 校时：用于基于时间戳的鉴权/签名。 */
-    (void)at_send_ok("AT+CIPSNTPCFG=1,8,\"pool.ntp.org\"\r\n", 8000);
-    (void)at_send_ok("AT+CIPSNTPTIME?\r\n", 8000);
+    {
+        char sntp_cfg[AT_CMD_MAX_LEN];
+        (void)snprintf(sntp_cfg, sizeof(sntp_cfg),
+                       "AT+CIPSNTPCFG=1,%d,\"%s\"\r\n",
+                       (int)HUAWEI_IOT_TIMEZONE,
+                       HUAWEI_IOT_NTP_SERVER);
+        (void)at_send_ok_retry(sntp_cfg, 8000, 2, 300);
+    }
+
+    /* 注意：部分固件在刚配置 SNTP 后立即查询会“卡很久”，这里限定等待时间，超时则继续走本地 uptime 时间戳。 */
+    osDelay(1500);
+    LOG_W("time", "SNTP query start");
+    (void)at_send_ok_retry("AT+CIPSNTPTIME?\r\n", 3000, 1, 500);
     wait_sntp_epoch(6000);
     if (!s_ctx.have_sntp_epoch) {
         LOG_W("time", "SNTP not ready, continue with local uptime timestamp");
+    } else {
+        LOG_W("time", "SNTP ready epoch=%lu", (unsigned long)s_ctx.sntp_epoch_s);
     }
 
     /* 连接华为云 IoTDA（MQTT）。 */

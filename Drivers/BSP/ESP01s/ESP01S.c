@@ -9,6 +9,9 @@
  * @brief 初始化 ESP01s，使用 UART3 DMA + 空闲中断
  */
 void esp01s_Init(UART_HandleTypeDef *huart, uint16_t rb_size) {
+    (void)huart;
+    (void)rb_size;
+
     /* 4、发送命令 */
     if (AT_SendCmd(&g_at_manager, "ATE0\r\n", "OK", 5000) == AT_RESP_OK) {
         LOG_E("ESP01S", "回显已关闭");
@@ -21,7 +24,7 @@ void esp01s_Init(UART_HandleTypeDef *huart, uint16_t rb_size) {
     }
 
     /* 网络联通测试 */
-    while (AT_SendCmd(&g_at_manager, "AT+PING=\"www.baidu.com\"\r\n", "TIMEOUT", 5000) == AT_RESP_OK) {
+    while (AT_SendCmd(&g_at_manager, "AT+PING=\"www.baidu.com\"\r\n", "+PING:", 5000) != AT_RESP_OK) {
         LOG_E("ESP01S", "网络联通检查失败 将重新进行WiFi连接");
         /* 检查是否连接了wifi */
         if (AT_SendCmd(&g_at_manager, "AT+CWSTATE?\r\n", "0", 5000) == AT_RESP_OK) {
