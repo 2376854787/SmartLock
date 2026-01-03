@@ -309,7 +309,7 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
 
         # Add user defined libraries
 )
-## Add linker script and enable floating point printing
+### Add linker script and enable floating point printing
 #target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
 #        -T${CMAKE_SOURCE_DIR}/STM32F407XX_FLASH.ld
 #        -Wl,-Map=${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}.map

@@ -14,6 +14,7 @@
 #include "huawei_iot.h"
 #include "log.h"
 #include "lock_data.h"
+#include "lock_actuator.h"
 #include "osal.h"
 #include "usart.h"
 #include "wifi_mqtt_task.h"
@@ -486,8 +487,20 @@ static void handle_user_command(const char *payload)
     }
 
     if (strcmp(cmd, "unlock") == 0) {
+        if (!LockActuator_UnlockAsync()) {
+            LOG_W("iotda", "unlock cmd: actuator queue not ready/full");
+        }
         (void)wifi_mqtt_report_unlock_event(WIFI_MQTT_UNLOCK_CLOUD);
         publish_user_cmd_ack(0, "unlock_accepted");
+        return;
+    }
+
+    if (strcmp(cmd, "lock") == 0) {
+        if (!LockActuator_LockAsync()) {
+            LOG_W("iotda", "lock cmd: actuator queue not ready/full");
+        }
+        (void)wifi_mqtt_report_door_event(false, WIFI_MQTT_UNLOCK_CLOUD);
+        publish_user_cmd_ack(0, "lock_accepted");
         return;
     }
 
@@ -540,13 +553,21 @@ static void handle_iotda_sys_command(const char *topic, const char *payload)
 
     /* 命令分发 */
     if (strcmp(cmd_name, "unlock") == 0) {
-        LOG_I("iotda", "cmd unlock received (servo disabled)");
+        LOG_I("iotda", "cmd unlock received");
+        if (!LockActuator_UnlockAsync()) {
+            LOG_W("iotda", "unlock cmd: actuator queue not ready/full");
+        }
+        (void)wifi_mqtt_report_unlock_event(WIFI_MQTT_UNLOCK_CLOUD);
         (void)mqtt_publish_json(resp_topic, "{\"result_code\":0,\"response_name\":\"unlock_response\",\"paras\":{}}");
         return;
     }
 
     if (strcmp(cmd_name, "lock") == 0) {
-        LOG_I("iotda", "cmd lock received (servo disabled)");
+        LOG_I("iotda", "cmd lock received");
+        if (!LockActuator_LockAsync()) {
+            LOG_W("iotda", "lock cmd: actuator queue not ready/full");
+        }
+        (void)wifi_mqtt_report_door_event(false, WIFI_MQTT_UNLOCK_CLOUD);
         (void)mqtt_publish_json(resp_topic, "{\"result_code\":0,\"response_name\":\"lock_response\",\"paras\":{}}");
         return;
     }
