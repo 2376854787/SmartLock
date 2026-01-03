@@ -1,48 +1,53 @@
-# 模块指南：USART1 DMA→RingBuffer 数据通道
+# 模块指南：USART1 DMA → RingBuffer 数据通道
 
-## 模块职责
-
-- USART1 采用 **Receive‑to‑Idle DMA** 接收数据，避免逐字节中断带来的高 CPU 占用。
-- DMA 缓冲区的数据被搬运到 **环形缓冲区** `g_rb_uart1`，由任务线程消费（打印/转发/协议解析）。
+本模块用于把 USART1 的 DMA-Idle 接收数据写入环形缓冲（RingBuffer），供任务线程消费。
 
 相关路径：
-- `Application/Inc/Usart1_manage.h`
-- `Application/Src/Usart1_manage.c`
-- 回调分发：`Core/Src/freertos.c`（`HAL_UARTEx_RxEventCallback`）
-- 环形缓冲：`components/ring_buffer/*`
 
-## 核心流程
+- `Application/Src/Usart1_manage.c`、`Application/Inc/Usart1_manage.h`
+- RingBuffer：`components/ring_buffer/*`
+- 静态内存池：`components/memory_allocation/*`
+- HAL 回调分发：`Core/Src/freertos.c:HAL_UARTEx_RxEventCallback`
 
-```mermaid
-flowchart TD
-  A[MyUart_Init] --> B[CreateRingBuffer(g_rb_uart1)]
-  B --> C[HAL_UARTEx_ReceiveToIdle_DMA<br/>(huart1, DmaBuffer)]
+## 1. 初始化
 
-  C --> D[DMA/IDLE 触发回调<br/>HAL_UARTEx_RxEventCallback]
-  D --> E[process_dma_data()]
-  E --> F[WriteRingBuffer(g_rb_uart1)]
-  F --> G[uartTask 周期读取<br/>ReadRingBuffer]
-```
+入口：`MyUart_Init()`（当前在 `Core/Src/main.c` 的用户区调用）
 
-## Public API 速查表
+主要动作：
 
-| 函数名 | 作用 | 关键参数 | 备注 |
-|---|---|---|---|
-| `MyUart_Init()` | 初始化 USART1 DMA 接收与环形缓冲 | 无 | 成功后启动 `ReceiveToIdle_DMA` |
-| `process_dma_data()` | 把 DMA 新增数据搬运到环形缓冲 | 无 | 由 `HAL_UARTEx_RxEventCallback` 调用 |
-| `g_rb_uart1` | USART1 环形缓冲实例 | - | `uartTask` 读取它做后续处理 |
-| `DmaBuffer[]` | USART1 DMA 原始缓冲 | - | 长度由 `DMA_BUFFER_SIZE` 控制 |
+1) `CreateRingBuffer(&g_rb_uart1, RINGBUFFER_SIZE)` 创建环形缓冲  
+2) `HAL_UARTEx_ReceiveToIdle_DMA(&huart1, DmaBuffer, DMA_BUFFER_SIZE)` 启动 DMA-Idle 接收
 
-## 关键参数（物理含义）
+## 2. 内存来源（不是 FreeRTOS heap）
 
-| 配置项 | 位置 | 含义/影响 |
-|---|---|---|
-| `DMA_BUFFER_SIZE` | `Application/Inc/Usart1_manage.h` | DMA 循环缓冲区大小（字节）；越大越不易溢出但占 RAM |
-| `RINGBUFFER_SIZE` | `Application/Inc/Usart1_manage.h` | 软件环形缓冲大小（字节）；应覆盖“消费不及时”时的峰值 |
+RingBuffer 的 `buffer` 来自工程自定义静态内存池：
 
-## Design Notes（为什么这么写）
+- `CreateRingBuffer()` 内部调用 `static_alloc()`
+- 静态池大小 `MEMORY_POND_MAX_SIZE=8192` bytes（见 `components/memory_allocation/MemoryAllocation.h`）
 
-- **Receive‑to‑Idle DMA**：硬件 DMA 连续搬运，IDLE/半满/满中断只负责“指针推进”，显著降低 CPU 占用并提升突发吞吐。
-- **双缓冲语义**：DMA 缓冲是“硬件写入区”，RingBuffer 是“软件消费队列”，二者解耦可以避免任务抖动导致的数据丢失。
-- **错误恢复**：USART1 出错时重启 DMA（在 `HAL_UART_ErrorCallback`），防止 ORE/FE 导致接收停滞。
+因此：
 
+- RingBuffer 分配失败不一定意味着 FreeRTOS heap 不够
+- 需要同时关注 “FreeRTOS heap” 与 “MemoryPond 静态池”
+
+## 3. 回调与数据搬运
+
+回调入口（DMA-Idle）：
+
+- `HAL_UARTEx_RxEventCallback(huart, Size)`（USART1 分支）
+
+搬运逻辑：
+
+- `process_dma_data()` 计算 DMA 写指针位置，把增量数据写入 RingBuffer
+- 处理了“回卷”情况（DMA buffer 循环）
+
+## 4. 消费者任务（示例）
+
+`Core/Src/freertos.c` 的 `uartTask` 原本用于消费 `g_rb_uart1`，但当前消费代码已注释，主要保留为示例/占位。
+
+如需启用：
+
+- 在 `uartTask` 中恢复 `RingBuffer_GetUsedSize()` 与 `ReadRingBuffer()` 的逻辑
+- 注意不要在高优先级任务里做大量 `printf`（会影响时序）
+
+*** Delete File: docs/developer-guide/modules/sensors-and-network.md

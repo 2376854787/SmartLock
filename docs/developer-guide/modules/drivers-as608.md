@@ -1,55 +1,88 @@
 # 模块指南：AS608 指纹（端口层 + 服务封装）
 
-## 模块职责
+本模块把 AS608（UART 指纹模块）封装为“可在 RTOS 多任务下稳定使用”的服务：
 
-- `as608_port`：把 AS608 绑定到一条 UART，并将 HAL 回调转发到模块内部（避免回调冲突）。
-- `as608_service`：对第三方驱动做 **任务化/串行化封装**，向上提供同步 CRUD API（Create/Read/Update/Delete/Clear）。
+- `as608_port`：绑定 UART4，并把 HAL 回调集中转发到模块内部
+- `as608_service`：在独立线程中串行访问 AS608，向上提供同步 CRUD API
 
 相关路径：
-- `Drivers/BSP/as608/Core/Inc/as608_port.h`
-- `Drivers/BSP/as608/Core/Inc/as608_service.h`
+
+- 端口层：`Drivers/BSP/as608/Core/Inc/as608_port.h`、`Drivers/BSP/as608/Core/Src/as608_port.c`
+- 服务层：`Drivers/BSP/as608/Core/Inc/as608_service.h`、`Drivers/BSP/as608/Core/Src/as608_service.c`
 - 第三方驱动：`Drivers/BSP/as608/ThirdParty/LibDriver_AS608/*`
 
-## 核心流程（UI/worker→Service→Port→UART）
+## 1. 硬件与串口绑定
 
-```mermaid
-flowchart TD
-  A[UI worker 发起 CRUD] --> B[AS608_CRUD_* 同步 API]
-  B --> C[Service 内部串行访问 AS608]
-  C --> D[Port 层 UART 读写]
-  D --> E[UART4 硬件]
-  E --> F[HAL_UART_RxCpltCallback]
-  F --> G[AS608_Port_OnUartRxCplt]
-  G --> C
-```
+UART：UART4  
+引脚：PC10(TX) / PC11(RX)（见 `SmartLock.ioc` 与 `Core/Inc/main.h`）
 
-## Public API 速查表
+注意事项：
 
-| 函数名 | 作用 | 关键参数 | 备注 |
-|---|---|---|---|
-| `AS608_Port_BindUart()` | 绑定 AS608 使用的 UART | `huart` | 建议 **独占 UART4** |
-| `AS608_Port_StartRx()` | 启动 1 字节循环接收 | 无 | 通常在服务启动后调用一次 |
-| `AS608_Port_OnUartRxCplt()` | 转发 RxCplt 回调 | `huart` | 在工程的 `HAL_UART_RxCpltCallback` 调用 |
-| `AS608_Port_OnUartError()` | 转发 Error 回调 | `huart` | 可选，但推荐接入 |
-| `AS608_Port_FlushRx()` | 清空 RX 缓冲 | 无 | 处理异常帧/重同步 |
-| `AS608_Service_Init()` | 初始化服务与模块 | `addr`, `password` | 常用：`0xFFFFFFFF` / `0x00000000` |
-| `AS608_CRUD_Create()` | 录入指纹到指定 id | `id`, `timeout_ms`, `out_status` | 录入通常 15~30s |
-| `AS608_CRUD_Read()` | 搜索/验证指纹 | `timeout_ms`, `out_found_id`, `out_score` | 典型 8s |
-| `AS608_CRUD_Delete()` | 删除指定 id | `id` | |
-| `AS608_CRUD_ClearAll()` | 清空库 | - | |
-| `AS608_List_IndexTable()` | 读取索引表 | `num`, `out_table[32]` | 用于“枚举已录入指纹” |
-| `AS608_Get_Capacity()` | 查询容量 | - | UI 可用它做范围校验 |
+- 建议 AS608 独占 UART4（不要与其他模块复用）
+- 串口波特率以 `SmartLock.ioc` 为准（当前 UART4 配置为 57600）
 
-## 关键参数（物理含义）
+## 2. 初始化与 ready 机制（工程约定）
 
-| 配置项 | 位置 | 含义/影响 |
+本工程不在 UI 里初始化 AS608，而在 `dev_init` 任务里统一初始化：
+
+- 启动点：`Core/Src/freertos.c` 调用 `LockDevices_Start()`
+- 初始化任务：`Application/Src/lock_devices.c:dev_init_task()`
+  - `AS608_Port_BindUart(&huart4)`
+  - `AS608_Service_Init(addr, password)`（常用 `0xFFFFFFFF` / `0x00000000`）
+  - 初始化成功后设置 ready bit
+
+使用方（UI/worker）必须先等待：
+
+- `LockDevices_WaitAs608Ready(timeout_ms)`（例：5000ms）
+
+目的：
+
+- 避免“初始化位置移动就卡死”的时序问题
+- 统一在 RTOS 启动后初始化，减少对 delay/SysTick 的隐式依赖
+
+## 3. 线程模型（Service 串行化）
+
+服务层内部使用 CMSIS-RTOS2：
+
+- queue：`AS608_SVC_QUEUE_DEPTH`（默认 4）
+- task：`AS608_SVC_TASK_STACK`（默认 1024 bytes）
+- 串行访问：所有 CRUD 请求都排队由 service 线程执行
+
+这样可以避免：
+
+- 多任务并发读写导致帧交织
+- “偶发死锁/偶发 decode failed”
+
+## 4. HAL 回调转发要求（必须接入）
+
+AS608 的接收是“1 字节循环接收”模型，因此必须在工程统一回调处转发：
+
+- `HAL_UART_RxCpltCallback()` → `AS608_Port_OnUartRxCplt(huart)`
+- `HAL_UART_ErrorCallback()` → `AS608_Port_OnUartError(huart)`
+
+当前工程转发位置：
+
+- `Core/Src/freertos.c:HAL_UART_RxCpltCallback`
+- `Core/Src/freertos.c:HAL_UART_ErrorCallback`
+
+## 5. 常用 API（上层调用）
+
+建议调用位置：指纹 worker（例如 `Application/Src/ui_lock.c` 的 `fp_worker`）。
+
+| API | 作用 | 备注 |
 |---|---|---|
-| `addr`（默认 `0xFFFFFFFF`） | `AS608_Service_Init` 入参 | AS608 地址（广播/默认地址常用全 1） |
-| `password`（默认 `0x00000000`） | `AS608_Service_Init` 入参 | 模块校验密码（默认全 0） |
-| `timeout_ms` | `AS608_CRUD_*` 入参 | 总等待时间（含等待手指/通信），影响 UX 与失败判定 |
+| `AS608_Service_Init(addr, password)` | 初始化服务 | 只在 `dev_init` 任务中调用 |
+| `AS608_CRUD_Create(id, timeout_ms, out_status)` | 录入指纹 | 录入通常 15~30s |
+| `AS608_CRUD_Read(timeout_ms, out_found_id, out_score)` | 搜索/验证 | 常用 8s |
+| `AS608_CRUD_Delete(id)` | 删除指纹 | |
+| `AS608_CRUD_ClearAll()` | 清库 | |
+| `AS608_List_IndexTable(num, out_table[32])` | 读索引表 | 用于“枚举已录入” |
+| `AS608_Get_Capacity()` | 容量 | UI 用于校验 id 范围 |
 
-## Design Notes（为什么这么写）
+## 6. 常见坑（定位建议）
 
-- **串行化访问**：指纹模块协议对并发极其敏感，若多任务同时收发会造成帧交织；用服务层统一仲裁可避免“偶发错误/死锁”。
-- **port 层隔离 HAL 回调**：工程只需要在一个地方转发回调，避免多个模块抢占 `HAL_UART_*Callback`。
+- 还没 ready 就调用 CRUD：先检查 `LockDevices_As608Ready()` 或等待 `LockDevices_WaitAs608Ready()`
+- 串口收发被其他模块抢占：确认 UART4 只给 AS608 用
+- 卡死但没日志：优先断点 `vApplicationMallocFailedHook()` 与 `configASSERT()`
 
+*** Delete File: docs/developer-guide/modules/drivers-rc522.md

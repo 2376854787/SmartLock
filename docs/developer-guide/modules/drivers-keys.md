@@ -1,61 +1,62 @@
-# 模块指南：按键系统（HFSM + TIM6 Tick）
+# 模块指南：按键（KEY + HFSM）
 
-## 模块职责
+本模块把 GPIO 按键封装为可复用的“事件/状态机”驱动，特点：
 
-- 提供支持 **消抖 / 单击 / 双击 / 三击 / 长按 / 长按连发** 的按键识别。
-- 使用 `components/hfsm` 的层次状态机（HFSM）实现，可读性和可扩展性更好。
+- 支持消抖、短按、长按、多击（由状态机扩展）
+- 中断侧只做“tick”，逻辑推进在任务线程中完成（降低中断开销）
 
 相关路径：
+
 - `Drivers/BSP/Keys/KEY.h`
 - `Drivers/BSP/Keys/KEY.c`
-- Tick 入口：`Core/Src/stm32f4xx_it.c`（TIM6 IRQ）
+- HFSM：`components/HFSM/*`
+- 创建/初始化：`Core/Src/main.c`（`KEY_Init`）
+- 任务推进：`Core/Src/freertos.c`（`KEY_Tasks()`）
 
-## 状态机（核心逻辑可视化）
+## 1. 初始化
+
+当前工程在 `Core/Src/main.c` 的用户区初始化三个按键：
+
+- `KEY_Init(&key0, &key0_config);`
+- `KEY_Init(&key1, &key1_config);`
+- `KEY_Init(&key2, &key2_config);`
+
+引脚定义来自 `Core/Inc/main.h`：
+
+- `KEY0_Pin/KEY1_Pin/KEY2_Pin`（GPIOE）
+
+## 2. 两段式驱动模型（推荐写法）
+
+### 2.1 tick（中断侧）
+
+工程使用定时器中断（TIM6）周期调用 `KEY_Tick_Handler()`（定位见 `Core/Src/stm32f4xx_it.c`）。
+
+目的：
+
+- 统一采样节奏
+- 中断侧只做计时/采样，不做复杂逻辑
+
+### 2.2 tasks（任务侧）
+
+`KeyScanTask`（CMSIS-RTOS2）周期调用 `KEY_Tasks()` 推进状态机并触发回调（见 `Core/Src/freertos.c`）。
+
+## 3. 事件流示意
 
 ```mermaid
-stateDiagram-v2
-  direction TB
-  [*] --> IDLE
-  IDLE --> DEBOUNCE : KEY_Event_Pressed
-  DEBOUNCE --> WAIT_RELEASE : KEY_Event_OverTime & 电平仍有效
-  DEBOUNCE --> IDLE : KEY_Event_OverTime & 毛刺
-
-  WAIT_RELEASE --> WAIT_NEXT : KEY_Event_up
-  WAIT_RELEASE --> LONG_PRESS : KEY_Event_OverTime
-
-  WAIT_NEXT --> DEBOUNCE : KEY_Event_Pressed
-  WAIT_NEXT --> SINGLE_CLICK : KEY_Event_OverTime & click=1
-  WAIT_NEXT --> DOUBLE_CLICK : KEY_Event_OverTime & click=2
-  WAIT_NEXT --> TRIPLE_CLICK : KEY_Event_OverTime & click=3
-
-  LONG_PRESS --> LONG_HOLD
-  LONG_HOLD --> LONG_HOLD : KEY_Event_OverTime（repeat）
-  LONG_HOLD --> IDLE : KEY_Event_up
-
-  SINGLE_CLICK --> IDLE
-  DOUBLE_CLICK --> IDLE
-  TRIPLE_CLICK --> IDLE
+flowchart TD
+  IRQ[TIM6 IRQ] --> TICK[KEY_Tick_Handler]
+  TASK[KeyScanTask] --> RUN[KEY_Tasks]
+  RUN --> HFSM[HFSM 状态迁移]
+  HFSM --> CB[按键事件回调]
 ```
 
-## Public API 速查表
+## 4. WakeUp（PA0-WKUP）说明
 
-| 函数名 | 作用 | 关键参数 | 备注 |
-|---|---|---|---|
-| `KEY_Init()` | 注册一个按键实例 | `KEY_TypedefHandle*`, `KEY_Config_t*` | 可配置 active_level、debounce/long/multi ms、回调 |
-| `KEY_Tick_Handler()` | Tick 驱动（计时/超时事件） | 无 | **应在固定周期中断调用**（本项目 TIM6） |
-| `KEY_Tasks()` | 状态机推进与回调触发 | 无 | 由任务周期调用（本项目 KeyScanTask） |
+PA0 在 `SmartLock.ioc` 中配置为 `SYS_WKUP`（系统唤醒功能），不再作为普通 GPIO 输入生成 `wake_up_Pin` 宏。
 
-## 关键参数（物理含义）
+如果你要做“外部唤醒 + 低功耗”，建议：
 
-| 配置项 | 位置 | 含义/影响 |
-|---|---|---|
-| `debounce_ms` | `KEY_Config_t` | 消抖时间（ms）；太小会误触发，太大响应慢 |
-| `long_press_ms` | `KEY_Config_t` | 长按阈值（ms） |
-| `multi_click_ms` | `KEY_Config_t` | 多击窗口（ms）；决定双击/三击判定 |
-| `active_level` | `KEY_Config_t` | 按键有效电平（0=低有效） |
+- 以 CubeMX 的 SYS/WKUP 模式为准
+- 在论文/系统设计中把 WakeUp 作为“低功耗唤醒源”描述，而不是按键驱动的一部分
 
-## Design Notes（为什么这么写）
-
-- **HFSM 更适合复杂按键语义**：相比 if‑else 堆叠，状态机能把“计时点/事件触发/转移条件”显式化，易于加新动作（如四击）。
-- **中断只做 Tick**：保证中断短小可控；真正的回调（可能打印日志/改 UI）放在任务线程执行更安全。
-
+*** Delete File: docs/developer-guide/modules/lock-data.md

@@ -1,95 +1,77 @@
-# 模块指南：华为云 IoTDA（ESP-01S + AT + MQTT）
+# 模块指南：华为云 IoTDA（ESP-01S + ESP-AT + MQTT）
 
-## 模块目标
+本模块实现：
 
-- 上电后由 ESP-01S 完成联网与 SNTP 校时（提供“epoch 秒”时间基准）。
-- 基于时间戳生成鉴权信息，连接华为云 IoTDA 的 MQTT 接入点。
-- 上报门锁事件（开门/关门/开锁方式/时间）。
-- 接收云端控制命令（先实现可用的最小闭环：ping/time_sync/unlock/door；其他命令预留占位）。
+- ESP-01S 联网（ESP-AT）
+- SNTP 校时（用于 IoTDA 鉴权签名的时间戳）
+- MQTT 连接 IoTDA
+- 订阅云端命令、上报 door 事件、回包 ack/response
 
-## 代码位置
+相关路径：
 
 - 配置：`Application/Inc/huawei_iot_config.h`
-- 鉴权与 topic 生成：`Application/Inc/huawei_iot.h`、`Application/Src/huawei_iot.c`
-- MQTT 上云任务（AT 指令）：`Application/Inc/mqtt_at_task.h`、`Application/Src/mqtt_at_task.c`
-- 本地事件邮箱队列：`Application/Inc/wifi_mqtt_task.h`、`Application/Src/wifi_mqtt_task.c`
-- AT 框架（USART3）：`components/AT/AT.c`、`components/AT/AT_Core_Task.c`
+- 鉴权/topic 生成：`Application/Inc/huawei_iot.h`、`Application/Src/huawei_iot.c`
+- MQTT 任务：`Application/Src/mqtt_at_task.c`
+- “邮箱队列”（任务间解耦）：`Application/Inc/wifi_mqtt_task.h`、`Application/Src/wifi_mqtt_task.c`
+- AT 框架（USART3）：`components/AT/*`
 
-## 启动链路（谁创建谁）
+## 1. 硬件链路
 
-- `MX_FREERTOS_Init()` 中会初始化 AT Core：`at_core_task_init(&g_at_manager, &huart3);`
-- AT Core 就绪后，会创建 MQTT 任务：`StartMqttAtTask()`（见 `components/AT/AT_Core_Task.c`）
+- ESP-01S 连接 USART3（PB10=TX / PB11=RX，见 `SmartLock.ioc`）
+- AT 栈与 MQTT 由 `components/AT` + `Application/Src/mqtt_at_task.c` 驱动
 
-## 必填配置
+## 2. 启动链路（谁创建谁）
 
-在 `Application/Inc/huawei_iot_config.h` 中填入（至少要改前两项）：
+1) `Core/Src/freertos.c` 调用 `at_core_task_init(&g_at_manager, &huart3)`
+2) AT core 线程就绪后，在 `components/AT/AT_Core_Task.c` 内部创建 `MQTT_AT` 任务
+3) `MQTT_AT` 任务在 `Application/Src/mqtt_at_task.c:StartMqttAtTask()` 中完成：
+   - `esp01s_Init()` 联网
+   - `AT+CIPSNTPCFG` / `AT+CIPSNTPTIME?` 校时
+   - `AT+MQTTUSERCFG` / `AT+MQTTCONN` 连接 IoTDA
+   - `AT+MQTTSUB` 订阅 topic
 
-- `HUAWEI_IOT_DEVICE_ID`：设备 ID
-- `HUAWEI_IOT_DEVICE_SECRET`：设备密钥
-- `HUAWEI_IOT_MQTT_HOST`：IoTDA 区域接入点
-- `HUAWEI_IOT_MQTT_PORT`：端口（默认 8883）
-- `HUAWEI_IOT_MQTT_SCHEME`：以 `AT+MQTTUSERCFG=?` 输出为准（常见 ESP-AT：1=TCP，2=TLS）
+## 3. Topic 与协议（固件实现说明）
 
-### 控制台字段如何映射到本工程配置
+固件同时支持两套命令通道：
 
-IoTDA 控制台/设备接入信息里通常会给出：`clientId` / `username` / `password` / `hostname` / `port` / `protocol`。
-本工程中你**不需要手工填写** `clientId`/`username`/`password`，它们会在启动时由固件生成并用于 `AT+MQTTUSERCFG`：
+1) user topic（推荐联调/后端对接）：`key=value` 载荷（不使用 JSON）
+2) IoTDA 标准 `sys/commands`：JSON 命令与 JSON response
 
-- `hostname` → `HUAWEI_IOT_MQTT_HOST`
-- `port` → `HUAWEI_IOT_MQTT_PORT`（`8883` 对应 TLS）
-- `protocol=MQTTS` → `HUAWEI_IOT_MQTT_SCHEME` 设为 TLS 对应的 scheme（常见为 2）
-- `username` → `HUAWEI_IOT_DEVICE_ID`
-- `password` → 不是直接填写到宏里；固件会用 `HUAWEI_IOT_DEVICE_SECRET` + “时间戳”动态生成（见 `Application/Src/huawei_iot.c` 的 `huawei_iot_build_mqtt_auth()`）
-- `clientId` → 固件会在上电后自动生成（见 `Application/Src/huawei_iot.c` 的 `huawei_iot_build_mqtt_auth()`）
+完整协议见：
 
-> 如果你能用 PC 端 MQTT 客户端用控制台给的 `clientId/username/password` 连上云，但板子连不上，优先排查：
-> - SNTP 是否校时成功（`AT+CIPSNTPTIME?` 是否有回包）
-> - 鉴权签名源串拼接规则是否一致（见 `Application/Src/huawei_iot.c` 的 `build_sign_content()`）
+- `docs/mqtt-control.md`
 
-## AT 指令序列（关键步骤）
+## 4. 云端开锁/关锁的执行逻辑（固件侧）
 
-`Application/Src/mqtt_at_task.c` 的核心逻辑：
+### 4.1 收到 user topic 命令（`cmd=unlock` / `cmd=lock`）
 
-- 联网：调用 `esp01s_Init()`（内部可能触发 SmartConfig）
-- 校时：
-  - `AT+CIPSNTPCFG=1,8,"pool.ntp.org"`
-  - `AT+CIPSNTPTIME?`（URC 中解析 `+CIPSNTPTIME:` 并写入 `lock_time_set_epoch_s()`）
-- MQTT 连接：
-  - `AT+MQTTUSERCFG=...`（client_id/username/password 由 `huawei_iot_build_mqtt_auth()` 生成）
-  - `AT+MQTTCONN=...`
-  - `AT+MQTTSUB` 订阅下行 topic（见下文）
+代码入口：`Application/Src/mqtt_at_task.c:handle_user_command()`
 
-## Topic 约定（本工程当前使用）
+- `cmd=unlock`：
+  - 调用 `LockActuator_UnlockAsync()`（投递到执行器队列）
+  - 上报 door=open（method=cloud）
+  - 发布 `user/cmd/ack`（`unlock_accepted`）
+- `cmd=lock`：
+  - 调用 `LockActuator_LockAsync()`
+  - 上报 door=close（method=cloud）
+  - 发布 `user/cmd/ack`（`lock_accepted`）
 
-为方便你在云端直接用 MQTT 交互，本工程把“控制/事件”放在 IoTDA 的 user topic 下：
+### 4.2 收到 IoTDA 标准命令（`command_name=unlock/lock`）
 
-- 门事件上报（设备 -> 云）：
-  - topic：`$oc/devices/<device_id>/user/events/door`
-  - payload：见 `docs/mqtt-control.md`
+代码入口：`Application/Src/mqtt_at_task.c:handle_iotda_sys_command()`
 
-- 控制命令下发（云 -> 设备）：
-  - topic：`$oc/devices/<device_id>/user/cmd`
-  - payload：见 `docs/mqtt-control.md`
+- `unlock` / `lock` 的执行动作与 user topic 一致
+- 返回 JSON response（见 `docs/mqtt-control.md`）
 
-- 控制命令应答（设备 -> 云）：
-  - topic：`$oc/devices/<device_id>/user/cmd/ack`
+## 5. 事件上报（door event）
 
-同时，为后续接入 IoTDA 的标准“设备命令”机制，本工程也会订阅：
+door 事件通过 `wifi_mqtt_report_door_event()` 投递到邮箱队列，然后由 MQTT 任务发布。
 
-- `sys/commands/#`：`$oc/devices/<device_id>/sys/commands/#`
+字段与示例见 `docs/mqtt-control.md`。
 
-> 注意：IoTDA 标准属性上报通常是 JSON（`sys/properties/report`）。当前工程为了规避 ESP8266 `AT+MQTTPUB` 的引号转义问题，先用 user topic + `key=value` 格式跑通闭环；后续如切换 RAW 发布再升级到标准 JSON。
+## 6. 常见问题（联调排查）
 
-## 典型数据流
+- IoTDA 连不上：先确认 SNTP 成功（`AT+CIPSNTPTIME?` 有回包）
+- 命令收到了但门不动：检查执行器任务是否启动（`LockActuator_Start()`）与队列是否满
+- 只收到了 ack 没有事件：确认设备是否有上报 door event（topic 是否订阅/发布成功）
 
-```mermaid
-flowchart TD
-  subgraph Device[STM32 + ESP-01S]
-    A[本地任务/界面] -->|wifi_mqtt_report_*| B[wifi_mqtt 邮箱队列]
-    B --> C[mqtt_at_task: AT+MQTTPUB]
-    D[云端下发] --> E[ESP8266 URC: +MQTTSUBRECV]
-    E --> B2[wifi_mqtt: CLOUD_RX]
-    B2 --> F[mqtt_at_task: 命令解析/执行占位]
-    F --> G[AT+MQTTPUB: cmd/ack]
-  end
-```

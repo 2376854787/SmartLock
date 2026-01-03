@@ -14,7 +14,7 @@
 | `configTICK_RATE_HZ` | 1000 | 1ms tick（`Core/Inc/FreeRTOSConfig.h:72`） |
 | `configMAX_PRIORITIES` | 56 | `Core/Inc/FreeRTOSConfig.h:73` |
 | `configMINIMAL_STACK_SIZE` | 128 | **word**（`Core/Inc/FreeRTOSConfig.h:74`） |
-| `configTOTAL_HEAP_SIZE` | 36 * 1024 | FreeRTOS heap_4（`Core/Inc/FreeRTOSConfig.h:76`） |
+| `configTOTAL_HEAP_SIZE` | 36864 | FreeRTOS heap_4（`Core/Inc/FreeRTOSConfig.h:76`） |
 | `configCHECK_FOR_STACK_OVERFLOW` | 2 | 开启溢出检测（`Core/Inc/FreeRTOSConfig.h:83`） |
 | `configUSE_MALLOC_FAILED_HOOK` | 1 | 开启 malloc fail hook（`Core/Inc/FreeRTOSConfig.h:85`） |
 | `configUSE_TIMERS` | 1 | 软件定时器服务任务开启（`Core/Inc/FreeRTOSConfig.h:101`） |
@@ -66,13 +66,13 @@
 
 | 任务名 | 创建点 | 栈大小 | 优先级 | 备注 |
 |---|---|---:|---:|---|
-| `KeyScanTask` | `Core/Src/freertos.c:272` | `256*5 = 1280` bytes（`Core/Src/freertos.c:81`） | `osPriorityNormal`（`Core/Src/freertos.c:82`） | 周期调用 `KEY_Tasks()`（`Core/Src/freertos.c:325`） |
-| `uartTask` | `Core/Src/freertos.c:275` | `128*4 = 512` bytes（`Core/Src/freertos.c:88`） | `osPriorityLow`（`Core/Src/freertos.c:89`） | 读 `g_rb_uart1`（`Core/Src/freertos.c:348`） |
+| `KeyScanTask` | `Core/Src/freertos.c:280` | `sizeof(KeyScanTaskBuffer)=256*4=1024` bytes（`Core/Src/freertos.c:80`） | `osPriorityNormal`（`Core/Src/freertos.c:88`） | 静态分配（`cb_mem/stack_mem`）；周期调用 `KEY_Tasks()`（`Core/Src/freertos.c:334`） |
+| `uartTask` | `Core/Src/freertos.c:283` | `sizeof(uartTaskBuffer)=128*4=512` bytes（`Core/Src/freertos.c:92`） | `osPriorityLow`（`Core/Src/freertos.c:101`） | 静态分配；当前任务逻辑主要为占位（消费 RingBuffer 的代码已注释） |
+| `lcdTask` | `Core/Src/freertos.c:286` | `sizeof(lcdTaskBuffer)=384*4=1536` bytes（`Core/Src/freertos.c:104`） | `osPriorityLow`（`Core/Src/freertos.c:113`） | 静态分配；注意与 LVGL 可能冲突（见 `docs/developer-guide/modules/core-startup-rtos.md`） |
 | `LightSensor_Task` | `Core/Src/freertos.c:285` | `256*4 = 1024` bytes（`Core/Src/freertos.c:113`） | `osPriorityNormal`（`Core/Src/freertos.c:114`） | 入口在 `Application/Src/Light_Sensor_task.c:15` |
 
 已定义但当前注释掉（不创建）的线程：
 
-- `lcdTask`：`Core/Src/freertos.c:279`（栈 `256*6` bytes，见 `Core/Src/freertos.c:95`）
 - `MqttTask`：`Core/Src/freertos.c:287`（栈 `1024*4` bytes，见 `Core/Src/freertos.c:106`）
 - `Water_Sensor_Task`：`Core/Src/freertos.c:290`（栈 `256*4` bytes，见 `Core/Src/freertos.c:121`）
 - `lvgl_task`（legacy，当前未创建）：仅定义了属性 `Core/Src/freertos.c:146`（栈 `4096*2` bytes，见 `Core/Src/freertos.c:148`）
