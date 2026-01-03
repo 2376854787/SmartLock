@@ -74,9 +74,9 @@ void MX_TIM3_Init_Custom(void)
 
 void mg90s_init(void)
 {
-    MX_TIM3_Init_Custom();
+    //MX_TIM3_Init_Custom();
     // MX_TIM3_Init(); /* Already initialized in main.c */
-    HAL_TIM_PWM_Start(&htim3_mg90s, TIM_CHANNEL_1);
+    HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
     
     /* Initialize to Lock position */
     mg90s_lock();
@@ -85,11 +85,11 @@ void mg90s_init(void)
 void mg90s_lock(void)
 {
     /* 0 degree -> 0.5ms = 500us */
-    __HAL_TIM_SET_COMPARE(&htim3_mg90s, TIM_CHANNEL_1, 500);
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 500);
 }
 
 void mg90s_unlock(void)
 {
     /* 90 degree -> 1.5ms = 1500us */
-    __HAL_TIM_SET_COMPARE(&htim3_mg90s, TIM_CHANNEL_1, 1500);
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 1500);
 }

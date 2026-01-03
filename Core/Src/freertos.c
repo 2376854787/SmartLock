@@ -54,6 +54,7 @@
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
+typedef StaticTask_t osStaticThreadDef_t;
 /* USER CODE BEGIN PTD */
 
 /* USER CODE END PTD */
@@ -76,24 +77,39 @@
 /* USER CODE END Variables */
 /* Definitions for KeyScanTask */
 osThreadId_t KeyScanTaskHandle;
+uint32_t KeyScanTaskBuffer[ 256 ];
+osStaticThreadDef_t KeyScanTaskControlBlock;
 const osThreadAttr_t KeyScanTask_attributes = {
-    .name = "KeyScanTask",
-    .stack_size = 256 * 5,
-    .priority = (osPriority_t) osPriorityNormal,
+  .name = "KeyScanTask",
+  .cb_mem = &KeyScanTaskControlBlock,
+  .cb_size = sizeof(KeyScanTaskControlBlock),
+  .stack_mem = &KeyScanTaskBuffer[0],
+  .stack_size = sizeof(KeyScanTaskBuffer),
+  .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for uartTask */
 osThreadId_t uartTaskHandle;
+uint32_t uartTaskBuffer[ 128 ];
+osStaticThreadDef_t uartTaskControlBlock;
 const osThreadAttr_t uartTask_attributes = {
-    .name = "uartTask",
-    .stack_size = 128 * 4,
-    .priority = (osPriority_t) osPriorityLow,
+  .name = "uartTask",
+  .cb_mem = &uartTaskControlBlock,
+  .cb_size = sizeof(uartTaskControlBlock),
+  .stack_mem = &uartTaskBuffer[0],
+  .stack_size = sizeof(uartTaskBuffer),
+  .priority = (osPriority_t) osPriorityLow,
 };
 /* Definitions for lcdTask */
 osThreadId_t lcdTaskHandle;
+uint32_t lcdTaskBuffer[ 384 ];
+osStaticThreadDef_t lcdTaskControlBlock;
 const osThreadAttr_t lcdTask_attributes = {
-    .name = "lcdTask",
-    .stack_size = 256 * 6,
-    .priority = (osPriority_t) osPriorityLow,
+  .name = "lcdTask",
+  .cb_mem = &lcdTaskControlBlock,
+  .cb_size = sizeof(lcdTaskControlBlock),
+  .stack_mem = &lcdTaskBuffer[0],
+  .stack_size = sizeof(lcdTaskBuffer),
+  .priority = (osPriority_t) osPriorityLow,
 };
 
 /* Private function prototypes -----------------------------------------------*/
@@ -124,22 +140,21 @@ const osThreadAttr_t Water_Sensor_attributes = {
 
 const osThreadAttr_t as608TestTask_attr = {
     .name = "as608_test",
-    .priority = (osPriority_t)osPriorityNormal,
-    .stack_size =  256 * 5,
+    .priority = (osPriority_t) osPriorityNormal,
+    .stack_size = 256 * 5,
 };
 
 const osThreadAttr_t rc522TestTask_attr = {
     .name = "rc522_test",
-    .priority = (osPriority_t)osPriorityNormal,
+    .priority = (osPriority_t) osPriorityNormal,
     .stack_size = 512 * 4,
 };
 
 const osThreadAttr_t rc522MyTestTask_attr = {
     .name = "rc522_my_test",
-    .priority = (osPriority_t)osPriorityNormal,
+    .priority = (osPriority_t) osPriorityNormal,
     .stack_size = 512 * 4,
 };
-
 
 
 /* LVGL 任务属性 */
@@ -153,22 +168,16 @@ const osThreadAttr_t lvglTask_attributes = {
 
 void StartDefaultTask(void *argument);
 void StartTask02(void *argument);
-
 void StartTask_LCD(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
 /* Hook prototypes */
 void configureTimerForRunTimeStats(void);
-
 unsigned long getRunTimeCounterValue(void);
-
 void vApplicationIdleHook(void);
-
 void vApplicationTickHook(void);
-
 void vApplicationStackOverflowHook(xTaskHandle xTask, signed char *pcTaskName);
-
 void vApplicationMallocFailedHook(void);
 
 /* USER CODE BEGIN 1 */
@@ -230,12 +239,11 @@ void vApplicationMallocFailedHook(void) {
     FreeRTOSConfig.h, and the xPortGetFreeHeapSize() API function can be used
     to query the size of free heap space that remains (although it does not
      provide information on how the remaining heap might be fragmented). */
-    LOG_E("MallocFailedHook","Malloc failed! free=%lu minEver=%lu\r\n",
-           (unsigned long)xPortGetFreeHeapSize(),
-           (unsigned long)xPortGetMinimumEverFreeHeapSize());
+    LOG_E("MallocFailedHook", "Malloc failed! free=%lu minEver=%lu\r\n",
+          (unsigned long)xPortGetFreeHeapSize(),
+          (unsigned long)xPortGetMinimumEverFreeHeapSize());
     taskDISABLE_INTERRUPTS();
-    for (;;)
-    {
+    for (;;) {
     }
 }
 
@@ -247,38 +255,37 @@ void vApplicationMallocFailedHook(void) {
   * @retval None
   */
 void MX_FREERTOS_Init(void) {
-    /* USER CODE BEGIN Init */
+  /* USER CODE BEGIN Init */
 
-    /* USER CODE END Init */
+  /* USER CODE END Init */
 
-    /* USER CODE BEGIN RTOS_MUTEX */
+  /* USER CODE BEGIN RTOS_MUTEX */
     /* add mutexes, ... */
-    /* USER CODE END RTOS_MUTEX */
+  /* USER CODE END RTOS_MUTEX */
 
-    /* USER CODE BEGIN RTOS_SEMAPHORES */
+  /* USER CODE BEGIN RTOS_SEMAPHORES */
     /* add semaphores, ... */
-    /* USER CODE END RTOS_SEMAPHORES */
+  /* USER CODE END RTOS_SEMAPHORES */
 
-    /* USER CODE BEGIN RTOS_TIMERS */
+  /* USER CODE BEGIN RTOS_TIMERS */
     /* start timers, add new ones, ... */
-    /* USER CODE END RTOS_TIMERS */
+  /* USER CODE END RTOS_TIMERS */
 
-    /* USER CODE BEGIN RTOS_QUEUES */
+  /* USER CODE BEGIN RTOS_QUEUES */
     /* add queues, ... */
-    /* USER CODE END RTOS_QUEUES */
+  /* USER CODE END RTOS_QUEUES */
 
-    /* Create the thread(s) */
-    /* creation of KeyScanTask */
-    KeyScanTaskHandle = osThreadNew(StartDefaultTask, NULL, &KeyScanTask_attributes);
+  /* Create the thread(s) */
+  /* creation of KeyScanTask */
+  KeyScanTaskHandle = osThreadNew(StartDefaultTask, NULL, &KeyScanTask_attributes);
 
-    /* creation of uartTask */
-    uartTaskHandle = osThreadNew(StartTask02, NULL, &uartTask_attributes);
+  /* creation of uartTask */
+  uartTaskHandle = osThreadNew(StartTask02, NULL, &uartTask_attributes);
 
-    /* creation of lcdTask */
-    /* NOTE: When LVGL is enabled, avoid running legacy LCD direct-draw task to prevent display conflicts and save heap. */
-    // lcdTaskHandle = osThreadNew(StartTask_LCD, NULL, &lcdTask_attributes);
+  /* creation of lcdTask */
+  lcdTaskHandle = osThreadNew(StartTask_LCD, NULL, &lcdTask_attributes);
 
-    /* USER CODE BEGIN RTOS_THREADS */
+  /* USER CODE BEGIN RTOS_THREADS */
     /* add threads, ... */
 
     /* 光敏传感器 */
@@ -296,17 +303,18 @@ void MX_FREERTOS_Init(void) {
     /* 串口AT解析任务 创建信号量、创建任务*/
     at_core_task_init(&g_at_manager, &huart3);
     /* as608指纹模块测试函数 - 已停用，使用LVGL界面 */
-   //  osThreadNew(AS608_TestTask, NULL, &as608TestTask_attr);
+    //  osThreadNew(AS608_TestTask, NULL, &as608TestTask_attr);
     // osThreadNew(RC522_MyTestTask, NULL, &rc522MyTestTask_attr);
-  /* LVGL任务 */
+    /* LVGL任务 */
     lvgl_init();
 
-    /* USER CODE END RTOS_THREADS */
+  /* USER CODE END RTOS_THREADS */
 
-    /* USER CODE BEGIN RTOS_EVENTS */
+  /* USER CODE BEGIN RTOS_EVENTS */
     /* add events, ... */
 
-    /* USER CODE END RTOS_EVENTS */
+  /* USER CODE END RTOS_EVENTS */
+
 }
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -316,11 +324,9 @@ void MX_FREERTOS_Init(void) {
   * @retval None
   */
 /* USER CODE END Header_StartDefaultTask */
-void StartDefaultTask(void *argument) {
-    (void)argument;
-    delay_osrunning = true;
-
-    /* USER CODE BEGIN StartDefaultTask */
+void StartDefaultTask(void *argument)
+{
+  /* USER CODE BEGIN StartDefaultTask */
     /* Infinite loop */
     for (;;) {
         //LED 1翻转
@@ -330,7 +336,7 @@ void StartDefaultTask(void *argument) {
         // printf("keyscanTask high watermark = %lu\r\n", (unsigned long) watermark);
         osDelay(10);
     }
-    /* USER CODE END StartDefaultTask */
+  /* USER CODE END StartDefaultTask */
 }
 
 /* USER CODE BEGIN Header_StartTask02 */
@@ -340,22 +346,23 @@ void StartDefaultTask(void *argument) {
 * @retval None
 */
 /* USER CODE END Header_StartTask02 */
-void StartTask02(void *argument) {
-    /* USER CODE BEGIN StartTask02 */
-    char buffer[128];
+void StartTask02(void *argument)
+{
+  /* USER CODE BEGIN StartTask02 */
+    // char buffer[128];
     /* Infinite loop */
     for (;;) {
-        uint32_t read_size = RingBuffer_GetUsedSize(&g_rb_uart1);
-        if (read_size > 0) {
-            if (read_size > 127) read_size = 127;
-            if (ReadRingBuffer(&g_rb_uart1, (uint8_t *) buffer, &read_size, 0)) {
-                buffer[read_size] = '\0';
-                // printf("%s\n", buffer);
-               // HAL_UART_Transmit(&huart3, (const uint8_t *) buffer, strlen((char *) buffer), HAL_MAX_DELAY);
-            } else {
-                printf("读取失败\n");
-            }
-        }
+        // uint32_t read_size = RingBuffer_GetUsedSize(&g_rb_uart1);
+        // if (read_size > 0) {
+        //     if (read_size > 127) read_size = 127;
+        //     if (ReadRingBuffer(&g_rb_uart1, (uint8_t *) buffer, &read_size, 0)) {
+        //         buffer[read_size] = '\0';
+        //         // printf("%s\n", buffer);
+        //        // HAL_UART_Transmit(&huart3, (const uint8_t *) buffer, strlen((char *) buffer), HAL_MAX_DELAY);
+        //     } else {
+        //         printf("读取失败\n");
+        //     }
+        // }
 
         HAL_GPIO_TogglePin(LED0_GPIO_Port,LED0_Pin);
         osDelay(1000);
@@ -370,21 +377,22 @@ void StartTask02(void *argument) {
 * @retval None
 */
 /* USER CODE END Header_StartTask_LCD */
-void StartTask_LCD(void *argument) {
-    /* USER CODE BEGIN StartTask_LCD */
+void StartTask_LCD(void *argument)
+{
+  /* USER CODE BEGIN StartTask_LCD */
     /* Infinite loop */
     char buffer[128];
     osDelay(2000);
     LOG_I("StartTask_LCD", "启动完成");
     for (;;) {
-       // sniprintf(buffer, 128, "Time:%lu", HAL_GetTick());
-       // lcd_show_string(50, 300, 240, 32, 32, buffer, BLACK);
+        // sniprintf(buffer, 128, "Time:%lu", HAL_GetTick());
+        // lcd_show_string(50, 300, 240, 32, 32, buffer, BLACK);
 
         // UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
         // printf("lcdTask high watermark = %lu\r\n", (unsigned long) watermark);
         osDelay(20);
     }
-    /* USER CODE END StartTask_LCD */
+  /* USER CODE END StartTask_LCD */
 }
 
 /* Private application code --------------------------------------------------*/
@@ -417,9 +425,10 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
     AS608_Port_OnUartError(huart);
 }
 
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
-{
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
     AS608_Port_OnUartRxCplt(huart);
     // 你其它 UART 的接收处理...
 }
+
 /* USER CODE END Application */
+

@@ -186,6 +186,7 @@ int main(void)
   MX_ADC1_Init();
   MX_UART4_Init();
   MX_SPI1_Init();
+  MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
     lcd_init();
     LOG_E("cu", "ssss");

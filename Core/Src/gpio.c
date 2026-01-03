@@ -79,12 +79,6 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOF, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : wake_up_Pin */
-  GPIO_InitStruct.Pin = wake_up_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
-  HAL_GPIO_Init(wake_up_GPIO_Port, &GPIO_InitStruct);
-
   /*Configure GPIO pins : Rc522_CS_Pin Rc522_NRT_Pin */
   GPIO_InitStruct.Pin = Rc522_CS_Pin|Rc522_NRT_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
