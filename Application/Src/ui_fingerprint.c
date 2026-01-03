@@ -1,8 +1,7 @@
 #include "ui_fingerprint.h"
 #include "lvgl.h"
 #include "as608_service.h"
-#include "as608_port.h"
-#include "usart.h"
+#include "lock_devices.h"
 #include "lvgl_task.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -243,9 +242,9 @@ static void create_manage_screen(void) {
 }
 
 void ui_fingerprint_init(void) {
-    AS608_Port_BindUart(&huart4);
-    as608_svc_rc_t init_rc = AS608_Service_Init(0xFFFFFFFF, 0x00000000);
-    LOG_I("UI_FP", "AS608_Service_Init rc=%d", (int)init_rc);
+    if (!LockDevices_WaitAs608Ready(5000u)) {
+        LOG_E("UI_FP", "AS608 not ready");
+    }
 
     s_fp_capacity = AS608_Get_Capacity();
     if (s_fp_capacity == 0) {

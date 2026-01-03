@@ -49,6 +49,8 @@
 #include "AT_Core_Task.h"
 #include "log_port.h"
 #include "lvgl_task.h"
+#include "lock_devices.h"
+#include "lock_actuator.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -228,7 +230,7 @@ void vApplicationMallocFailedHook(void) {
     FreeRTOSConfig.h, and the xPortGetFreeHeapSize() API function can be used
     to query the size of free heap space that remains (although it does not
      provide information on how the remaining heap might be fragmented). */
-    printf("Malloc failed! free=%lu minEver=%lu\r\n",
+    LOG_E("MallocFailedHook","Malloc failed! free=%lu minEver=%lu\r\n",
            (unsigned long)xPortGetFreeHeapSize(),
            (unsigned long)xPortGetMinimumEverFreeHeapSize());
     taskDISABLE_INTERRUPTS();
@@ -289,10 +291,11 @@ void MX_FREERTOS_Init(void) {
     /* 日志任务 创建信号量、创建任务 */
     Log_PortInit();
     Log_Init();
+    LockDevices_Start();
+    LockActuator_Start();
     /* 串口AT解析任务 创建信号量、创建任务*/
     at_core_task_init(&g_at_manager, &huart3);
     /* as608指纹模块测试函数 - 已停用，使用LVGL界面 */
-
    //  osThreadNew(AS608_TestTask, NULL, &as608TestTask_attr);
     // osThreadNew(RC522_MyTestTask, NULL, &rc522MyTestTask_attr);
   /* LVGL任务 */

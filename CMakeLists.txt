@@ -71,6 +71,7 @@ add_executable(${CMAKE_PROJECT_NAME}
         components/crypto/hmac_sha256.c
         components/crypto/base64.c
         Drivers/BSP/Beep/Beep.c
+        Drivers/BSP/mg90s/mg90s.c
         Drivers/BSP/Light_Sensor/LightSeneor.c
         Application/Src/Light_Sensor_task.c
         Drivers/System/Src/My_delay.c
@@ -89,6 +90,8 @@ add_executable(${CMAKE_PROJECT_NAME}
         components/log/log_port.c
         Drivers/BSP/lvgl_port/lvgl_port.c
         Application/Src/lock_data.c
+        Application/Src/lock_devices.c
+        Application/Src/lock_actuator.c
         Application/Src/ui_lock.c
         Application/Src/lvgl_task.c
         Middlewares/LVGL/src/core/lv_disp.c
@@ -241,6 +244,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         Drivers/BSP/ESP01s
         Application/Inc
         Drivers/BSP/Beep
+        Drivers/BSP/mg90s
         Drivers/BSP/Light_Sensor
         Drivers/System/Inc
         components/log
@@ -313,7 +317,6 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
 #        -Wl,-u,_printf_float
 #        -Wl,-u,_scanf_float
 #)
-
 
 ## Add linker script and enable floating point printing
 #target_link_options(${CMAKE_PROJECT_NAME} PRIVATE

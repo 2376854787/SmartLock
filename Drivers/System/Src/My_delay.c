@@ -18,6 +18,23 @@ bool delay_osrunning = false;
 
 uint32_t g_fac_us, g_fac_ms;
 
+static bool s_dwt_inited = false;
+
+static void delay_dwt_init_once(void)
+{
+    if (s_dwt_inited) return;
+
+    /* Enable DWT CYCCNT for accurate microsecond delay (independent of SysTick). */
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    DWT->CYCCNT = 0;
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+
+    __DSB();
+    __ISB();
+
+    s_dwt_inited = true;
+}
+
 /**
  * @brief 暂停RTOS任务调度
  */
@@ -66,7 +83,7 @@ void delay_init(uint16_t sysclk) {
  * @brief 进行微妙延时
  * @param nus 延时微妙数
  */
-void delay_us(uint32_t nus) {
+static void delay_us_systick(uint32_t nus) {
     uint32_t told, tnow, tcnt = 0;
     const uint32_t reload = SysTick->LOAD; /*168mhz主频下为 168000 */
     const uint32_t Ticks = nus * g_fac_us;
@@ -97,13 +114,63 @@ void delay_us(uint32_t nus) {
 #endif
 }
 
+void delay_us(uint32_t nus)
+{
+    if (nus == 0u) {
+        return;
+    }
+
+#if SYS_SUPPORT_OS
+    bool locked = false;
+    if ((__get_IPSR() == 0u) && (osKernelGetState() == osKernelRunning)) {
+        delay_osschedlock();
+        locked = true;
+    }
+#endif
+
+    delay_dwt_init_once();
+
+    /* If CYCCNT doesn't run (rare), fall back to SysTick-based implementation. */
+    {
+        uint32_t c1 = DWT->CYCCNT;
+        __NOP();
+        uint32_t c2 = DWT->CYCCNT;
+        if (c2 == c1) {
+#if SYS_SUPPORT_OS
+            if (locked) {
+                delay_osschedunlock();
+            }
+#endif
+            delay_us_systick(nus);
+            return;
+        }
+    }
+
+    uint32_t cycles_per_us = SystemCoreClock / 1000000u;
+    if (cycles_per_us == 0u) {
+        cycles_per_us = 1u;
+    }
+
+    uint32_t start = DWT->CYCCNT;
+    uint32_t wait_cycles = cycles_per_us * nus;
+    while ((uint32_t)(DWT->CYCCNT - start) < wait_cycles) {
+        __NOP();
+    }
+
+#if SYS_SUPPORT_OS
+    if (locked) {
+        delay_osschedunlock();
+    }
+#endif
+}
+
 /**
  * @brief 进行ms级别延时 延时时间大于1 SysTick使用系统非阻塞延时 小于则使用阻塞式轮询空转
  * @param nms 延时ms数
  */
 void delay_ms(uint16_t nms) {
 #if SYS_SUPPORT_OS /* 如果需要支持 OS, 则根据情况调用 os 延时以释放 CPU */
-    if (delay_osrunning && (__get_IPSR() == 0))
+    if (delay_osrunning && (__get_IPSR() == 0) && (g_fac_ms != 0u))
     /* 如果 OS 已经在跑了,并且不是在中断里面(中断里面不能任务调度) */
     {
         if (nms >= g_fac_ms) /* 延时的时间大于 OS 的最少时间周期 */

@@ -80,7 +80,9 @@ int32_t SPI_ReadNBytes(SPI_TypeDef* SPIx, uint8_t *p_RxData,uint32_t readDataNum
 void RC522_Init(void)
 {
 	RC522_ENABLE;
-	HAL_SPI_Transmit(&hspi1, (uint8_t *)0xaa, sizeof((uint8_t *)0xaa), 0xFF);//启动传输
+	/* Dummy write to wake up SPI/RC522. */
+	uint8_t dummy = 0xAAu;
+	HAL_SPI_Transmit(&hspi1, &dummy, 1, 0xFF);//启动传输
 	RC522_DISABLE;
 
     HAL_Delay(50);
@@ -92,7 +94,7 @@ void RC522_Init(void)
 	HAL_Delay(10);
 	PcdAntennaOn();//开启天线发射
 
-	LOG_I("RC522", "RFID-MFRC522 初始化完成，开始寻卡");
+	LOG_I("RC522", "RFID-MFRC522 init done");
 }
 
 //功    能：寻卡

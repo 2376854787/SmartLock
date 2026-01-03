@@ -26,13 +26,13 @@
 #include "queue.h"
 #include "task.h"
 
-#include "as608_port.h"
 #include "as608_service.h"
+#include "lock_actuator.h"
+#include "lock_devices.h"
 #include "lock_data.h"
 #include "log.h"
 #include "lvgl_task.h"
 #include "rc522_my.h"
-#include "usart.h"
 
 typedef struct {
     lv_color_t bg;
@@ -619,6 +619,7 @@ static void pin_btnm_cb(lv_event_t *e)
         if (in && lock_pin_verify(in, &pin_id)) {
             set_label(s_pin_status, "Unlocked", c_good());
             ui_modal_result("Unlocked", "PIN verified", true, 1500);
+            (void)LockActuator_UnlockAsync();
             lv_textarea_set_text(s_pin_ta, "");
             nav_to(s_home);
         } else {
@@ -1345,6 +1346,12 @@ static void fp_worker(void *arg)
         res->id = cmd.id;
         res->st = AS608_STATUS_UNKNOWN;
 
+        if (!LockDevices_WaitAs608Ready(5000u)) {
+            res->rc = AS608_SVC_NOT_READY;
+            res->st = AS608_STATUS_UNKNOWN;
+            goto fp_post;
+        }
+
         switch (cmd.op) {
             case FP_OP_VERIFY:
                 res->rc = AS608_CRUD_Read(8000, &res->found_id, &res->score, &res->st);
@@ -1386,6 +1393,7 @@ static void fp_worker(void *arg)
                 break;
         }
 
+fp_post:
         lvgl_lock();
         if (lv_async_call(fp_apply_cb, res) != LV_RES_OK) {
             lvgl_unlock();
@@ -1562,6 +1570,7 @@ static void fp_apply_cb(void *user_data)
                 snprintf(buf, sizeof(buf), "Match: ID %u  (score %u)", (unsigned)res->found_id, (unsigned)res->score);
                 set_label(s_fp_unlock_status, buf, c_good());
                 ui_modal_result("Unlocked", "Fingerprint verified", true, 1500);
+                (void)LockActuator_UnlockAsync();
                 nav_to(s_home);
             } else {
                 snprintf(buf, sizeof(buf), "Verify fail: rc=%s st=%s", fp_rc_str(res->rc), fp_st_str(res->st));
@@ -2046,9 +2055,7 @@ static void rfid_worker(void *arg)
 {
     (void)arg;
 
-    vTaskDelay(pdMS_TO_TICKS(300));
-    RC522_Init();
-    LOG_I("UI_RFID", "RC522 VersionReg=0x%02X", (unsigned)ReadRawRC(VersionReg));
+    (void)LockDevices_WaitRc522Ready(5000u);
 
     for (;;) {
         rfid_cmd_t cmd;
@@ -2061,6 +2068,12 @@ static void rfid_worker(void *arg)
         }
         memset(res, 0, sizeof(*res));
         res->op = cmd.op;
+
+        if (!LockDevices_Rc522Ready()) {
+            res->ok = false;
+            snprintf(res->msg, sizeof(res->msg), "RC522 not ready");
+            goto rfid_post;
+        }
 
         if (cmd.op == RFID_OP_CLEAR) {
             lock_rfid_clear();
@@ -2095,6 +2108,7 @@ static void rfid_worker(void *arg)
             }
         }
 
+rfid_post:
         lvgl_lock();
         if (lv_async_call(rfid_apply_cb, res) != LV_RES_OK) {
             lvgl_unlock();
@@ -2229,6 +2243,7 @@ static void rfid_apply_cb(void *user_data)
         set_label(s_rfid_unlock_status, res->msg, col);
         if (res->ok) {
             ui_modal_result("Unlocked", "RFID verified", true, 1500);
+            (void)LockActuator_UnlockAsync();
             nav_to(s_home);
         } else {
             ui_modal_result("Access denied", "RFID not authorized", false, 1500);
@@ -2503,10 +2518,6 @@ void ui_lock_init(void)
     }
 
     /* 初始化 AS608 服务（异步 worker 会用到） */
-    AS608_Port_BindUart(&huart4);
-    as608_svc_rc_t rc = AS608_Service_Init(0xFFFFFFFF, 0x00000000);
-    LOG_I("UI_LOCK", "AS608_Service_Init rc=%d", (int)rc);
-
     /* Home 使用独立配色；其余子页面使用子页面配色。 */
     ui_use_palette(&s_pal_home);
     build_home();
