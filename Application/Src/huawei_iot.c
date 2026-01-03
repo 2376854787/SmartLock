@@ -137,20 +137,26 @@ bool huawei_iot_build_cmd_resp_topic_from_request(const char *request_topic, cha
 {
     if (!request_topic || !out || out_sz == 0) return false;
 
+    /* 华为 IoTDA 命令 topic 格式：
+     * 请求: $oc/devices/<device_id>/sys/commands/request_id=<request_id>
+     * 响应: $oc/devices/<device_id>/sys/commands/response/request_id=<request_id>
+     */
     const char *p = strstr(request_topic, "/sys/commands/");
     if (!p) return false;
     p += strlen("/sys/commands/");
 
-    const char *rid_end = strchr(p, '/');
-    if (!rid_end) return false;
+    /* p 现在指向 "request_id=xxx" 部分 */
+    /* 直接取到字符串结尾或下一个 '/' 为止 */
+    const char *rid_end = p;
+    while (*rid_end && *rid_end != '/') rid_end++;
     const size_t rid_len = (size_t)(rid_end - p);
-    if (rid_len == 0 || rid_len > 64u) return false;
+    if (rid_len == 0 || rid_len > 128u) return false;
 
-    char rid[65];
+    char rid[129];
     memcpy(rid, p, rid_len);
     rid[rid_len] = '\0';
 
-    const int n = snprintf(out, out_sz, "$oc/devices/%s/sys/commands/%s/response", HUAWEI_IOT_DEVICE_ID, rid);
+    const int n = snprintf(out, out_sz, "$oc/devices/%s/sys/commands/response/%s", HUAWEI_IOT_DEVICE_ID, rid);
     return (n > 0) && ((size_t)n < out_sz);
 }
 

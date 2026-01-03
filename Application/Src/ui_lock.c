@@ -409,20 +409,93 @@ static lv_obj_t *s_home_time = NULL;
 static lv_obj_t *s_home_date = NULL;
 static lv_obj_t *s_home_weather = NULL;
 
+/* -------------------- Epoch 转本地时间 -------------------- */
+
+static const uint8_t s_days_in_month[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+static const char *s_weekday_names[7] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+
+static bool is_leap(uint32_t year)
+{
+    return (year % 4u == 0 && year % 100u != 0) || (year % 400u == 0);
+}
+
+static void epoch_to_local_time(uint32_t epoch_s, int tz_offset_h,
+                                 uint32_t *out_year, uint32_t *out_month, uint32_t *out_day,
+                                 uint32_t *out_hour, uint32_t *out_min, uint32_t *out_sec,
+                                 uint32_t *out_weekday)
+{
+    /* 应用时区偏移 */
+    int64_t local_s = (int64_t)epoch_s + (int64_t)tz_offset_h * 3600;
+    if (local_s < 0) local_s = 0;
+
+    uint32_t days = (uint32_t)(local_s / 86400);
+    uint32_t day_secs = (uint32_t)(local_s % 86400);
+
+    /* 1970-01-01 是星期四 (weekday=4) */
+    *out_weekday = (days + 4u) % 7u;
+
+    *out_hour = day_secs / 3600u;
+    *out_min = (day_secs % 3600u) / 60u;
+    *out_sec = day_secs % 60u;
+
+    /* 计算年份 */
+    uint32_t year = 1970u;
+    for (;;) {
+        uint32_t days_in_year = is_leap(year) ? 366u : 365u;
+        if (days < days_in_year) break;
+        days -= days_in_year;
+        year++;
+    }
+    *out_year = year;
+
+    /* 计算月份和日期 */
+    uint32_t month = 1u;
+    for (uint32_t m = 0; m < 12u; m++) {
+        uint32_t dim = s_days_in_month[m];
+        if (m == 1u && is_leap(year)) dim = 29u;
+        if (days < dim) {
+            month = m + 1u;
+            break;
+        }
+        days -= dim;
+    }
+    *out_month = month;
+    *out_day = days + 1u;
+}
+
 static void home_tick_cb(lv_timer_t *t)
 {
     (void)t;
     if (lv_scr_act() != s_home) return;
 
-    uint32_t sec = (uint32_t)(xTaskGetTickCount() / configTICK_RATE_HZ);
-    uint32_t hh = (12u + (sec / 3600u)) % 24u;
-    uint32_t mm = (sec / 60u) % 60u;
+    char time_buf[32];
+    char date_buf[48];
 
-    char buf[32];
-    snprintf(buf, sizeof(buf), "%02lu:%02lu", (unsigned long)hh, (unsigned long)mm);
-    lv_label_set_text(s_home_time, buf);
-    lv_label_set_text(s_home_date, "Mon · 2026-01-01");
-    lv_label_set_text(s_home_weather, "Sunny · 24°C  |  AQI 42");
+    if (lock_time_has_epoch()) {
+        /* 有 SNTP 时间：显示真实时间 */
+        uint32_t epoch_s = lock_time_now_s();
+        uint32_t year, month, day, hour, min, sec, weekday;
+        epoch_to_local_time(epoch_s, 8, &year, &month, &day, &hour, &min, &sec, &weekday);
+
+        snprintf(time_buf, sizeof(time_buf), "%02lu:%02lu", (unsigned long)hour, (unsigned long)min);
+        snprintf(date_buf, sizeof(date_buf), "%s · %04lu-%02lu-%02lu",
+                 s_weekday_names[weekday],
+                 (unsigned long)year,
+                 (unsigned long)month,
+                 (unsigned long)day);
+    } else {
+        /* 未同步：显示启动后的相对时间 */
+        uint32_t sec = (uint32_t)(xTaskGetTickCount() / configTICK_RATE_HZ);
+        uint32_t hh = (sec / 3600u) % 24u;
+        uint32_t mm = (sec / 60u) % 60u;
+
+        snprintf(time_buf, sizeof(time_buf), "%02lu:%02lu", (unsigned long)hh, (unsigned long)mm);
+        snprintf(date_buf, sizeof(date_buf), "Syncing time...");
+    }
+
+    lv_label_set_text(s_home_time, time_buf);
+    lv_label_set_text(s_home_date, date_buf);
+    lv_label_set_text(s_home_weather, "SmartLock · Ready");
 }
 
 static void home_tap_cb(lv_event_t *e)
@@ -2424,6 +2497,7 @@ void ui_lock_init(void)
     LOG_I("UI_LOCK", "init");
 
     lock_data_init();
+    
     if (lock_pin_count() == 0) {
         (void)lock_pin_add("1234", 0, "default", NULL);
     }

@@ -212,6 +212,7 @@ add_executable(${CMAKE_PROJECT_NAME}
         components/core_base/assert_cus.c
         platform/STM32/ports/hal_time_port.c
 
+
 )
 
 # Add STM32CubeMX generated sources
@@ -283,6 +284,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         Drivers/BSP/touch
         components/osal
         components/hal/include
+
 
 
 )

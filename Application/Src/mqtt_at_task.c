@@ -11,6 +11,8 @@
 #include "AT_Core_Task.h"
 #include "huawei_iot.h"
 #include "log.h"
+#include "huawei_iot.h"
+#include "log.h"
 #include "lock_data.h"
 #include "osal.h"
 #include "usart.h"
@@ -67,6 +69,52 @@ static uint8_t parse_u8(const char **p_io)
     *p_io = p;
     if (v > 255u) v = 255u;
     return (uint8_t)v;
+}
+
+/* -------------------- 简易 JSON 字符串提取 -------------------- */
+
+/**
+ * 从 JSON 中提取指定 key 的字符串值。
+ * 仅支持简单格式：{"key":"value", ...}
+ * 不支持嵌套对象、转义引号等复杂情况。
+ */
+static bool json_get_string(const char *json, const char *key, char *out, size_t out_sz)
+{
+    if (!json || !key || !out || out_sz == 0) return false;
+    out[0] = '\0';
+
+    /* 构造搜索模式："key": */
+    char pattern[64];
+    int n = snprintf(pattern, sizeof(pattern), "\"%s\":", key);
+    if (n <= 0 || (size_t)n >= sizeof(pattern)) return false;
+
+    const char *pos = strstr(json, pattern);
+    if (!pos) return false;
+
+    pos += strlen(pattern);
+    while (*pos == ' ') pos++;
+
+    if (*pos != '\"') return false;
+    pos++;
+
+    size_t i = 0;
+    while (*pos && *pos != '\"') {
+        if (i + 1u < out_sz) out[i++] = *pos;
+        pos++;
+    }
+    out[i] = '\0';
+    return (i > 0);
+}
+
+/**
+ * 从 MQTTSUBRECV 的 payload 部分提取纯 JSON。
+ * 格式：长度,{"key":...} -> 跳过长度和逗号，取 JSON 部分。
+ */
+static const char *extract_json_from_payload(const char *raw_payload)
+{
+    if (!raw_payload) return NULL;
+    const char *brace = strchr(raw_payload, '{');
+    return brace ? brace : raw_payload;
 }
 
 static void wait_sntp_epoch(uint32_t timeout_ms)
@@ -459,17 +507,63 @@ static void handle_user_command(const char *payload)
     publish_user_cmd_ack(1, "todo");
 }
 
-static void handle_cloud_command_placeholder(const char *topic, const char *payload)
+static void handle_iotda_sys_command(const char *topic, const char *payload)
 {
-    /* TODO：解析 IoTDA 命令内容，并映射到实际门锁控制逻辑。 */
-    LOG_W("cloud", "RX topic=%s payload=%s", topic ? topic : "(null)", payload ? payload : "(null)");
+    LOG_I("iotda", "RX topic=%s", topic ? topic : "(null)");
 
-    /* 尽力而为：先对命令请求回一个占位 ACK，后续补齐真实结果。 */
-    char resp_topic[WIFI_MQTT_TOPIC_MAX];
-    if (!huawei_iot_build_cmd_resp_topic_from_request(topic, resp_topic, sizeof(resp_topic))) {
+    /* 提取纯 JSON 部分（跳过可能的长度前缀） */
+    const char *json = extract_json_from_payload(payload);
+    if (!json) {
+        LOG_W("iotda", "payload empty or invalid");
         return;
     }
-    (void)mqtt_publish(resp_topic, "result_code=0,result_desc=TODO");
+
+    LOG_I("iotda", "JSON=%s", json);
+
+    /* 解析 command_name 和 service_id */
+    char cmd_name[32];
+    char svc_id[32];
+    if (!json_get_string(json, "command_name", cmd_name, sizeof(cmd_name))) {
+        LOG_W("iotda", "missing command_name");
+        return;
+    }
+    (void)json_get_string(json, "service_id", svc_id, sizeof(svc_id));
+
+    LOG_I("iotda", "command_name=%s service_id=%s", cmd_name, svc_id);
+
+    /* 构建响应 topic */
+    char resp_topic[WIFI_MQTT_TOPIC_MAX];
+    if (!huawei_iot_build_cmd_resp_topic_from_request(topic, resp_topic, sizeof(resp_topic))) {
+        LOG_E("iotda", "cannot build response topic");
+        return;
+    }
+
+    /* 命令分发 */
+    if (strcmp(cmd_name, "unlock") == 0) {
+        LOG_I("iotda", "cmd unlock received (servo disabled)");
+        (void)mqtt_publish_json(resp_topic, "{\"result_code\":0,\"response_name\":\"unlock_response\",\"paras\":{}}");
+        return;
+    }
+
+    if (strcmp(cmd_name, "lock") == 0) {
+        LOG_I("iotda", "cmd lock received (servo disabled)");
+        (void)mqtt_publish_json(resp_topic, "{\"result_code\":0,\"response_name\":\"lock_response\",\"paras\":{}}");
+        return;
+    }
+
+    if (strcmp(cmd_name, "set_open") == 0) {
+        LOG_I("iotda", "cmd set_open received (servo disabled)");
+        (void)mqtt_publish_json(resp_topic, "{\"result_code\":0,\"response_name\":\"set_open_response\",\"paras\":{}}");
+        return;
+    }
+
+    /* 未知命令 */
+    LOG_W("iotda", "unknown command: %s", cmd_name);
+    char resp_json[WIFI_MQTT_PAYLOAD_MAX];
+    (void)snprintf(resp_json, sizeof(resp_json),
+                   "{\"result_code\":100,\"response_name\":\"%s_response\",\"paras\":{\"error\":\"unknown_command\"}}",
+                   cmd_name);
+    (void)mqtt_publish_json(resp_topic, resp_json);
 }
 
 void StartMqttAtTask(void *argument)
@@ -540,7 +634,7 @@ void StartMqttAtTask(void *argument)
             if (topic_is_user_cmd(msg.topic)) {
                 handle_user_command(msg.payload);
             } else if (topic_is_iotda_sys_command(msg.topic)) {
-                handle_cloud_command_placeholder(msg.topic, msg.payload);
+                handle_iotda_sys_command(msg.topic, msg.payload);
             } else {
                 LOG_W("cloud", "unhandled topic=%s payload=%s", msg.topic, msg.payload);
             }
