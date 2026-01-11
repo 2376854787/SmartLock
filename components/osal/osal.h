@@ -61,10 +61,10 @@ bool OSAL_in_isr(void);
 bool OSAL_is_timeout(osal_tick_t start_tick, uint32_t duration_ms);
 
 /* ============================================ 临界区 ====================================================== */
-/* 线程态、RTOS 任务专用 */
+/* 裸机、RTOS 任务专用 */
 void OSAL_enter_critical(void);
 
-/* 线程态、RTOS 任务专用 */
+/* 裸机、RTOS 任务专用 */
 void OSAL_exit_critical(void);
 
 /* 通用 */
