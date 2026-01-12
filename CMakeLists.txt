@@ -60,7 +60,6 @@ add_executable(${CMAKE_PROJECT_NAME}
         platform/STM32/ports/hal_gpio_port.c
         platform/STM32/ports/hal_uart_port.c
         platform/STM32/ports/hal_time_port.c
-        platform/STM32/osal/osal_port.c
         components/core_base/assert_cus.c
 
 )
@@ -95,6 +94,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         components/AT
         components/core_base
         components/osal
+        components/hal/include
 
 
 )
