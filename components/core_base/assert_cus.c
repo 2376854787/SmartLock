@@ -75,9 +75,8 @@ static void assert_record(const char *expr, const char *file, int line) {
     g_assert_record.line = line;
 }
 
-/* 你可以在项目层提供一个同名非 weak 的实现，覆盖该行为 */
+/* 弱定义可以 覆盖该行为 */
 __WEAK void Assert_PlatformReset(void) {
-
 
 #if defined(NVIC_SystemReset)
 NVIC_SystemReset();
@@ -87,8 +86,11 @@ while (1) { ; }
 #endif
 }
 
-__WEAK void Assert_PlatformHalt(void) {
 
+/**
+ * @brief 断言平台失败
+ */
+__WEAK void Assert_PlatformHalt(void) {
 
 /* 关中断，避免系统继续跑出二次破坏 */
 #if defined(__arm__) || defined(__ARM_ARCH)
@@ -97,6 +99,12 @@ __disable_irq();
 while (1) { ; }
 }
 
+/**
+ *
+ * @param expr
+ * @param file
+ * @param line
+ */
 void Assert_OnFail(const char *expr, const char *file, int line) {
     assert_record(expr, file, line);
 
@@ -106,7 +114,6 @@ if (g_cfg.enable_log) {
         LOG_E("ASSERT", "FAIL: %s (%s:%d)", expr, file, line);
     }
 #endif
-
 switch (g_cfg.action) {
         case ASSERT_ACTION_LOG_ONLY:
             return;

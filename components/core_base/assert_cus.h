@@ -2,17 +2,15 @@
 // Created by yan on 2025/12/20.
 //
 
-#ifndef SMARTLOCK_ASSERT_CUS_H
-#define SMARTLOCK_ASSERT_CUS_H
+#ifndef ASSERT_CUS_H
+#define ASSERT_CUS_H
 #include <stdint.h>
 #include "compiler_cus.h"
 
 #ifdef __cplusplus
 extern "C" {
-
-
-
 #endif
+#define ASSERT_USE_LOG  /** 决定是否启用日志输出 */
 /* 断言后的策略 */
 typedef enum {
     ASSERT_ACTION_HALT = 0, // 关中断死循环（默认最安全）
@@ -52,4 +50,4 @@ if (CORE_UNLIKELY(!(expr))) { Assert_OnFail(#expr, __FILE__, __LINE__); } \
 #ifdef __cplusplus
 }
 #endif
-#endif //SMARTLOCK_ASSERT_CUS_H
+#endif //ASSERT_CUS_H
