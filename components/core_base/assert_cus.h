@@ -39,13 +39,24 @@ void Assert_OnFail(const char *expr,
                    const char *file,
                    int line);
 
-/* 可选：更“致命”的 fault assert（语义上表示系统不该继续运行） */
+/* 更“致命”的 fault assert */
 #define CORE_FAULT_ASSERT(expr) do { \
 if (CORE_UNLIKELY(!(expr))) { Assert_OnFail(#expr, __FILE__, __LINE__); } \
 } while (0)
 
 /* 常规 assert */
 #define CORE_ASSERT(expr) CORE_FAULT_ASSERT(expr)
+
+
+    /* 仅调试参数断言 */
+#if defined(CORE_BUILD_DEBUG) || defined(ASSERT_PARAM_ENABLE)
+#define ASSERT_PARAM(expr)  do { CORE_ASSERT(expr); } while (0)
+#else
+#define ASSERT_PARAM(expr)  do { (void)sizeof(expr); } while (0)
+#endif
+
+    /*始终在线致命断言 */
+#define ASSERT_FATAL(expr)     do { CORE_FAULT_ASSERT(expr); } while (0)
 
 #ifdef __cplusplus
 }

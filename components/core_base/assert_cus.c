@@ -1,4 +1,3 @@
-
 #include "APP_config.h"
 /* 全局配置开启宏 */
 #ifdef ENABLE_ASSERT_SYSTEM
@@ -77,12 +76,11 @@ static void assert_record(const char *expr, const char *file, int line) {
 
 /* 弱定义可以 覆盖该行为 */
 __WEAK void Assert_PlatformReset(void) {
-
 #if defined(NVIC_SystemReset)
-NVIC_SystemReset();
+    NVIC_SystemReset();
 #else
-/* fallback: halt */
-while (1) { ; }
+    /* fallback: halt */
+    while (1) { ; }
 #endif
 }
 
@@ -91,12 +89,11 @@ while (1) { ; }
  * @brief 断言平台失败
  */
 __WEAK void Assert_PlatformHalt(void) {
-
-/* 关中断，避免系统继续跑出二次破坏 */
+    /* 关中断，避免系统继续跑出二次破坏 */
 #if defined(__arm__) || defined(__ARM_ARCH)
-__disable_irq();
+    __disable_irq();
 #endif
-while (1) { ; }
+    while (1) { ; }
 }
 
 /**
@@ -109,12 +106,12 @@ void Assert_OnFail(const char *expr, const char *file, int line) {
     assert_record(expr, file, line);
 
 #ifdef ASSERT_USE_LOG
-if (g_cfg.enable_log) {
+    if (g_cfg.enable_log) {
         /* 异步输出 */
         LOG_E("ASSERT", "FAIL: %s (%s:%d)", expr, file, line);
     }
 #endif
-switch (g_cfg.action) {
+    switch (g_cfg.action) {
         case ASSERT_ACTION_LOG_ONLY:
             return;
 
@@ -123,6 +120,7 @@ switch (g_cfg.action) {
             return;
 
         case ASSERT_ACTION_HALT:
+            return;
         default:
             Assert_PlatformHalt();
             return;
