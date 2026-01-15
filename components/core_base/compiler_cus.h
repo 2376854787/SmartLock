@@ -37,7 +37,7 @@ extern "C" {
 #if defined(COMPILER_GCC) || defined(COMPILER_CLANG) || defined(COMPILER_ARMCLANG)
 
 #ifndef __INLINE
-#define __INLINE                static inline                                       /* 建议内联 */
+#define __INLINE                 inline                                       /* 建议内联 */
 #endif
 
 #define   CORE_ALWAYS_INLINE    static inline __attribute__((always_inline))        /* 强烈要求内联 */
