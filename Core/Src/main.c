@@ -25,7 +25,7 @@
 #include "usart.h"
 #include "gpio.h"
 #include "fsmc.h"
-
+#include <malloc.h>
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "KEY.h"
@@ -189,7 +189,7 @@ int main(void) {
     KEY_Init(&key0, &key0_config);
     KEY_Init(&key1, &key1_config);
     KEY_Init(&key2, &key2_config);
-
+    uint16_t* a= (uint16_t*) malloc(sizeof(uint16_t) *12 );
     /* USER CODE END 2 */
 
     /* Init scheduler */
@@ -204,6 +204,7 @@ int main(void) {
     /* Infinite loop */
     /* USER CODE BEGIN WHILE */
     while (1) {
+
         /* USER CODE END WHILE */
 
         /* USER CODE BEGIN 3 */
