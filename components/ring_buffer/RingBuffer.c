@@ -361,7 +361,8 @@ ret_code_t WriteRingBufferFromISR(RingBuffer *rb, const uint8_t *add, uint32_t *
  * @param rb 环形缓冲区指针中断版本
  * @param add 接收数据的地址
  * @param size 要获取的数据大小（字节
- * @param isForceRead 是否在数据不足 @param size 大小时候强制读取已有的全部数据
+ * @param isForceRead 是否在数据不足
+ * @param size 大小时候强制读取已有的全部数据
  * @return 返回是否读取成功
  */
 ret_code_t ReadRingBufferFromISR(RingBuffer *rb, uint8_t *add, uint32_t *size, const uint8_t isForceRead) {
@@ -453,10 +454,10 @@ ret_code_t ResetRingBufferFromISR(RingBuffer *rb) {
  * @return 是否成功
  */
 ret_code_t RingBuffer_WriteReserve(RingBuffer *rb,
-                             uint32_t want,
-                             RingBufferSpan *out,
-                             uint32_t *granted,
-                             bool isCompatible) {
+                                   uint32_t want,
+                                   RingBufferSpan *out,
+                                   uint32_t *granted,
+                                   bool isCompatible) {
     if (!rb || !out || !granted || !rb->buffer || rb->size < 2) return RET_E_INVALID_ARG;
 
     RB_ENTER_CRITICAL();
@@ -552,12 +553,13 @@ ret_code_t RingBuffer_WriteCommit(RingBuffer *rb, uint32_t commit) {
  * @param granted 实际大小
  * @param isCompatible  是否部分存入
  * @return 是否成功
+ * @note DMA使用只能使用p1得长度禁止一次性使用 p1 + p2
  */
 ret_code_t RingBuffer_WriteReserveFromISR(RingBuffer *rb,
-                                    uint32_t want,
-                                    RingBufferSpan *out,
-                                    uint32_t *granted,
-                                    bool isCompatible) {
+                                          uint32_t want,
+                                          RingBufferSpan *out,
+                                          uint32_t *granted,
+                                          bool isCompatible) {
     if (!rb || !out || !granted || !rb->buffer || rb->size < 2) return RET_E_INVALID_ARG;
 
     rb_isr_state_t saved;
@@ -655,12 +657,13 @@ ret_code_t RingBuffer_WriteCommitFromISR(RingBuffer *rb, uint32_t commit) {
  * @param granted 实际获得多少空间
  * @param isCompatible 是否启用兼容模式
  * @return 成功或者失败
+ * @note DMA使用只能使用p1得长度禁止一次性使用 p1 + p2
  */
 ret_code_t RingBuffer_ReadReserve(RingBuffer *rb,
-                            uint32_t want,
-                            RingBufferSpan *out,
-                            uint32_t *granted,
-                            bool isCompatible) {
+                                  uint32_t want,
+                                  RingBufferSpan *out,
+                                  uint32_t *granted,
+                                  bool isCompatible) {
     if (!rb || !out || !granted || !rb->buffer || rb->size < 2) return RET_E_INVALID_ARG;
 
     // 约定：want==0 直接视为成功但授予0（你也可以选择直接 return false，但要一致）
@@ -737,10 +740,10 @@ ret_code_t RingBuffer_ReadReserve(RingBuffer *rb,
  * @return 成功或者失败
  */
 ret_code_t RingBuffer_ReadReserveFromISR(RingBuffer *rb,
-                                   uint32_t want,
-                                   RingBufferSpan *out,
-                                   uint32_t *granted,
-                                   bool isCompatible) {
+                                         uint32_t want,
+                                         RingBufferSpan *out,
+                                         uint32_t *granted,
+                                         bool isCompatible) {
     if (!rb || !out || !granted || !rb->buffer || rb->size < 2) return RET_E_INVALID_ARG;
 
     // 约定：want==0 直接视为成功但授予0（你也可以选择直接 return false，但要一致）
@@ -935,7 +938,6 @@ ret_code_t RingBuffer_DropFromISR(RingBuffer *rb, uint32_t drop, uint32_t *dropp
     RB_EXIT_CRITICAL_FROM_ISR(saved);
     return RET_OK;
 }
-
 
 
 #endif

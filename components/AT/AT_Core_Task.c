@@ -28,7 +28,7 @@ void AT_Core_Task(void *argument) {
 
         if (!(flags & 0x80000000u)) {
             if (flags & AT_FLAG_RX) {
-                AT_Core_Process(mgr); // 仍复用你的拆帧逻辑
+                AT_Core_Process(mgr); // 拆帧逻辑
             }
         }
 
@@ -122,7 +122,7 @@ bool Uart_send(AT_Manager_t *mgr, const uint8_t *data, uint16_t len) {
         if (mgr->tx_busy) return false; // 忙不是“错误”，但启动失败就 false
         mgr->tx_busy = 1;
         if (HAL_UART_Transmit_DMA(mgr->uart, (uint8_t *) data, len) != HAL_OK) {
-            mgr->tx_busy = 0;
+            mgr->tx_busy = 0; //失败回滚
             return false;
         }
         return true; // DMA 已启动

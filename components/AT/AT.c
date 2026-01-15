@@ -221,7 +221,7 @@ void AT_Core_RxCallback(AT_Manager_t *at_manager, const UART_HandleTypeDef *huar
 
 
 /**
- * @brief 对到来的数据进行处理
+ * @brief 对串口接收的数据进行处理
  * @param at_manager AT管理句柄
  */
 void AT_Core_Process(AT_Manager_t *at_manager) {
@@ -270,15 +270,10 @@ void AT_Core_Process(AT_Manager_t *at_manager) {
         /*６、判断数据帧是否完整 丢弃无法读取的*/
         if (frame_len > actual) {
             LOG_E("AT", "数据帧过长尝试丢弃数据 (can=%u fact=%u)", actual, frame_len);
-            uint16_t drop = frame_len - actual;
-            while (drop > 0) {
-                uint8_t dummy[32];
-                uint32_t chunk = (drop > sizeof(dummy)) ? sizeof(dummy) : drop;
-                if (ret_is_err(ReadRingBuffer(&at_manager->rx_rb, dummy, &chunk, 1) || chunk == 0)) {
-                    LOG_E("AT", "超长帧丢弃失败，数据可能已不同步");
-                    break;
-                }
-                drop -= chunk;
+            const uint16_t drop = frame_len - actual;
+            uint32_t dropped = 0;
+            if (ret_is_err(RingBuffer_Drop(&at_manager->rx_rb, drop, &dropped, 0))) {
+                LOG_E("AT", "超长帧丢弃失败，数据可能已不同步");
             }
         }
 
@@ -304,6 +299,7 @@ AT_Resp_t AT_SendCmd(AT_Manager_t *mgr, const char *cmd, const char *expect, uin
 #if !AT_RTOS_ENABLE
     return AT_RESP_ERROR;
 #else
+
     AT_Command_t *h = AT_Submit(mgr, cmd, expect, timeout_ms);
     if (!h) return AT_RESP_BUSY;
 
@@ -534,7 +530,7 @@ AT_Command_t *AT_Submit(AT_Manager_t *mgr,
 }
 
 /**
- *
+ * @brief 阻塞等待直到获取到信号量或者超时
  * @param h 命令对象指针
  * @param wait_ms 等待的时间
  * @return 返回

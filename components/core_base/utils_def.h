@@ -25,10 +25,10 @@ extern "C" {
 
 #define CLAMP(x, lo, hi)    ( ((x) < (lo)) ? (lo) : (((x) > (hi)) ? (hi) : (x)) )
 
-/* ================= Array helpers ================= */
+/* ================= 数组容量计算 ================= */
 #define ARRAY_SIZE(a)       (sizeof(a) / sizeof((a)[0]))
 
-/* ================= Bit helpers ================= */
+/* ================= 位辅助计算 ================= */
 #define BIT(n)              (1UL << (n))
 #define BIT_SET(x, n)       ((x) |= BIT(n))
 #define BIT_CLR(x, n)       ((x) &= ~BIT(n))
@@ -37,11 +37,11 @@ extern "C" {
 #define SET_BITS(reg, mask)     ((reg) |= (mask))
 #define CLR_BITS(reg, mask)     ((reg) &= ~(mask))
 
-/* ================= Align helpers ================= */
-#define ALIGN_UP(x, a)      ( ((x) + ((a) - 1U)) & ~((a) - 1U) )
+/* ================= 对齐辅助器================= */
+#define ALIGN_UP(x, a)      ( ((x) + ((a) - 1U)) & ~((a) - 1U) ) // & ~((a) - 1U) 清除低位
 #define ALIGN_DOWN(x, a)    ( (x) & ~((a) - 1U) )
 
-/* ================= container_of ================= */
+/* ================= 容器================= */
 #ifndef offsetof
 #define offsetof(type, member) __builtin_offsetof(type, member)
 #endif
