@@ -1,24 +1,23 @@
 #include <stdio.h>
 
 #include "log.h"
-#include "usart.h"
-#include "stm32f4xx_hal.h"
 #include "ret_code.h"
+#include "stm32f4xx_hal.h"
+#include "usart.h"
 // 简单忙标志：1=DMA/IT 正在发送
 static volatile uint8_t s_uart_tx_busy = 0;
 
-static int Log_uart_send_async(const uint8_t *d, uint16_t n, void *user)
-{
+static int Log_uart_send_async(const uint8_t *d, uint16_t n, void *user) {
     UART_HandleTypeDef *huart = (UART_HandleTypeDef *)user;
     if (!huart || !d || n == 0) return RET_E_INVALID_ARG;
 
     if (s_uart_tx_busy) return RET_E_BUSY;
 
-    s_uart_tx_busy = 1;
+    s_uart_tx_busy       = 1;
 
     HAL_StatusTypeDef st = HAL_UART_Transmit_DMA(huart, (uint8_t *)d, n);
     if (st == HAL_OK) {
-        return RET_OK; // 已成功启动DMA
+        return RET_OK;  // 已成功启动DMA
     }
 
     // 启动失败：必须清busy，否则永远卡住

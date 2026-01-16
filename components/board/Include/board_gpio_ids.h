@@ -7,4 +7,4 @@ enum {
     HAL_GPIO_ID_BTN1 = 1,
 };
 
-#endif //SMARTLOCK_BOARD_GPIO_IDS_H
+#endif  // SMARTLOCK_BOARD_GPIO_IDS_H

@@ -14,9 +14,9 @@
 
 static void AT_OnLine(AT_Manager_t *mgr, const char *line);
 
-AT_Resp_t   AT_Wait(AT_Command_t *h, uint32_t wait_ms);
+AT_Resp_t AT_Wait(AT_Command_t *h, uint32_t wait_ms);
 
-void        AT_CmdRelease(AT_Manager_t *mgr, AT_Command_t *h);
+void AT_CmdRelease(AT_Manager_t *mgr, AT_Command_t *h);
 
 /**
  * @brief 初始化串口设备句柄初始化变量、消息队列、静态对象池
@@ -24,7 +24,7 @@ void        AT_CmdRelease(AT_Manager_t *mgr, AT_Command_t *h);
  * @param uart      绑定的串口
  * @param hw_send   发送函数指针
  */
-void        AT_Core_Init(AT_Manager_t *at_device, UART_HandleTypeDef *uart, const HW_Send hw_send) {
+void AT_Core_Init(AT_Manager_t *at_device, UART_HandleTypeDef *uart, const HW_Send hw_send) {
     /* 1、接收发送命令函数指针 */
     at_device->hw_send = hw_send;
 
@@ -33,13 +33,13 @@ void        AT_Core_Init(AT_Manager_t *at_device, UART_HandleTypeDef *uart, cons
         LOG_E("RingBuffer", "at_device 环形缓冲区初始化失败");
     }
     LOG_W("heap", "%uKB- %u空间还剩余 %u", MEMORY_POND_MAX_SIZE, AT_RX_RB_SIZE,
-                 query_remain_size());
+          query_remain_size());
 
     if (ret_is_err(CreateRingBuffer(&at_device->msg_len_rb, AT_LEN_RB_SIZE))) {
         LOG_E("RingBuffer", "at_device.mesg_rx_rb 环形缓冲区初始化失败");
     }
     LOG_W("heap", "%uKB- %u空间还剩余 %u", MEMORY_POND_MAX_SIZE, AT_LEN_RB_SIZE,
-                 query_remain_size());
+          query_remain_size());
     /* 3、初始化 HFSM 为空闲状态*/
 
     /* 4、初始化变量 */
@@ -173,8 +173,8 @@ void AT_Core_RxCallback(AT_Manager_t *at_manager, const UART_HandleTypeDef *huar
             /* 检测结束符 \n 或 > */                                                                  \
             if ((b) == '\n' || (b) == '>') {                                                          \
                 /* 将当前行的长度 (uint16_t) 存入 长度 RingBuffer */                                  \
-                uint16_t   len_val       = at_manager->isr_line_len;                                  \
-                uint32_t   len_size      = sizeof(uint16_t);                                          \
+                uint16_t len_val         = at_manager->isr_line_len;                                  \
+                uint32_t len_size        = sizeof(uint16_t);                                          \
                 /* 把 &len_val 强转为 uint8_t* 写入 2 个字节 */                                       \
                 ret_code_t ok_len        = WriteRingBufferFromISR(&at_manager->msg_len_rb,            \
                                                                   (uint8_t *)&len_val, &len_size, 0); \
@@ -232,7 +232,7 @@ void AT_Core_Process(AT_Manager_t *at_manager) {
     while (RingBuffer_GetUsedSize(&at_manager->msg_len_rb) >= sizeof(uint16_t)) {
         /* 2、 读取数据 */
         uint32_t size = sizeof(uint16_t);
-        uint8_t  len_size_t[2];
+        uint8_t len_size_t[2];
 
         /* 3、判读当前行的字节数 是否大于最大可读数 */
         if (ret_is_err(ReadRingBuffer(&at_manager->msg_len_rb, len_size_t, &size, 0))) {
@@ -248,13 +248,13 @@ void AT_Core_Process(AT_Manager_t *at_manager) {
         const uint16_t frame_len = (uint16_t)len_size_t[0] | ((uint16_t)len_size_t[1] << 8);
 
         /* 限制最大读取数 */
-        uint16_t       actual    = frame_len;
+        uint16_t actual          = frame_len;
         if (actual > (AT_LINE_MAX_LEN - 1)) {
             actual = (AT_LINE_MAX_LEN - 1);
         }
 
         /* 5、读取数据帧 */
-        uint32_t         to_read = actual;
+        uint32_t to_read    = actual;
         const ret_code_t rc = ReadRingBuffer(&at_manager->rx_rb, at_manager->line_buf, &to_read, 0);
         if (ret_is_err(rc) || (to_read != actual)) {
             LOG_E("AT", "数据帧读取失败/不同步 (need=%u got=%u rc=%d)", actual, to_read, (int)rc);
@@ -264,8 +264,8 @@ void AT_Core_Process(AT_Manager_t *at_manager) {
         /*６、判断数据帧是否完整 丢弃无法读取的*/
         if (frame_len > actual) {
             LOG_E("AT", "数据帧过长尝试丢弃数据 (can=%u fact=%u)", actual, frame_len);
-            const uint16_t drop    = frame_len - actual;
-            uint32_t       dropped = 0;
+            const uint16_t drop = frame_len - actual;
+            uint32_t dropped    = 0;
             if (ret_is_err(RingBuffer_Drop(&at_manager->rx_rb, drop, &dropped, 0))) {
                 LOG_E("AT", "超长帧丢弃失败，数据可能已不同步");
             }
@@ -313,8 +313,8 @@ static void AT_OnLine(AT_Manager_t *mgr, const char *line) {
 
     /* 有正在执行的命令：优先作为响应处理 */
     if (mgr->curr_cmd) {
-        AT_Command_t *c      = mgr->curr_cmd;
-        const char   *expect = (c->expect_buf[0] != '\0') ? c->expect_buf : "OK";
+        AT_Command_t *c    = mgr->curr_cmd;
+        const char *expect = (c->expect_buf[0] != '\0') ? c->expect_buf : "OK";
 
         if (strstr(line, expect)) {
             c->result     = AT_RESP_OK;
@@ -364,8 +364,8 @@ static void AT_OnLine(AT_Manager_t *mgr, const char *line) {
  */
 uint32_t AT_MsToTicks(const uint32_t ms) {
 #if AT_RTOS_ENABLE
-    const uint32_t freq  = OSAL_tick_freq_hz();
-    uint64_t       ticks = ((uint64_t)ms * freq + 999u) / 1000u;
+    const uint32_t freq = OSAL_tick_freq_hz();
+    uint64_t ticks      = ((uint64_t)ms * freq + 999u) / 1000u;
     if (ticks > 0xFFFFFFFFu) ticks = 0xFFFFFFFFu;
     return (uint32_t)ticks;
 #else
@@ -391,7 +391,7 @@ static AT_Command_t *AT_CmdAlloc(AT_Manager_t *mgr) {
     /* 获取在池中的位置 */
     const uint16_t idx = mgr->free_stack[--mgr->free_top];
     /* 根据索引返回空闲对象指针 */
-    AT_Command_t  *c   = &mgr->cmd_pool[idx];
+    AT_Command_t *c    = &mgr->cmd_pool[idx];
     /* 当前对象在内存池中标记为被使用 */
     c->in_use          = 1;
 
@@ -606,7 +606,7 @@ AT_Command_t *AT_SendAsync(AT_Manager_t *mgr, const char *cmd, const char *expec
 uint32_t AT_TxTimeoutMs(AT_Manager_t *mgr, uint16_t len) {
     // 估算：1字节≈10bit（起始+8数据+停止），超时时间留余量
     const uint32_t baud = (mgr && mgr->uart) ? mgr->uart->Init.BaudRate : 115200;
-    uint32_t       ms   = (uint32_t)((uint64_t)len * 10u * 1000u / baud);
+    uint32_t ms         = (uint32_t)((uint64_t)len * 10u * 1000u / baud);
     if (ms < 5) ms = 5;
     return ms + 20;  // 额外裕量
 }

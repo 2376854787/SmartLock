@@ -79,9 +79,9 @@ void keyCallback(KEY_TypedefHandle *key, KEY_ActionType action) {
     }
 }
 
-static KeyInfo            key0_info   = {KEY0_GPIO_Port, KEY0_Pin};
-static KeyInfo            key1_info   = {KEY1_GPIO_Port, KEY1_Pin};
-static KeyInfo            key2_info   = {KEY2_GPIO_Port, KEY2_Pin};
+static KeyInfo key0_info              = {KEY0_GPIO_Port, KEY0_Pin};
+static KeyInfo key1_info              = {KEY1_GPIO_Port, KEY1_Pin};
+static KeyInfo key2_info              = {KEY2_GPIO_Port, KEY2_Pin};
 static const KEY_Config_t key0_config = {
     .name           = "KEY0",
     .active_level   = 0,
@@ -120,9 +120,9 @@ static KEY_TypedefHandle key2;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
-void                     SystemClock_Config(void);
+void SystemClock_Config(void);
 
-void                     MX_FREERTOS_Init(void);
+void MX_FREERTOS_Init(void);
 
 /* USER CODE BEGIN PFP */
 

@@ -1,9 +1,10 @@
 /* 全局启用配置宏 */
 #include "APP_config.h"
 #ifdef ENABLE_AT_SYSTEM
-#include "AT_Core_Task.h"
 #include <stdio.h>
 #include <string.h>
+
+#include "AT_Core_Task.h"
 /* 任务句柄 */
 osal_thread_t AT_Core_Task_Handle = NULL;
 
@@ -18,17 +19,16 @@ bool Uart_send(AT_Manager_t *mgr, const uint8_t *data, uint16_t len);
  * @note 负责接收通知然后处理接收的数据
  */
 void AT_Core_Task(void *argument) {
-    AT_Manager_t *mgr = (AT_Manager_t *) argument;
+    AT_Manager_t *mgr = (AT_Manager_t *)argument;
 
     for (;;) {
         /*  用一个小超时周期，让有机会做超时检查*/
         const uint32_t flags = OSAL_thread_flags_wait(AT_FLAG_RX | AT_FLAG_TX | AT_FLAG_TXDONE,
-                                                      OSAL_FLAGS_WAIT_ANY,
-                                                      10);
+                                                      OSAL_FLAGS_WAIT_ANY, 10);
 
         if (!(flags & 0x80000000u)) {
             if (flags & AT_FLAG_RX) {
-                AT_Core_Process(mgr); // 拆帧逻辑
+                AT_Core_Process(mgr);  // 拆帧逻辑
             }
         }
 
@@ -45,18 +45,20 @@ void AT_Core_Task(void *argument) {
 
             AT_Command_t *next = NULL;
             if (OSAL_msgq_get(mgr->cmd_q, &next, 0) == RET_OK && next) {
-                mgr->curr_cmd = next;
-                mgr->req_start_tick = OSAL_tick_get();
+                mgr->curr_cmd           = next;
+                mgr->req_start_tick     = OSAL_tick_get();
                 mgr->curr_deadline_tick = mgr->req_start_tick + OSAL_ms_to_ticks(next->timeout_ms);
                 LOG_D("AT", "deq cmd=%s", next->cmd_buf);
                 /* 调用发送函数 */
                 if (mgr->hw_send) {
                     /* 未发生完成就返回 释放命令对象的信号量 重新通知任务发送 */
-                    const bool ok = mgr->hw_send(mgr, (uint8_t *) next->cmd_buf, (uint16_t) strlen(next->cmd_buf));
-                    LOG_D("AT", "send ok=%d busy=%u mode=%u", (int)ok, mgr->tx_busy, (unsigned)mgr->tx_mode);
+                    const bool ok = mgr->hw_send(mgr, (uint8_t *)next->cmd_buf,
+                                                 (uint16_t)strlen(next->cmd_buf));
+                    LOG_D("AT", "send ok=%d busy=%u mode=%u", (int)ok, mgr->tx_busy,
+                          (unsigned)mgr->tx_mode);
                     /* 异常处理 */
                     if (!ok) {
-                        next->result = AT_RESP_ERROR;
+                        next->result  = AT_RESP_ERROR;
                         mgr->curr_cmd = NULL;
                         OSAL_sem_give(next->done_sem);
                         OSAL_thread_flags_set(mgr->core_task, AT_FLAG_TX); /* 继续发下一条 */
@@ -70,10 +72,10 @@ void AT_Core_Task(void *argument) {
         if (mgr->curr_cmd) {
             const uint32_t now = OSAL_tick_get();
             // 处理 tick 回绕：用有符号差判断
-            if ((int32_t) (now - mgr->curr_deadline_tick) >= 0) {
+            if ((int32_t)(now - mgr->curr_deadline_tick) >= 0) {
                 AT_Command_t *c = mgr->curr_cmd;
-                c->result = AT_RESP_TIMEOUT;
-                mgr->curr_cmd = NULL;
+                c->result       = AT_RESP_TIMEOUT;
+                mgr->curr_cmd   = NULL;
                 OSAL_sem_give(c->done_sem);
 
                 /* 超时后立刻尝试发下一条（提高吞吐）*/
@@ -83,15 +85,14 @@ void AT_Core_Task(void *argument) {
     }
 }
 
-
 /**
  * @brief 初初始化AT_回调处理任务
  */
 void at_core_task_init(AT_Manager_t *at, UART_HandleTypeDef *uart) {
     const osal_thread_attr_t at_attr = {
-        .name = "AT_Core_Task",
+        .name       = "AT_Core_Task",
         .stack_size = 256 * 6,
-        .priority = (osal_priority_t) OSAL_PRIO_NORMAL, /*  Normal，以免被低优先级日志阻塞 */
+        .priority   = (osal_priority_t)OSAL_PRIO_NORMAL, /*  Normal，以免被低优先级日志阻塞 */
     };
 
     /* 1. 创建任务 */
@@ -119,19 +120,18 @@ bool Uart_send(AT_Manager_t *mgr, const uint8_t *data, uint16_t len) {
 
 #if defined(AT_TX_USE_DMA) && (AT_TX_USE_DMA == 1)
     if (mgr->tx_mode == AT_TX_DMA) {
-        if (mgr->tx_busy) return false; // 忙不是“错误”，但启动失败就 false
+        if (mgr->tx_busy) return false;  // 忙不是“错误”，但启动失败就 false
         mgr->tx_busy = 1;
-        if (HAL_UART_Transmit_DMA(mgr->uart, (uint8_t *) data, len) != HAL_OK) {
-            mgr->tx_busy = 0; //失败回滚
+        if (HAL_UART_Transmit_DMA(mgr->uart, (uint8_t *)data, len) != HAL_OK) {
+            mgr->tx_busy = 0;  // 失败回滚
             return false;
         }
-        return true; // DMA 已启动
+        return true;  // DMA 已启动
     }
 #endif
 
-    return (HAL_UART_Transmit(mgr->uart, (uint8_t *) data, len, HAL_MAX_DELAY) == HAL_OK);
+    return (HAL_UART_Transmit(mgr->uart, (uint8_t *)data, len, HAL_MAX_DELAY) == HAL_OK);
 }
-
 
 /**
  * @brief 释放信号量
@@ -149,6 +149,5 @@ void AT_Manage_TxCpltCallback(UART_HandleTypeDef *huart) {
         OSAL_thread_flags_set(mgr->core_task, AT_FLAG_TXDONE);
     }
 }
-
 
 #endif

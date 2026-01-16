@@ -3,21 +3,21 @@
 
 #include "log.h"
 #include "osal.h"
-#include "stm32f4xx_hal.h"/* 可以更改不同系列 */
 #include "stm32f4xx.h"
+#include "stm32f4xx_hal.h" /* 可以更改不同系列 */
 #include "utils_def.h"
 /* dwt初始化标志位 */
-static bool dwt_inited = false;
+static bool dwt_inited      = false;
 /* dwt 有效标志位 */
-static bool dwt_available = false;
+static bool dwt_available   = false;
 /* 只打印一次失败信息 */
 static bool dwt_fail_logged = false;
 /**
  * 初始化 DWT寄存器
  */
 static void dwt_init_once(void) {
-    //DWT初始化
-    BIT_SET(CoreDebug->DEMCR, 24); //使能DWT外设
+    // DWT初始化
+    BIT_SET(CoreDebug->DEMCR, 24);  // 使能DWT外设
     DWT->CYCCNT = 0;
     BIT_SET(DWT->CTRL, 0);
     __DSB();
@@ -88,6 +88,6 @@ uint32_t hal_get_tick_us32(void) {
     /* DWT 启动成功才采用该值 */
     const uint32_t cycles_per_us = SystemCoreClock / 1000000U;
     if (cycles_per_us == 0U) return hal_get_tick_ms() * 1000U;
-    const uint32_t us = (uint32_t) DWT->CYCCNT / cycles_per_us;
+    const uint32_t us = (uint32_t)DWT->CYCCNT / cycles_per_us;
     return us;
 }

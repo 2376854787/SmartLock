@@ -4,30 +4,30 @@
 
 #ifndef SMARTCLOCK_AT_H
 #define SMARTCLOCK_AT_H
-#include "stm32f4xx_hal.h"
 #include "HFSM.h"
 #include "RingBuffer.h"
+#include "stm32f4xx_hal.h"
 /* 1: 启用RTOS模式(信号量/互斥锁)  0: 启用裸机模式(轮询) */
 #ifndef AT_RTOS_ENABLE
-#define AT_RTOS_ENABLE      1    /*是否启用了RTOS*/
+#define AT_RTOS_ENABLE 1 /*是否启用了RTOS*/
 #endif
 /* 2、=阻塞发送(HAL_UART_Transmit)  1=DMA发送(HAL_UART_Transmit_DMA)*/
 #ifndef AT_TX_USE_DMA
-#define AT_TX_USE_DMA   1
+#define AT_TX_USE_DMA 1
 #endif
 /* 核心任务任务通知唤醒 */
-#define AT_FLAG_RX       (1u << 0)
-#define AT_FLAG_TX       (1u << 1)
-#define AT_FLAG_TXDONE   (1u << 2)
+#define AT_FLAG_RX (1u << 0)
+#define AT_FLAG_TX (1u << 1)
+#define AT_FLAG_TXDONE (1u << 2)
 /* AT指令超时设置 */
-#define AT_RX_RB_SIZE       1024        /* AT接收环形缓冲区大小 最好为2的幂*/
-#define AT_LEN_RB_SIZE      64          /* 长度缓冲区: 存每行的长度 (存32行足够了, 32*2byte=64) */
-#define AT_DMA_BUF_SIZE     256         /* DMA 接收缓冲区 */
-#define AT_LINE_MAX_LEN     256         /* 单行回复最大长度 */
-#define AT_CMD_TIMEOUT_DEF  5000        /* 默认超时时间 5s */
-#define AT_MAX_PENDING      16          /* 同同一个串口最大排队的命令数 */
-#define AT_CMD_MAX_LEN      128         /* 命令缓存长度  */
-#define AT_EXPECT_MAX_LEN   64          /* expect 缓存长度 */
+#define AT_RX_RB_SIZE 1024      /* AT接收环形缓冲区大小 最好为2的幂*/
+#define AT_LEN_RB_SIZE 64       /* 长度缓冲区: 存每行的长度 (存32行足够了, 32*2byte=64) */
+#define AT_DMA_BUF_SIZE 256     /* DMA 接收缓冲区 */
+#define AT_LINE_MAX_LEN 256     /* 单行回复最大长度 */
+#define AT_CMD_TIMEOUT_DEF 5000 /* 默认超时时间 5s */
+#define AT_MAX_PENDING 16       /* 同同一个串口最大排队的命令数 */
+#define AT_CMD_MAX_LEN 128      /* 命令缓存长度  */
+#define AT_EXPECT_MAX_LEN 64    /* expect 缓存长度 */
 
 /* 根据模式引入头文件 */
 #if AT_RTOS_ENABLE
@@ -43,26 +43,23 @@ typedef bool (*HW_Send)(AT_Manager_t *mgr, const uint8_t *data, uint16_t len);
 /* ================= 枚举定义 ================= */
 /* AT命令执行返回的结果 */
 typedef enum {
-    AT_RESP_OK = 0, /* 收到了期待的回复 */
-    AT_RESP_ERROR, /*收到了“Error” */
+    AT_RESP_OK = 0,  /* 收到了期待的回复 */
+    AT_RESP_ERROR,   /*收到了“Error” */
     AT_RESP_TIMEOUT, /* 系统超时没有回复 */
-    AT_RESP_BUSY, /* 系统忙 */
-    AT_RESP_WAITING /* (内部状态) 正在等待中 */
+    AT_RESP_BUSY,    /* 系统忙 */
+    AT_RESP_WAITING  /* (内部状态) 正在等待中 */
 } AT_Resp_t;
 
 /* 内部事件 ID （用于驱动 HFSM）*/
 typedef enum {
     AT_EVT_NONE = 0,
-    AT_EVT_SEND, /* [操作] 请求发送 */
+    AT_EVT_SEND,    /* [操作] 请求发送 */
     AT_EVT_RX_LINE, /* [中断/轮询] 收到了一行完整数据 */
     AT_EVT_TIMEOUT, /* [Tick] 定时器超时 */
 } AT_EventID_t;
 
 /* 串口发送是否采用DMA */
-typedef enum {
-    AT_TX_BLOCK = 0,
-    AT_TX_DMA = 1
-} AT_TxMode;
+typedef enum { AT_TX_BLOCK = 0, AT_TX_DMA = 1 } AT_TxMode;
 
 /**
  * @brief AT 命令对象（一次请求-响应会话的载体）
@@ -134,7 +131,6 @@ typedef struct {
 
 } AT_Command_t;
 
-
 /**
  * @brief AT 管理器（一个串口实例/一个 AT 会话域的运行上下文）
  *
@@ -150,7 +146,6 @@ typedef struct {
  * - 核心任务：消费行、执行匹配、驱动命令会话完成、路由 URC
  */
 typedef struct AT_Manager_t {
-
     /* =========================================================
      * 1) 状态机（可选：用于扩展 payload 模式、恢复模式等）
      * ========================================================= */
@@ -347,7 +342,6 @@ typedef struct AT_Manager_t {
 
 } AT_Manager_t;
 
-
 /* ================= API 声明 ================= */
 
 /**
@@ -381,7 +375,8 @@ void AT_Core_Process(AT_Manager_t *at_manager);
  * @param timeout_ms 超时时间(ms)
  * @return 执行结果
  */
-AT_Resp_t AT_SendCmd(AT_Manager_t *at_manager, const char *cmd, const char *expect, uint32_t timeout_ms);
+AT_Resp_t AT_SendCmd(AT_Manager_t *at_manager, const char *cmd, const char *expect,
+                     uint32_t timeout_ms);
 
 /**
  * @brief 将ms转换为心跳
@@ -413,9 +408,7 @@ void AT_SetUrcHandler(AT_Manager_t *mgr, AT_UrcCb cb, void *user);
  * @param timeout_ms 超时时间
  * @return 返回一个装填好的命令对象指针
  */
-AT_Command_t *AT_Submit(AT_Manager_t *mgr,
-                        const char *cmd,
-                        const char *expect,
+AT_Command_t *AT_Submit(AT_Manager_t *mgr, const char *cmd, const char *expect,
                         uint32_t timeout_ms);
 
 /**
@@ -427,7 +420,8 @@ AT_Command_t *AT_Submit(AT_Manager_t *mgr,
  * @return 返回一个装填好的命令对象指针
  * @note  非阻塞版
  */
-AT_Command_t *AT_SendAsync(AT_Manager_t *mgr, const char *cmd, const char *expect, uint32_t timeout_ms);
+AT_Command_t *AT_SendAsync(AT_Manager_t *mgr, const char *cmd, const char *expect,
+                           uint32_t timeout_ms);
 
 /**
  * @brief 获取信号量确保发送后被任务唤醒
@@ -451,4 +445,4 @@ uint32_t AT_TxTimeoutMs(AT_Manager_t *mgr, uint16_t len);
  */
 void AT_SetTxMode(AT_Manager_t *mgr, AT_TxMode mode);
 
-#endif //SMARTCLOCK_AT_H
+#endif  // SMARTCLOCK_AT_H

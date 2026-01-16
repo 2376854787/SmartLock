@@ -9,7 +9,7 @@ SpacesBeforeTrailingComments: 2
 # 连续赋值时等号对齐（非常适合结构体和枚举）
 AlignConsecutiveAssignments: AcrossEmptyLinesAndComments
 # 连续声明时变量名对齐
-AlignConsecutiveDeclarations: AcrossEmptyLinesAndComments
+#AlignConsecutiveDeclarations: AcrossEmptyLinesAndComments
 # 尾随注释对齐
 AlignTrailingComments: true
 

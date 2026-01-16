@@ -1,13 +1,13 @@
 #include "APP_config.h"
 /* 全局配置开启宏 */
 #ifdef ENABLE_ASSERT_SYSTEM
-#include "assert_cus.h"
 #include <string.h>
+
+#include "assert_cus.h"
 #include "compiler_cus.h"
 /*  assert 里打日志，把 log.h include 进来
  * assert 不能依赖“可能阻塞”的输出路径；只在任务态且 log 异步就绪时打印
  */
-
 
 #ifdef ASSERT_USE_LOG
 #include "log.h"
@@ -34,8 +34,8 @@ static volatile assert_record_t g_assert_record;
 
 /* 断言运行默认配置 */
 static assert_config_t g_cfg = {
-    .action = ASSERT_ACTION_HALT,
-    .enable_log = 1,
+    .action        = ASSERT_ACTION_HALT,
+    .enable_log    = 1,
     .enable_record = 1,
 };
 
@@ -80,10 +80,11 @@ __WEAK void Assert_PlatformReset(void) {
     NVIC_SystemReset();
 #else
     /* fallback: halt */
-    while (1) { ; }
+    while (1) {
+        ;
+    }
 #endif
 }
-
 
 /**
  * @brief 断言平台失败
@@ -93,7 +94,9 @@ __WEAK void Assert_PlatformHalt(void) {
 #if defined(__arm__) || defined(__ARM_ARCH)
     __disable_irq();
 #endif
-    while (1) { ; }
+    while (1) {
+        ;
+    }
 }
 
 /**
@@ -126,6 +129,5 @@ void Assert_OnFail(const char *expr, const char *file, int line) {
             return;
     }
 }
-
 
 #endif

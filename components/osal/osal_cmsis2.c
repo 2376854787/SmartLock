@@ -1,11 +1,11 @@
-#include "osal_config.h"
-#include "osal.h"
 #include "APP_config.h"
+#include "osal.h"
+#include "osal_config.h"
 
 #if OSAL_BACKEND_CMSIS_OS2
-#include "cmsis_os2.h"
 #include "cmsis_gcc.h" /*　＿＿get_IPSR */
 #include "cmsis_os.h"
+#include "cmsis_os2.h"
 #include "stddef.h"
 
 /* ============ 断言 =============*/
@@ -14,11 +14,17 @@
 #include "assert_cus.h"
 #endif
 #ifdef ENABLE_ASSERT_SYSTEM
-#define OSAL_ASSERT(expr)   CORE_ASSERT(expr)
-#define OSAL_FAULT(expr)    CORE_FAULT_ASSERT(expr)
+#define OSAL_ASSERT(expr) CORE_ASSERT(expr)
+#define OSAL_FAULT(expr) CORE_FAULT_ASSERT(expr)
 #else
-#define OSAL_ASSERT(expr)   do { (void)(expr); } while (0)
-#define OSAL_FAULT(expr)    do { (void)(expr); } while (0)
+#define OSAL_ASSERT(expr) \
+    do {                  \
+        (void)(expr);     \
+    } while (0)
+#define OSAL_FAULT(expr) \
+    do {                 \
+        (void)(expr);    \
+    } while (0)
 #endif
 /* ============ 断言 =============*/
 
@@ -27,15 +33,15 @@
 #include "task.h"
 #endif
 
-
 /* ====== 临界区模式编码：使用 state 高位标记，低位存原始值 ====== */
-#define OSAL_CRIT_MODE_MASK          (0xC0000000UL)
-#define OSAL_CRIT_MODE_PRIMASK       (0x40000000UL)  /* 线程态&调度未启：PRIMASK 可恢复 */
-#define OSAL_CRIT_MODE_RTOS_THREAD   (0x80000000UL)  /* 线程态&调度已启：taskENTER/EXIT_CRITICAL */
-#define OSAL_CRIT_MODE_RTOS_ISR      (0xC0000000UL)  /* ISR：taskENTER/EXIT_CRITICAL_FROM_ISR */
+#define OSAL_CRIT_MODE_MASK (0xC0000000UL)
+#define OSAL_CRIT_MODE_PRIMASK (0x40000000UL)     /* 线程态&调度未启：PRIMASK 可恢复 */
+#define OSAL_CRIT_MODE_RTOS_THREAD (0x80000000UL) /* 线程态&调度已启：taskENTER/EXIT_CRITICAL */
+#define OSAL_CRIT_MODE_RTOS_ISR (0xC0000000UL)    /* ISR：taskENTER/EXIT_CRITICAL_FROM_ISR */
 
-#define OSAL_CRIT_PAYLOAD_MASK       (0x3FFFFFFFUL)  /* 低 30 位存 payload（足够容纳常见返回值） */
-/* ================================================ 内核状态/时间 ====================================================== */
+#define OSAL_CRIT_PAYLOAD_MASK (0x3FFFFFFFUL) /* 低 30 位存 payload（足够容纳常见返回值） */
+/* ================================================ 内核状态/时间
+ * ====================================================== */
 /**
  *
  * @param timeout_ms 需要转换的超时时间
@@ -54,11 +60,16 @@ static uint32_t OSAL_timeout_ms_to_kernel_ticks(uint32_t timeout_ms) {
  */
 static osPriority_t OSAL_map_prio(osal_priority_t p) {
     switch (p) {
-        case OSAL_PRIO_LOW: return osPriorityLow;
-        case OSAL_PRIO_NORMAL: return osPriorityNormal;
-        case OSAL_PRIO_HIGH: return osPriorityHigh;
-        case OSAL_PRIO_REALTIME: return osPriorityRealtime;
-        default: return osPriorityNormal;
+        case OSAL_PRIO_LOW:
+            return osPriorityLow;
+        case OSAL_PRIO_NORMAL:
+            return osPriorityNormal;
+        case OSAL_PRIO_HIGH:
+            return osPriorityHigh;
+        case OSAL_PRIO_REALTIME:
+            return osPriorityRealtime;
+        default:
+            return osPriorityNormal;
     }
 }
 
@@ -75,7 +86,7 @@ bool OSAL_kernel_is_running() {
  * @return RTOS ticks
  */
 osal_tick_t OSAL_tick_get() {
-    return (uint32_t) osKernelGetTickCount();
+    return (uint32_t)osKernelGetTickCount();
 }
 
 /**
@@ -83,7 +94,7 @@ osal_tick_t OSAL_tick_get() {
  * @return RTOS 心跳频率
  */
 uint32_t OSAL_tick_freq_hz() {
-    return (uint32_t) osKernelGetTickFreq();
+    return (uint32_t)osKernelGetTickFreq();
 }
 
 /**
@@ -93,10 +104,10 @@ uint32_t OSAL_tick_freq_hz() {
  */
 uint32_t OSAL_ms_to_ticks(uint32_t ms) {
     if (ms == 0) return 0;
-    const uint32_t hz = OSAL_tick_freq_hz();
+    const uint32_t hz   = OSAL_tick_freq_hz();
     /* 向上取整 */
-    const uint64_t nums = (uint64_t) ms * (uint64_t) hz + (999U);
-    return (uint32_t) (nums / 1000U);
+    const uint64_t nums = (uint64_t)ms * (uint64_t)hz + (999U);
+    return (uint32_t)(nums / 1000U);
 }
 
 /**
@@ -107,8 +118,8 @@ uint32_t OSAL_ms_to_ticks(uint32_t ms) {
 uint32_t OSAL_tick_to_ms(osal_tick_t ticks) {
     const uint32_t hz = OSAL_tick_freq_hz();
     if (hz == 0) return 0;
-    const uint64_t nums = (uint64_t) ticks * (uint64_t) 1000U;
-    return (uint32_t) (nums / (uint64_t) hz);
+    const uint64_t nums = (uint64_t)ticks * (uint64_t)1000U;
+    return (uint32_t)(nums / (uint64_t)hz);
 }
 
 /**
@@ -118,7 +129,7 @@ uint32_t OSAL_tick_to_ms(osal_tick_t ticks) {
  */
 ret_code_t OSAL_delay_ms(uint32_t ms) {
     if (ms == 0) return RET_OK;
-    (void) osDelay(OSAL_ms_to_ticks(ms));
+    (void)osDelay(OSAL_ms_to_ticks(ms));
     return RET_OK;
 }
 
@@ -137,14 +148,15 @@ bool OSAL_in_isr(void) {
  * @return 是否超时
  */
 bool OSAL_is_timeout(osal_tick_t start_tick, uint32_t duration_ms) {
-    const osal_tick_t now = OSAL_tick_get();
+    const osal_tick_t now    = OSAL_tick_get();
     const uint32_t dur_ticks = OSAL_ms_to_ticks(duration_ms);
-    return ((osal_tick_t) (now - start_tick) >= (osal_tick_t) dur_ticks);
+    return ((osal_tick_t)(now - start_tick) >= (osal_tick_t)dur_ticks);
 }
 
-/* ====================================================== 临界区 ====================================================== */
+/* ====================================================== 临界区
+ * ====================================================== */
 /* 裸机/调度未启动：PRIMASK 嵌套 */
-static uint32_t g_irq_crit_nest = 0U;
+static uint32_t g_irq_crit_nest     = 0U;
 static uint32_t g_irq_saved_primask = 0U;
 
 /**
@@ -203,14 +215,15 @@ void OSAL_enter_critical_ex(osal_crit_state_t *state) {
         /* 调度未启动时不要走 FreeRTOS FROM_ISR，回退 PRIMASK */
         if (OSAL_kernel_is_running()) {
             const UBaseType_t s = taskENTER_CRITICAL_FROM_ISR();
-            *state = (osal_crit_state_t) ((((uint32_t) s) & OSAL_CRIT_PAYLOAD_MASK) | OSAL_CRIT_MODE_RTOS_ISR);
+            *state              = (osal_crit_state_t)((((uint32_t)s) & OSAL_CRIT_PAYLOAD_MASK) |
+                                         OSAL_CRIT_MODE_RTOS_ISR);
             return;
         }
         /* else fallthrough -> PRIMASK */
     } else {
         if (OSAL_kernel_is_running()) {
             taskENTER_CRITICAL();
-            *state = (osal_crit_state_t) OSAL_CRIT_MODE_RTOS_THREAD;
+            *state = (osal_crit_state_t)OSAL_CRIT_MODE_RTOS_THREAD;
             return;
         }
         /* else fallthrough -> PRIMASK */
@@ -222,7 +235,7 @@ void OSAL_enter_critical_ex(osal_crit_state_t *state) {
         uint32_t s = __get_PRIMASK();
         __disable_irq();
         __DMB();
-        *state = (osal_crit_state_t) ((s & 0x1UL) | OSAL_CRIT_MODE_PRIMASK);
+        *state = (osal_crit_state_t)((s & 0x1UL) | OSAL_CRIT_MODE_PRIMASK);
     }
 }
 
@@ -231,11 +244,11 @@ void OSAL_enter_critical_ex(osal_crit_state_t *state) {
  * @param state 进入临界区时保存的状态
  */
 void OSAL_exit_critical_ex(osal_crit_state_t state) {
-    const uint32_t mode = ((uint32_t) state) & OSAL_CRIT_MODE_MASK;
+    const uint32_t mode = ((uint32_t)state) & OSAL_CRIT_MODE_MASK;
 
 #if OSAL_CRITICAL_IMPL_FREERTOS
     if (mode == OSAL_CRIT_MODE_RTOS_ISR) {
-        const UBaseType_t s = (UBaseType_t) (((uint32_t) state) & OSAL_CRIT_PAYLOAD_MASK);
+        const UBaseType_t s = (UBaseType_t)(((uint32_t)state) & OSAL_CRIT_PAYLOAD_MASK);
         taskEXIT_CRITICAL_FROM_ISR(s);
         return;
     }
@@ -249,7 +262,7 @@ void OSAL_exit_critical_ex(osal_crit_state_t state) {
     /* PRIMASK 模式 */
     if (mode == OSAL_CRIT_MODE_PRIMASK) {
         __DMB();
-        __set_PRIMASK(((uint32_t) state) & 0x1UL);
+        __set_PRIMASK(((uint32_t)state) & 0x1UL);
         return;
     }
 
@@ -267,7 +280,7 @@ void OSAL_enter_critical_from_isr(osal_crit_state_t *state) {
 #if OSAL_CRITICAL_IMPL_FREERTOS
     if (OSAL_kernel_is_running()) {
         const UBaseType_t s = taskENTER_CRITICAL_FROM_ISR();
-        *state = (osal_crit_state_t) s;
+        *state              = (osal_crit_state_t)s;
         return;
     }
 #endif
@@ -277,7 +290,7 @@ void OSAL_enter_critical_from_isr(osal_crit_state_t *state) {
         uint32_t s = __get_PRIMASK();
         __disable_irq();
         __DMB();
-        *state = (osal_crit_state_t) s;
+        *state = (osal_crit_state_t)s;
     }
 }
 
@@ -294,11 +307,11 @@ void OSAL_exit_critical_from_isr(osal_crit_state_t state) {
 #endif
 
     __DMB();
-    __set_PRIMASK((uint32_t) state);
+    __set_PRIMASK((uint32_t)state);
 }
 
-
-/* ================================================== 互斥锁 ========================================================= */
+/* ================================================== 互斥锁
+ * ========================================================= */
 /**
  * @brief 创建一个互斥锁
  * @param out 返回锁对象
@@ -307,21 +320,22 @@ void OSAL_exit_critical_from_isr(osal_crit_state_t state) {
  * @param prio_inherit
  * @return 锁是否创建成功
  */
-ret_code_t OSAL_mutex_create(osal_mutex_t *out, const char *name, bool recursive, bool prio_inherit) {
+ret_code_t OSAL_mutex_create(osal_mutex_t *out, const char *name, bool recursive,
+                             bool prio_inherit) {
     if (!out) return RET_E_INVALID_ARG;
 
     osMutexAttr_t attr;
-    attr.name = name;
+    attr.name      = name;
     attr.attr_bits = 0;
     if (recursive) attr.attr_bits |= osMutexRecursive;
-    if (prio_inherit)attr.attr_bits |= osMutexPrioInherit;
-    attr.cb_mem = NULL;
-    attr.cb_size = 0;
+    if (prio_inherit) attr.attr_bits |= osMutexPrioInherit;
+    attr.cb_mem    = NULL;
+    attr.cb_size   = 0;
 
     osMutexId_t id = osMutexNew(&attr);
     if (!id) return RET_E_NO_MEM;
 
-    *out = (osal_mutex_t) id;
+    *out = (osal_mutex_t)id;
     return RET_OK;
 }
 
@@ -332,7 +346,7 @@ ret_code_t OSAL_mutex_create(osal_mutex_t *out, const char *name, bool recursive
  */
 ret_code_t OSAL_mutex_delete(osal_mutex_t mutex) {
     if (!mutex) return RET_E_INVALID_ARG;
-    osStatus_t status = osMutexDelete((osMutexId_t) mutex);
+    osStatus_t status = osMutexDelete((osMutexId_t)mutex);
     if (status == osOK) return RET_OK;
     if (status == osErrorParameter) return RET_E_INVALID_ARG;
     return RET_E_FAIL;
@@ -346,8 +360,8 @@ ret_code_t OSAL_mutex_delete(osal_mutex_t mutex) {
  */
 ret_code_t OSAL_mutex_lock(osal_mutex_t mutex, uint32_t timeout_ms) {
     if (!mutex) return RET_E_INVALID_ARG;
-    const uint32_t to = OSAL_timeout_ms_to_kernel_ticks(timeout_ms);
-    const osStatus_t st = osMutexAcquire((osMutexId_t) mutex, to);
+    const uint32_t to   = OSAL_timeout_ms_to_kernel_ticks(timeout_ms);
+    const osStatus_t st = osMutexAcquire((osMutexId_t)mutex, to);
     if (st == osOK) return RET_OK;
     if (st == osErrorTimeout) return RET_E_TIMEOUT;
     return RET_E_FAIL;
@@ -360,11 +374,12 @@ ret_code_t OSAL_mutex_lock(osal_mutex_t mutex, uint32_t timeout_ms) {
  */
 ret_code_t OSAL_mutex_unlock(osal_mutex_t mutex) {
     if (!mutex) return RET_E_INVALID_ARG;
-    const osStatus_t st = osMutexRelease((osMutexId_t) mutex);
+    const osStatus_t st = osMutexRelease((osMutexId_t)mutex);
     return (st == osOK) ? RET_OK : RET_E_FAIL;
 }
 
-/* ================================================== 信号量 ========================================================= */
+/* ================================================== 信号量
+ * ========================================================= */
 /**
  * @brief 初始化信号量
  * @param out 存储创建信号量返回的ID
@@ -373,16 +388,17 @@ ret_code_t OSAL_mutex_unlock(osal_mutex_t mutex) {
  * @param max_count  最大数量
  * @return 返回创建结果
  */
-ret_code_t OSAL_sem_create(osal_sem_t *out, const char *name, uint32_t initial_count, uint32_t max_count) {
+ret_code_t OSAL_sem_create(osal_sem_t *out, const char *name, uint32_t initial_count,
+                           uint32_t max_count) {
     if (!out || max_count == 0) return RET_E_INVALID_ARG;
     osSemaphoreAttr_t attr;
-    attr.name = name;
-    attr.cb_mem = NULL;
-    attr.cb_size = 0;
-    attr.attr_bits = 0;
+    attr.name          = name;
+    attr.cb_mem        = NULL;
+    attr.cb_size       = 0;
+    attr.attr_bits     = 0;
     osSemaphoreId_t id = osSemaphoreNew(max_count, initial_count, &attr);
     if (!id) return RET_E_NO_MEM;
-    *out = (osal_sem_t) id;
+    *out = (osal_sem_t)id;
     return RET_OK;
 }
 
@@ -393,7 +409,7 @@ ret_code_t OSAL_sem_create(osal_sem_t *out, const char *name, uint32_t initial_c
  */
 ret_code_t OSAL_sem_delete(osal_sem_t sem) {
     if (!sem) return RET_E_INVALID_ARG;
-    const osStatus_t status = osSemaphoreDelete((osSemaphoreId_t) sem);
+    const osStatus_t status = osSemaphoreDelete((osSemaphoreId_t)sem);
     return (status == osOK) ? RET_OK : RET_E_FAIL;
 }
 
@@ -406,8 +422,8 @@ ret_code_t OSAL_sem_delete(osal_sem_t sem) {
  */
 ret_code_t OSAL_sem_take(osal_sem_t sem, uint32_t timeout_ms) {
     if (!sem) return RET_E_INVALID_ARG;
-    const uint32_t to = OSAL_timeout_ms_to_kernel_ticks(timeout_ms);
-    const osStatus_t st = osSemaphoreAcquire((osSemaphoreId_t) sem, to);
+    const uint32_t to   = OSAL_timeout_ms_to_kernel_ticks(timeout_ms);
+    const osStatus_t st = osSemaphoreAcquire((osSemaphoreId_t)sem, to);
     if (st == osOK) return RET_OK;
     if (st == osErrorTimeout) return RET_E_TIMEOUT;
     return RET_E_FAIL;
@@ -421,7 +437,7 @@ ret_code_t OSAL_sem_take(osal_sem_t sem, uint32_t timeout_ms) {
  */
 ret_code_t OSAL_sem_give(osal_sem_t sem) {
     if (!sem) return RET_E_INVALID_ARG;
-    const osStatus_t st = osSemaphoreRelease((osSemaphoreId_t) sem);
+    const osStatus_t st = osSemaphoreRelease((osSemaphoreId_t)sem);
     if (st == osOK) return RET_OK;
     if (st == osErrorParameter) return RET_E_INVALID_ARG;
     return RET_E_FAIL;
@@ -446,19 +462,20 @@ ret_code_t OSAL_sem_give_from_isr(osal_sem_t sem) {
  * @return消息队列创建是否成功
  * @norte 不可 ISR 中使用
  */
-ret_code_t OSAL_msgq_create(osal_msgq_t *out, const char *name, uint32_t item_size, uint32_t item_count) {
+ret_code_t OSAL_msgq_create(osal_msgq_t *out, const char *name, uint32_t item_size,
+                            uint32_t item_count) {
     if (!out || item_count == 0 || item_size == 0) return RET_E_INVALID_ARG;
     osMessageQueueAttr_t attr;
-    attr.name = name;
-    attr.cb_mem = NULL;
-    attr.attr_bits = 0;
-    attr.mq_mem = NULL;
-    attr.cb_size = 0;
-    attr.mq_size = 0;
+    attr.name             = name;
+    attr.cb_mem           = NULL;
+    attr.attr_bits        = 0;
+    attr.mq_mem           = NULL;
+    attr.cb_size          = 0;
+    attr.mq_size          = 0;
 
     osMessageQueueId_t id = osMessageQueueNew(item_count, item_size, &attr);
     if (!id) return RET_E_NO_MEM;
-    *out = (osal_msgq_t) id;
+    *out = (osal_msgq_t)id;
     return RET_OK;
 }
 
@@ -470,7 +487,7 @@ ret_code_t OSAL_msgq_create(osal_msgq_t *out, const char *name, uint32_t item_si
  */
 ret_code_t OSAL_msgq_delete(osal_msgq_t msgq) {
     if (!msgq) return RET_E_INVALID_ARG;
-    const osStatus_t st = osMessageQueueDelete((osMessageQueueId_t) msgq);
+    const osStatus_t st = osMessageQueueDelete((osMessageQueueId_t)msgq);
     if (st == osOK) return RET_OK;
     if (st == osErrorParameter) return RET_E_INVALID_ARG;
     if (st == osErrorISR) return RET_E_ISR;
@@ -487,8 +504,8 @@ ret_code_t OSAL_msgq_delete(osal_msgq_t msgq) {
  */
 ret_code_t OSAL_msgq_put(osal_msgq_t msgq, void *msg, uint32_t timeout_ms) {
     if (!msgq || !msg) return RET_E_INVALID_ARG;
-    const uint32_t to = OSAL_timeout_ms_to_kernel_ticks(timeout_ms);
-    const osStatus_t st = osMessageQueuePut((osMessageQueueId_t) msgq, msg, 0, to);
+    const uint32_t to   = OSAL_timeout_ms_to_kernel_ticks(timeout_ms);
+    const osStatus_t st = osMessageQueuePut((osMessageQueueId_t)msgq, msg, 0, to);
     switch (st) {
         case osOK:
             return RET_OK;
@@ -513,8 +530,8 @@ ret_code_t OSAL_msgq_put(osal_msgq_t msgq, void *msg, uint32_t timeout_ms) {
  */
 ret_code_t OSAL_msgq_get(osal_msgq_t msgq, void *msg, uint32_t timeout_ms) {
     if (!msgq || !msg) return RET_E_INVALID_ARG;
-    const uint32_t to = OSAL_timeout_ms_to_kernel_ticks(timeout_ms);
-    const osStatus_t st = osMessageQueueGet((osMessageQueueId_t) msgq, msg, NULL, to);
+    const uint32_t to   = OSAL_timeout_ms_to_kernel_ticks(timeout_ms);
+    const osStatus_t st = osMessageQueueGet((osMessageQueueId_t)msgq, msg, NULL, to);
     switch (st) {
         case osOK:
             return RET_OK;
@@ -529,7 +546,8 @@ ret_code_t OSAL_msgq_get(osal_msgq_t msgq, void *msg, uint32_t timeout_ms) {
     }
 }
 
-/* ============================================ 线程 && Flags ====================================================== */
+/* ============================================ 线程 && Flags
+ * ====================================================== */
 /**
  * @brief 创建一个线程
  * @param out 线程指针
@@ -538,21 +556,22 @@ ret_code_t OSAL_msgq_get(osal_msgq_t msgq, void *msg, uint32_t timeout_ms) {
  * @param attr 需要传递的部分参数
  * @return 线程是否创建成功
  */
-ret_code_t OSAL_thread_create(osal_thread_t *out, osal_thread_fn_t fn, void *arg, const osal_thread_attr_t *attr) {
+ret_code_t OSAL_thread_create(osal_thread_t *out, osal_thread_fn_t fn, void *arg,
+                              const osal_thread_attr_t *attr) {
     if (!out || !fn || !attr) return RET_E_INVALID_ARG;
     osThreadAttr_t a;
-    a.attr_bits = 0;
-    a.name = attr->name;
-    a.cb_mem = NULL;
-    a.cb_size = 0;
-    a.stack_size = attr->stack_size;
-    a.stack_mem = NULL;
-    a.priority = OSAL_map_prio(attr->priority);
-    a.reserved = 0;
-    a.tz_module = 0;
-    osThreadId_t st = osThreadNew((osThreadFunc_t) fn, arg, &a);
+    a.attr_bits     = 0;
+    a.name          = attr->name;
+    a.cb_mem        = NULL;
+    a.cb_size       = 0;
+    a.stack_size    = attr->stack_size;
+    a.stack_mem     = NULL;
+    a.priority      = OSAL_map_prio(attr->priority);
+    a.reserved      = 0;
+    a.tz_module     = 0;
+    osThreadId_t st = osThreadNew((osThreadFunc_t)fn, arg, &a);
     if (!st) return RET_E_NO_MEM;
-    *out = (osal_thread_t) st;
+    *out = (osal_thread_t)st;
     return RET_OK;
 }
 
@@ -561,7 +580,7 @@ ret_code_t OSAL_thread_create(osal_thread_t *out, osal_thread_fn_t fn, void *arg
  * @return 当前线程 ID
  */
 osal_thread_t OSAL_thread_self(void) {
-    return (osal_thread_t) osThreadGetId();
+    return (osal_thread_t)osThreadGetId();
 }
 
 /**
@@ -572,7 +591,7 @@ osal_thread_t OSAL_thread_self(void) {
  */
 ret_code_t OSAL_thread_flags_set(osal_thread_t t, osal_flags_t flags) {
     if (!t) return RET_E_INVALID_ARG;
-    const uint32_t r = osThreadFlagsSet((osThreadId_t) t, (uint32_t) flags);
+    const uint32_t r = osThreadFlagsSet((osThreadId_t)t, (uint32_t)flags);
     return ((r & 0x80000000u) == 0u) ? RET_OK : RET_E_FAIL;
 }
 
@@ -583,11 +602,12 @@ ret_code_t OSAL_thread_flags_set(osal_thread_t t, osal_flags_t flags) {
  * @param timeout_ms 指定的等待时间
  * @return 指定时间内是否获取到指定flag
  */
-osal_flags_t OSAL_thread_flags_wait(osal_flags_t flags, osal_flags_wait_t mode, uint32_t timeout_ms) {
-    const uint32_t to = OSAL_timeout_ms_to_kernel_ticks(timeout_ms);
+osal_flags_t OSAL_thread_flags_wait(osal_flags_t flags, osal_flags_wait_t mode,
+                                    uint32_t timeout_ms) {
+    const uint32_t to  = OSAL_timeout_ms_to_kernel_ticks(timeout_ms);
     const uint32_t opt = (mode == OSAL_FLAGS_WAIT_ALL) ? osFlagsWaitAll : osFlagsWaitAny;
-    const uint32_t r = osThreadFlagsWait((uint32_t) flags, opt, to);
+    const uint32_t r   = osThreadFlagsWait((uint32_t)flags, opt, to);
     if (r & 0x80000000u) return 0;
-    return (osal_flags_t) r;
+    return (osal_flags_t)r;
 }
 #endif
