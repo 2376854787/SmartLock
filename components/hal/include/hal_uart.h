@@ -68,28 +68,6 @@ typedef struct hal_uart hal_uart_t; /* 实现文件具体内容 */
  */
 typedef void (*hal_uart_rx_cb_t)(void *user_ctx, uint8_t *data, uint16_t len);
 
-/**
- * @brief 获取 UART 实例句柄
- * @param id 串口索引（如 0 代表 UART1）
- * @return 实例句柄，失败返回 NULL
- */
-hal_uart_handle_t hal_uart_get_instance(uint8_t id);
-
-/**
- * @brief 发送数据（阻塞/半阻塞）
- * @note 提供超时机制
- */
-ret_code_t hal_uart_send(hal_uart_handle_t handle, const uint8_t *data, uint16_t len,
-                         uint32_t timeout_ms);
-
-/**
- * @brief 串口异步发送数据
- * @param h 串口句柄
- * @param buf 串口缓冲区
- * @param len 发送数据长度
- * @return
- */
-ret_code_t hal_uart_send_async(hal_uart_t *h, const uint8_t *buf, uint32_t len);
 
 /**
  * @brief 启动异步接收（非阻塞）
@@ -100,13 +78,7 @@ ret_code_t hal_uart_send_async(hal_uart_t *h, const uint8_t *buf, uint32_t len);
  */
 ret_code_t hal_uart_read_async(hal_uart_handle_t handle, uint8_t *rx_buffer, uint16_t max_len);
 
-/**
- * @brief 注册接收回调
- * @param handle 句柄
- * @param cb 回调函数指针
- * @param user_ctx 用户自定义上下文指针，会在回调中传回
- */
-ret_code_t hal_uart_set_rx_cb(hal_uart_handle_t handle, hal_uart_rx_cb_t cb, void *user_ctx);
+
 
 ret_code_t hal_uart_open(hal_uart_id_t id, const hal_uart_cfg_t *cfg, hal_uart_t **out);
 ret_code_t hal_uart_close(hal_uart_t *h);
