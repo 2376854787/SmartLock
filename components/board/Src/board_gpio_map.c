@@ -3,7 +3,7 @@
 #include <stdint.h>
 
 #include "board_gpio_ids.h"
-#include "stm32f4xx.h"
+#include "stm32_hal.h"
 
 typedef struct {
     uint32_t id;
