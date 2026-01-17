@@ -265,7 +265,7 @@ void stm32_uart_irq_dma_tx(hal_uart_id_t id) {
  * @param out 返回配置好的串口句柄
  * @return 返回状态码
  */
-ret_code_t hal_uart_port_open(hal_uart_id_t id, hal_uart_cfg_t *cfg, hal_uart_t **out) {
+ret_code_t hal_uart_port_open(hal_uart_id_t id, const hal_uart_cfg_t *cfg, hal_uart_t **out) {
     /* 参数错误检查 */
     if (!out) return UART_RET(RET_ERRNO_INVALID_ARG);
     if (id >= HAL_UART_ID_MAX) return UART_RET(RET_ERRNO_INVALID_ARG);
@@ -277,7 +277,7 @@ ret_code_t hal_uart_port_open(hal_uart_id_t id, hal_uart_cfg_t *cfg, hal_uart_t 
     /* 填充id */
     u->id         = id;
     /* 将地址传输过去 填充实现的bsp 参数 */
-    ret_code_t rc = stm32_uart_bsp_get(id, &cfg, &u->bsp);
+    ret_code_t rc = stm32_uart_bsp_get(id,  &u->bsp);
     if (ret_is_err(rc)) return rc;
 
     /* 参数检查传输的 指针是否有效, DMA长度是否是2的幂次大小 */
@@ -293,17 +293,17 @@ ret_code_t hal_uart_port_open(hal_uart_id_t id, hal_uart_cfg_t *cfg, hal_uart_t 
     rc = CreateRingBuffer(&u->rb, name, u->bsp.sw_rb_len);
     if (ret_is_err(rc)) return rc;
 
-    // /* 串口参数配置 */
-    // if (cfg) {
-    //     u->bsp.huart->Init.BaudRate = cfg->baud;
-    //     u->bsp.huart->Init.HwFlowCtl =
-    //         cfg->flow_ctrl ? UART_HWCONTROL_RTS_CTS : UART_HWCONTROL_NONE;
-    //     u->bsp.huart->Init.Parity = cfg->parity;
-    //     u->bsp.huart->Init.StopBits =
-    //         cfg->stop_bits == STOPBITS_1 ? UART_STOPBITS_1 : UART_STOPBITS_2;
-    //     u->bsp.huart->Init.WordLength =
-    //         cfg->data_bits == WORDLENGTH_8B ? UART_WORDLENGTH_8B : UART_WORDLENGTH_9B;
-    // }
+    /* 串口参数配置 */
+    if (cfg) {
+        u->bsp.huart->Init.BaudRate = cfg->baud;
+        u->bsp.huart->Init.HwFlowCtl =
+            cfg->flow_ctrl ? UART_HWCONTROL_RTS_CTS : UART_HWCONTROL_NONE;
+        u->bsp.huart->Init.Parity = cfg->parity;
+        u->bsp.huart->Init.StopBits =
+            cfg->stop_bits == STOPBITS_1 ? UART_STOPBITS_1 : UART_STOPBITS_2;
+        u->bsp.huart->Init.WordLength =
+            cfg->data_bits == WORDLENGTH_8B ? UART_WORDLENGTH_8B : UART_WORDLENGTH_9B;
+    }
 
     /* 串口初始化 */
     if (HAL_UART_Init(u->bsp.huart) != HAL_OK) return UART_RET(RET_ERRNO_IO);
@@ -334,10 +334,11 @@ ret_code_t hal_uart_port_open(hal_uart_id_t id, hal_uart_cfg_t *cfg, hal_uart_t 
  * @brief 将串口恢复默认配置
  * @param h 串口句柄
  */
-void hal_uart_port_close(hal_uart_t *h) {
-    if (!h) return;
+ret_code_t hal_uart_port_close(hal_uart_t *h) {
+    if (!h) return UART_RET(RET_ERRNO_INVALID_ARG);
     const hal_uart_t *u = (hal_uart_t *)h;
-    (void)HAL_UART_DeInit(u->bsp.huart);
+    if (HAL_UART_DeInit(u->bsp.huart) != HAL_OK) return UART_RET(RET_ERRNO_IO);
+    return RET_OK;
 }
 
 /**
@@ -346,11 +347,12 @@ void hal_uart_port_close(hal_uart_t *h) {
  * @param cb 事件回调函数
  * @param user user上下文
  */
-void hal_uart_port_set_evt_cb(hal_uart_t *h, hal_uart_evt_cb_t cb, void *user) {
-    if (!h) return;
+ret_code_t hal_uart_port_set_evt_cb(hal_uart_t *h, hal_uart_evt_cb_t cb, void *user) {
+    if (!h) return UART_RET(RET_ERRNO_INVALID_ARG);
     hal_uart_t *u = (hal_uart_t *)h;
     u->cb         = cb;
     u->cb_user    = user;
+    return RET_OK;
 }
 
 /**
