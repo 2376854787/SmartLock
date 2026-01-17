@@ -7,7 +7,7 @@
 #include <stdint.h>
 #define MEMORY_POND_MAX_SIZE 8192  //单位kb
 
-uint8_t *static_alloc(uint16_t size, uint8_t alignment);
+uint8_t *static_alloc(uint32_t size, uint8_t alignment);
 
 uint16_t query_remain_size(void);
 
