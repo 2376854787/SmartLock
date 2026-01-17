@@ -19,4 +19,4 @@ typedef struct {
 } stm32_uart_bsp_t;
 
 /* 板级实现 */
-ret_code_t stm32_uart_bsp_get(hal_uart_id_t id, hal_uart_cfg_t **cfg, stm32_uart_bsp_t *out);
+ret_code_t stm32_uart_bsp_get(hal_uart_id_t id,  stm32_uart_bsp_t *out);
