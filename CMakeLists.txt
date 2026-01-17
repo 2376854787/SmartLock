@@ -69,6 +69,8 @@ add_executable(${CMAKE_PROJECT_NAME}
         components/hal/hal_uart.c
         platform/STM32/series/stm32_uart_series_h7.c
         components/board/explorer/board_uart_map.c
+        components/printf/printf.c
+        platform/STM32/ports/bsp_assert_port.c
 
 )
 
@@ -105,6 +107,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         components/hal/include
         components/board/Include
         platform/STM32/include
+        components/printf
 
 )
 
