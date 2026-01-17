@@ -13,6 +13,8 @@ AlignConsecutiveAssignments: AcrossEmptyLinesAndComments
 # 尾随注释对齐
 AlignTrailingComments: true
 
+# 允许连续的宏定义对齐
+AlignConsecutiveMacros: Consecutive
 # --- 缩进与花括号 ---
 IndentWidth: 4
 ColumnLimit: 100
