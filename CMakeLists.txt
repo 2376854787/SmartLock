@@ -66,6 +66,9 @@ add_executable(${CMAKE_PROJECT_NAME}
 
         example/GPIO/ex_hal_gpio.c
         components/core_base/no_malloc_wrap.c
+        components/hal/hal_uart.c
+        platform/STM32/series/stm32_uart_series_h7.c
+        components/board/explorer/board_uart_map.c
 
 )
 
@@ -101,6 +104,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         components/osal
         components/hal/include
         components/board/Include
+        platform/STM32/include
 
 )
 
@@ -120,8 +124,8 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
 )
 ## 启用浮点数打印
 target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
-#        -Wl,-u,_printf_float
-#        -Wl,-u,_scanf_float
+        #        -Wl,-u,_printf_float
+        #        -Wl,-u,_scanf_float
 
         #禁用内存分配
         -Wl,--wrap=malloc
@@ -130,7 +134,12 @@ target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
         -Wl,--wrap=calloc
         -Wl,--wrap=alloca
 )
-
+# 为 Debug 模式定义 DEBUG_MODE 宏
+# 为 Release 模式定义 RELEASE_MODE 宏
+add_compile_definitions(
+        $<$<CONFIG:Debug>:DEBUG_MODE>
+        $<$<CONFIG:Release>:RELEASE_MODE>
+)
 # --- 生成 .bin 和 .hex 文件 ---
 if (CMAKE_OBJCOPY)
     message(STATUS "Found objcopy: ${CMAKE_OBJCOPY}")
