@@ -262,7 +262,7 @@ ret_code_t hal_gpio_port_config(hal_gpio_t *h, const hal_gpio_cfg_t *cfg) {
 
     /* default_level：仅对“纯输出”生效（AF/中断/输入不写） */
     if (cfg->irq == HAL_GPIO_IRQ_NONE && cfg->dir == HAL_GPIO_DIR_OUT &&
-        cfg->alternate == 0xFFFFFFFFu) {
+        cfg->alternate == HAL_GPIO_AF_NONE) {
         HAL_GPIO_WritePin(h->port, pin_mask(h->pin), (GPIO_PinState)cfg->default_level);
     }
 
