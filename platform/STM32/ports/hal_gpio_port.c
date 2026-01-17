@@ -1,23 +1,14 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "board_gpio_map.h"
 #include "hal_gpio.h"
 #include "ret_code.h"
-#include "stm32f4xx.h"
-#include "stm32f4xx_hal_gpio.h"
-#include "stm32f4xx_hal_rcc.h"
-
-/* board 映射表：由 board/board_gpio_map.c 提供 */
-typedef struct {
-    GPIO_TypeDef *port;
-    uint16_t pin; /* 0..15 */
-} board_gpio_hw_t;
-
-const board_gpio_hw_t *board_gpio_lookup(uint32_t id);
+#include "stm32_hal.h"
 
 /* ---------------- 断言（热路径用） ---------------- */
 
-__attribute__((weak)) void hal_gpio_assert_failed(const char *file, int line) {
+__WEAK void hal_gpio_assert_failed(const char *file, int line) {
     (void)file;
     (void)line;
     __disable_irq();
@@ -27,10 +18,14 @@ __attribute__((weak)) void hal_gpio_assert_failed(const char *file, int line) {
 }
 
 #ifndef HAL_GPIO_ASSERT
+#ifdef DEBUG_MODE
 #define HAL_GPIO_ASSERT(x)                                    \
     do {                                                      \
         if (!(x)) hal_gpio_assert_failed(__FILE__, __LINE__); \
     } while (0)
+#else
+#define HAL_GPIO_ASSERT(x)
+#endif
 #endif
 
 /* ---------------- 句柄定义（只在 port.c 可见） ---------------- */
@@ -38,6 +33,7 @@ __attribute__((weak)) void hal_gpio_assert_failed(const char *file, int line) {
 struct hal_gpio {
     GPIO_TypeDef *port;
     uint16_t pin; /* 0..15 */
+    uint32_t id;
 };
 
 /* ---------------- 内部工具 ---------------- */
@@ -51,7 +47,7 @@ static inline uint16_t pin_mask(uint16_t pin) {
  * @param GPIOx GPIOx
  * @return 时钟开启结果
  */
-static ret_code_t gpio_enable_clock(GPIO_TypeDef *GPIOx) {
+static ret_code_t gpio_enable_clock(const GPIO_TypeDef *GPIOx) {
     if (GPIOx == GPIOA) {
         __HAL_RCC_GPIOA_CLK_ENABLE();
         return RET_OK;
@@ -169,24 +165,34 @@ static ret_code_t map_alternate(uint32_t in_af, uint32_t *out_af) {
 ret_code_t hal_gpio_port_open(hal_gpio_t **out, uint32_t id) {
     if (!out) return RET_E_INVALID_ARG;
 
-    const board_gpio_hw_t *hw = board_gpio_lookup(id);
-    if (!hw || !hw->port || hw->pin >= 16u) {
-        return RET_E_NOT_FOUND;
+    board_gpio_hw_t hw;
+    const ret_code_t rc = board_gpio_lookup(id, &hw);
+    if (rc != RET_OK) return rc;
+    if (!hw.port || hw.pin >= 16u) return RET_E_NOT_FOUND;
+
+    static hal_gpio_t handles[BOARD_GPIO_MAP_MAX]; /* 简化静态池*/
+    static uint8_t used[BOARD_GPIO_MAP_MAX] = {0}; /* 标记使用过的GPIO */
+
+    /* 简化策略：id 必须 < BOARD_GPIO_MAP_MAX，直接映射到句柄槽位 */
+    for (uint32_t i = 0; i < (uint32_t)(sizeof(handles) / sizeof(handles[0])); ++i) {
+        if (used[i] && handles[i].id == id) {
+            *out = &handles[i];
+            return RET_OK;
+        }
     }
 
-    static hal_gpio_t handles[64]; /* 简化：静态池，实际可按项目规模调整 */
-    static uint8_t used[64] = {0}; /* 标记使用过的GPIO */
-
-    /* 简化策略：id 必须 < 64，直接映射到句柄槽位 */
-    if (id >= 64u) return RET_E_INVALID_ARG;
-    if (!used[id]) {
-        handles[id].port = hw->port;
-        handles[id].pin  = hw->pin;
-        used[id]         = 1;
+    for (uint32_t i = 0; i < (uint32_t)(sizeof(handles) / sizeof(handles[0])); ++i) {
+        if (!used[i]) {
+            handles[i].id   = id;
+            handles[i].port = hw.port;
+            handles[i].pin  = hw.pin;
+            used[i]         = 1;
+            *out            = &handles[i];
+            return RET_OK;
+        }
     }
 
-    *out = &handles[id];
-    return RET_OK;
+    return RET_E_NO_MEM;
 }
 
 /**
@@ -243,7 +249,7 @@ ret_code_t hal_gpio_port_config(hal_gpio_t *h, const hal_gpio_cfg_t *cfg) {
     }
 
     /* AF：只有在你定义为复用的场景才需要，这里用：alternate!=0xFFFFFFFF 作为“启用AF”的开关 */
-    if (cfg->alternate != 0xFFFFFFFFu) {
+    if (cfg->alternate != HAL_GPIO_AF_NONE) {
         uint32_t af = 0;
         rc          = map_alternate(cfg->alternate, &af);
         if (rc != RET_OK) return rc;
@@ -268,7 +274,7 @@ ret_code_t hal_gpio_port_config(hal_gpio_t *h, const hal_gpio_cfg_t *cfg) {
  * @param h
  * @return
  */
-ret_code_t hal_gpio_port_close(hal_gpio_t *h) {
+ret_code_t hal_gpio_port_close(const hal_gpio_t *h) {
     /* 静态句柄方案：关闭可做 no-op */
     (void)h;
     return RET_OK;
@@ -280,7 +286,7 @@ ret_code_t hal_gpio_port_close(hal_gpio_t *h) {
  * @param h GPIO
  * @param level 电平
  */
-void hal_gpio_port_write(hal_gpio_t *h, hal_gpio_level_t level) {
+void hal_gpio_port_write(const hal_gpio_t *h, hal_gpio_level_t level) {
     HAL_GPIO_ASSERT(h != NULL);
     HAL_GPIO_ASSERT(h->port != NULL);
     HAL_GPIO_ASSERT(h->pin < 16u);
@@ -294,7 +300,7 @@ void hal_gpio_port_write(hal_gpio_t *h, hal_gpio_level_t level) {
  * @param h
  * @return
  */
-hal_gpio_level_t hal_gpio_port_read(hal_gpio_t *h) {
+hal_gpio_level_t hal_gpio_port_read(const hal_gpio_t *h) {
     HAL_GPIO_ASSERT(h != NULL);
     HAL_GPIO_ASSERT(h->port != NULL);
     HAL_GPIO_ASSERT(h->pin < 16u);
@@ -306,7 +312,7 @@ hal_gpio_level_t hal_gpio_port_read(hal_gpio_t *h) {
  * @brief 翻转指定GPIO的输出电平
  * @param h
  */
-void hal_gpio_port_toggle(hal_gpio_t *h) {
+void hal_gpio_port_toggle(const hal_gpio_t *h) {
     HAL_GPIO_ASSERT(h != NULL);
     HAL_GPIO_ASSERT(h->port != NULL);
     HAL_GPIO_ASSERT(h->pin < 16u);

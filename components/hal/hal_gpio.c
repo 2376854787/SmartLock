@@ -8,13 +8,13 @@ ret_code_t hal_gpio_port_open(hal_gpio_t **out, uint32_t id);
 
 ret_code_t hal_gpio_port_config(hal_gpio_t *h, const hal_gpio_cfg_t *cfg);
 
-ret_code_t hal_gpio_port_close(hal_gpio_t *h);
+ret_code_t hal_gpio_port_close(const hal_gpio_t *h);
 
-void hal_gpio_port_write(hal_gpio_t *h, hal_gpio_level_t level);
+void hal_gpio_port_write(const hal_gpio_t *h, hal_gpio_level_t level);
 
-hal_gpio_level_t hal_gpio_port_read(hal_gpio_t *h);
+hal_gpio_level_t hal_gpio_port_read(const hal_gpio_t *h);
 
-void hal_gpio_port_toggle(hal_gpio_t *h);
+void hal_gpio_port_toggle(const hal_gpio_t *h);
 
 /**
  * @brief 从port实现函数返回映射的指定GPIO port与PIN结构体
