@@ -10,25 +10,18 @@ extern DMA_HandleTypeDef hdma_usart1_rx;
 extern DMA_HandleTypeDef hdma_usart1_tx;
 
 /* DMA 环形缓冲 + 软件 RB（静态） */
+#if defined(CORE_ALIGNED)
+static CORE_ALIGNED(32) uint8_t g_uart1_rx_dma[512];
+#elif defined(__ALIGNED)
+static __ALIGNED(32) uint8_t g_uart1_rx_dma[512];
+#else
 static uint8_t g_uart1_rx_dma[512];
+#endif
 
-ret_code_t stm32_uart_bsp_get(hal_uart_id_t id, hal_uart_cfg_t **cfg, stm32_uart_bsp_t *out) {
-    if (!out) return -1;
-
+ret_code_t stm32_uart_bsp_get(hal_uart_id_t id, stm32_uart_bsp_t *out) {
+    if (!out) return UART_MAP_RET(RET_ERRNO_INVALID_ARG);
     switch (id) {
         case HAL_UART_ID_0:
-            /* 串口参数配置 */
-            if (cfg && out->huart) {
-                out->huart->Init.BaudRate = (*cfg)->baud;
-                out->huart->Init.HwFlowCtl =
-                    (*cfg)->flow_ctrl ? UART_HWCONTROL_RTS_CTS : UART_HWCONTROL_NONE;
-                out->huart->Init.Parity = (*cfg)->parity;
-                out->huart->Init.StopBits =
-                    (*cfg)->stop_bits == STOPBITS_1 ? UART_STOPBITS_1 : UART_STOPBITS_2;
-                out->huart->Init.WordLength =
-                    (*cfg)->data_bits == WORDLENGTH_8B ? UART_WORDLENGTH_8B : UART_WORDLENGTH_9B;
-            } else
-                return UART_MAP_RET(RET_ERRNO_INVALID_ARG);
             /* 串口 MSP 配置 */
             out->huart      = &huart1;
             out->hdma_rx    = &hdma_usart1_rx;
@@ -42,6 +35,6 @@ ret_code_t stm32_uart_bsp_get(hal_uart_id_t id, hal_uart_cfg_t **cfg, stm32_uart
             out->irq_prio   = 5;
             return UART_MAP_RET(RET_ERRNO_OK);
         default:
-            return -1;
+            return UART_MAP_RET(RET_ERRNO_NOT_READY);
     }
 }
