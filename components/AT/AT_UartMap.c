@@ -1,11 +1,12 @@
 #include "APP_config.h"
 /* 全局配置开启宏 */
 #ifdef ENABLE_AT_SYSTEM
-#include "AT.h"
 #include <string.h>
 
+#include "AT.h"
+
 #ifndef AT_UART_MAX
-#define AT_UART_MAX  4
+#define AT_UART_MAX 4
 #endif
 
 typedef struct {
@@ -27,8 +28,8 @@ void AT_BindUart(AT_Manager_t *mgr, UART_HandleTypeDef *huart) {
     for (uint32_t i = 0; i < AT_UART_MAX; i++) {
         if (s_binds[i].huart == huart || s_binds[i].huart == NULL) {
             s_binds[i].huart = huart;
-            s_binds[i].mgr = mgr;
-            mgr->uart = huart;
+            s_binds[i].mgr   = mgr;
+            mgr->uart        = huart;
             return;
         }
     }
@@ -50,7 +51,5 @@ AT_Manager_t *AT_FindMgrByUart(const UART_HandleTypeDef *huart) {
     }
     return NULL;
 }
-
-
 
 #endif

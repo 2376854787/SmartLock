@@ -12,12 +12,12 @@ void esp01s_Init(UART_HandleTypeDef *huart, uint16_t rb_size) {
     /* 4、发送命令 */
     if (AT_SendCmd(&g_at_manager, "ATE0\r\n", "OK", 5000) == AT_RESP_OK) {
         LOG_E("ESP01S", "回显已关闭");
-    }
+    } else { LOG_E("ESP01S", "%s  响应失败\n", "ATE0"); }
 
     if (AT_SendCmd(&g_at_manager, "AT\r\n", "OK", 5000) == AT_RESP_OK) {
         LOG_E("ESP01S", "AT 响应成功");
     } else {
-        printf("%s  响应失败\n", "AT");
+        LOG_E("ESP01S", "%s  响应失败\n", "AT");
     }
 
     /* 网络联通测试 */

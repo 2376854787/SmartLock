@@ -28,25 +28,35 @@ extern "C" {
 /* clang (including clangd's parser) */
 #define COMPILER_CLANG 1
 #elif defined(__GNUC__)
-//#define COMPILER_GCC 1
+#define COMPILER_GCC 1
 #else
 #error "Unsupported compiler"
 #endif
 
 /* ================= Basic keywords ================= */
 #if defined(COMPILER_GCC) || defined(COMPILER_CLANG) || defined(COMPILER_ARMCLANG)
-#define __INLINE          static inline __attribute__((always_inline))   /* 强烈要求内联 */
-#define __CORE_INLINE          inline __attribute__((always_inline))     /* 强烈要求内联 */
-#define __NOINLINE        __attribute__((noinline))                      /* 禁止内联 */
-#define __WEAK            __attribute__((weak))                          /* 弱定义允许覆盖 */
-#define __PACKED          __attribute__((packed))                        /* 结构体不填充 */
-#define __ALIGNED(x)      __attribute__((aligned(x)))                    /* 指定对齐 */
-#define __SECTION(x)      __attribute__((section(x)))                    /* 放到指定段 */
-#define __USED            __attribute__((used))                          /* 禁止优化 */
-#define __UNUSED          __attribute__((unused))                        /* 抑制未使用警告 */
-#define __LIKELY(x)       __builtin_expect(!!(x), 1)                     /* 更可能为真 */
-#define __UNLIKELY(x)     __builtin_expect(!!(x), 0)                     /* 更可能为假 */
-#define __BARRIER()       __asm volatile ("" ::: "memory")               /* 空编译指令  但带“memory” 内存可能被改不能把内存读写重排穿过它 */
+
+#ifndef __INLINE
+#define __INLINE                 inline                                       /* 建议内联 */
+#endif
+
+#define   CORE_ALWAYS_INLINE    static inline __attribute__((always_inline))        /* 强烈要求内联 */
+#define   CORE_INLINE           static inline                                       /* 建议内联 */
+#define   CORE_NOINLINE        __attribute__((noinline))                            /* 禁止内联 */
+#define   CORE_WEAK            __attribute__((weak))                                /* 弱定义允许覆盖 */
+
+#ifndef   __PACKED
+#define   __PACKED             __attribute__((packed))                              /* 结构体不填充 */
+#endif
+
+#define   CORE_ALIGNED(x)      __attribute__((aligned(x)))                          /* 指定对齐 */
+#define   CORE_SECTION(x)      __attribute__((section(x)))                          /* 放到指定段 */
+#define   CORE_USED            __attribute__((used))                                /* 禁止优化 */
+#define   CORE_UNUSED          __attribute__((unused))                              /* 抑制未使用警告 */
+#define   CORE_LIKELY(x)       __builtin_expect(!!(x), 1)                           /* 更可能为真 */
+#define   CORE_UNLIKELY(x)     __builtin_expect(!!(x), 0)                           /* 更可能为假 */
+#define   CORE_BARRIER()       __asm volatile ("" ::: "memory")                     /* 空编译指令  但带“memory” 内存可能被改不能把内存读写重排穿过它 */
+
 #elif defined(COMPILER_ARMCC5)
 #define __INLINE          static __inline
 #define __CORE_INLINE     __inline
@@ -76,7 +86,7 @@ extern "C" {
 #endif
 
 /* ================= Common helpers ================= */
-#define CORE_UNUSED(x)      (void)(x)                                           /* 消除未使用警告 */
+#define CORE__UNUSED(x)      (void)(x)                                           /* 消除未使用警告 */
 
 /* Static assert (C11 or fallback) */
 #define CORE_STR_IMPL(x) #x

@@ -54,6 +54,23 @@ add_executable(${CMAKE_PROJECT_NAME}
         components/AT/AT_Core_Task.c
         components/AT/AT_UartMap.c
         components/log/log_port.c
+        components/osal/osal_cmsis2.c
+        components/soft_timer/src/soft_timer.c
+        components/auto_init/src/auto_init.c
+        platform/STM32/ports/hal_gpio_port.c
+        platform/STM32/ports/hal_uart_port.c
+        platform/STM32/ports/hal_time_port.c
+        components/core_base/assert_cus.c
+        components/hal/hal_gpio.c
+        components/board/Src/board_gpio_map.c
+
+        example/GPIO/ex_hal_gpio.c
+        components/core_base/no_malloc_wrap.c
+        components/hal/hal_uart.c
+        platform/STM32/series/stm32_uart_series_h7.c
+        components/board/explorer/board_uart_map.c
+        components/printf/printf.c
+        platform/STM32/ports/bsp_assert_port.c
 
 )
 
@@ -86,7 +103,11 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         components/log
         components/AT
         components/core_base
-
+        components/osal
+        components/hal/include
+        components/board/Include
+        platform/STM32/include
+        components/printf
 
 )
 
@@ -105,11 +126,23 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
         # Add user defined libraries
 )
 ## 启用浮点数打印
-#target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
-#        -Wl,-u,_printf_float
-#        -Wl,-u,_scanf_float
-#)
+target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
+        #        -Wl,-u,_printf_float
+        #        -Wl,-u,_scanf_float
 
+        #禁用内存分配
+        -Wl,--wrap=malloc
+        -Wl,--wrap=free
+        -Wl,--wrap=realloc
+        -Wl,--wrap=calloc
+        -Wl,--wrap=alloca
+)
+# 为 Debug 模式定义 DEBUG_MODE 宏
+# 为 Release 模式定义 RELEASE_MODE 宏
+add_compile_definitions(
+        $<$<CONFIG:Debug>:DEBUG_MODE>
+        $<$<CONFIG:Release>:RELEASE_MODE>
+)
 # --- 生成 .bin 和 .hex 文件 ---
 if (CMAKE_OBJCOPY)
     message(STATUS "Found objcopy: ${CMAKE_OBJCOPY}")

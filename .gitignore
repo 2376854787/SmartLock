@@ -1,3 +1,20 @@
-build
+# 忽略编译输出文件夹
+build/
+Debug/
+Release/
+
+# 忽略 STM32CubeMX 产生的临时文件
 mx.scratch
-!.settings
+*.swp
+*.bak
+
+# 忽略 IDE 配置文件
+.idea/
+*.iml
+
+# 关于 .settings 的处理（二选一）：
+# 情况 A：如果不希望提交本地 IDE 配置（推荐）
+.settings/
+
+# 情况 B：如果你确定要共享 IDE 的编译插件设置，才保留你的原样：
+# !.settings/

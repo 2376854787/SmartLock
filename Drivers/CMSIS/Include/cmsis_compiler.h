@@ -241,7 +241,7 @@
     #define __PACKED_UNION                         @packed union
   #endif
   #ifndef   __UNALIGNED_UINT32        /* deprecated */
-    @packed struct T_UINT32 { uint32_t v; };
+    packed struct T_UINT32 { uint32_t v; };
     #define __UNALIGNED_UINT32(x)                  (((struct T_UINT32 *)(x))->v)
   #endif
   #ifndef   __UNALIGNED_UINT16_WRITE
