@@ -145,7 +145,7 @@ void Log_Init(void) {
 #if LOG_ASYNC_ENABLE
     /* 2. 初始化 RingBuffer */
     /* 假设 CreateRingBuffer 内部使用了 static_alloc 或 malloc */
-    if (ret_is_err(CreateRingBuffer(&s_logRB, LOG_RB_SIZE))) {
+    if (ret_is_err(CreateRingBuffer(&s_logRB, "s_logRB", LOG_RB_SIZE))) {
         LOG_E("AT", "s_logRB 环形缓冲区分配失败");
     }
     LOG_W("heap", "%uKB- %u空间还剩余 %u", MEMORY_POND_MAX_SIZE, LOG_RB_SIZE, query_remain_size());
