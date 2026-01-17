@@ -14,8 +14,8 @@
 #include "assert_cus.h"
 #endif
 #ifdef ENABLE_ASSERT_SYSTEM
-#define OSAL_ASSERT(expr) CORE_ASSERT(expr)
-#define OSAL_FAULT(expr) CORE_FAULT_ASSERT(expr)
+#define OSAL_ASSERT(expr) ASSERT_PARAM(expr)
+#define OSAL_FAULT(expr) ASSERT_FATAL(expr)
 #else
 #define OSAL_ASSERT(expr) \
     do {                  \
