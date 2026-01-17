@@ -29,13 +29,14 @@ void AT_Core_Init(AT_Manager_t *at_device, UART_HandleTypeDef *uart, const HW_Se
     at_device->hw_send = hw_send;
 
     /* 2、初始化AT管理的 RingBuffer缓冲区 */
-    if (ret_is_err(CreateRingBuffer(&at_device->rx_rb, AT_RX_RB_SIZE))) {
+    if (ret_is_err(CreateRingBuffer(&at_device->rx_rb, "at_device", AT_RX_RB_SIZE))) {
         LOG_E("RingBuffer", "at_device 环形缓冲区初始化失败");
     }
     LOG_W("heap", "%uKB- %u空间还剩余 %u", MEMORY_POND_MAX_SIZE, AT_RX_RB_SIZE,
           query_remain_size());
 
-    if (ret_is_err(CreateRingBuffer(&at_device->msg_len_rb, AT_LEN_RB_SIZE))) {
+    if (ret_is_err(
+            CreateRingBuffer(&at_device->msg_len_rb, "at_device.mesg_rx_rb", AT_LEN_RB_SIZE))) {
         LOG_E("RingBuffer", "at_device.mesg_rx_rb 环形缓冲区初始化失败");
     }
     LOG_W("heap", "%uKB- %u空间还剩余 %u", MEMORY_POND_MAX_SIZE, AT_LEN_RB_SIZE,

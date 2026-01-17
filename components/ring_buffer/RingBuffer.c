@@ -15,10 +15,11 @@ static inline uint32_t RingBuffer_GetRemainSize_Internal(const RingBuffer *rb);
 /**
  * @brief  创建一个指定大小的环形缓冲区
  * @param rb 环形缓冲区句柄
+ * @param name 缓冲区的名称
  * @param size 要分配的缓冲区大小 （有效空间 size-1）
  * @return 返回是否创建成功
  */
-ret_code_t CreateRingBuffer(RingBuffer *rb, const uint32_t size) {
+ret_code_t CreateRingBuffer(RingBuffer *rb, const char *name, const uint32_t size) {
     // 1、检擦输入参数的合法性
     if (rb == NULL || size < 2) return RET_E_INVALID_ARG;
 
@@ -34,6 +35,7 @@ ret_code_t CreateRingBuffer(RingBuffer *rb, const uint32_t size) {
     }
 
     // 4、分配成功
+    rb->name              = name;
     rb->front_index       = 0;
     rb->rear_index        = 0;
     rb->size              = size;
@@ -151,7 +153,8 @@ static inline uint32_t RingBuffer_GetRemainSize_Internal(const RingBuffer *rb) {
 ret_code_t WriteRingBuffer(RingBuffer *rb, const uint8_t *add, uint32_t *size,
                            const uint8_t isForceWrite) {
     // 1、参数合法性检查
-    if (rb == NULL || add == NULL || *size == 0 || rb->buffer == NULL || rb->size < 2)
+    if (rb == NULL || add == NULL || size == NULL || *size == 0 || rb->buffer == NULL ||
+        rb->size < 2)
         return RET_E_INVALID_ARG;
     // --- 进入临界区，保护所有对 rb 成员的访问 ---
     RB_ENTER_CRITICAL();
@@ -205,7 +208,8 @@ ret_code_t WriteRingBuffer(RingBuffer *rb, const uint8_t *add, uint32_t *size,
  */
 ret_code_t ReadRingBuffer(RingBuffer *rb, uint8_t *add, uint32_t *size, const uint8_t isForceRead) {
     // 1、参数合法性检查
-    if (rb == NULL || add == NULL || *size == 0 || rb->buffer == NULL || rb->size < 2)
+    if (rb == NULL || add == NULL || size == NULL || *size == 0 || rb->buffer == NULL ||
+        rb->size < 2)
         return RET_E_INVALID_ARG;
     // --- 进入临界区，保护所有对 rb 成员的访问 ---
     RB_ENTER_CRITICAL();
@@ -259,9 +263,10 @@ ret_code_t ReadRingBuffer(RingBuffer *rb, uint8_t *add, uint32_t *size, const ui
  * @param  isForcePeek 是否在数据不足时强制窥视已有的数据
  * @return 返回是否成功窥视（如果请求的数据量大于已用空间且非强制，则失败）
  */
-ret_code_t PeekRingBuffer(RingBuffer *rb, uint8_t *add, uint32_t *size, const uint8_t isForcePeek) {
+ret_code_t PeekRingBuffer(const RingBuffer *rb, uint8_t *add, uint32_t *size, const uint8_t isForcePeek) {
     // 1、参数合法性检查
-    if (rb == NULL || add == NULL || *size == 0 || rb->buffer == NULL || rb->size < 2)
+    if (rb == NULL || add == NULL || size == NULL || *size == 0 || rb->buffer == NULL ||
+        rb->size < 2)
         return RET_E_INVALID_ARG;
 
     // --- 进入临界区，保护所有对 rb 成员的访问 ---
@@ -315,7 +320,8 @@ ret_code_t PeekRingBuffer(RingBuffer *rb, uint8_t *add, uint32_t *size, const ui
 ret_code_t WriteRingBufferFromISR(RingBuffer *rb, const uint8_t *add, uint32_t *size,
                                   const uint8_t isForceWrite) {
     // 1、参数合法性检查
-    if (rb == NULL || add == NULL || *size == 0 || rb->buffer == NULL || rb->size < 2)
+    if (rb == NULL || add == NULL || size == NULL || *size == 0 || rb->buffer == NULL ||
+        rb->size < 2)
         return RET_E_INVALID_ARG;
     // --- 进入临界区，保护所有对 rb 成员的访问 ---
     rb_isr_state_t saved;
@@ -372,7 +378,8 @@ ret_code_t WriteRingBufferFromISR(RingBuffer *rb, const uint8_t *add, uint32_t *
 ret_code_t ReadRingBufferFromISR(RingBuffer *rb, uint8_t *add, uint32_t *size,
                                  const uint8_t isForceRead) {
     // 1、参数合法性检查
-    if (rb == NULL || add == NULL || *size == 0 || rb->buffer == NULL || rb->size < 2)
+    if (rb == NULL || add == NULL || size == NULL || *size == 0 || rb->buffer == NULL ||
+        rb->size < 2)
         return RET_E_INVALID_ARG;
     // --- 进入临界区，保护所有对 rb 成员的访问 ---
     rb_isr_state_t saved;
