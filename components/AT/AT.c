@@ -2,7 +2,7 @@
 // Created by yan on 2025/12/7.
 //
 #include "APP_config.h"
-#ifdef ENABLE_AT_SYSTEM
+#if defined(ENABLE_AT_SYSTEM)
 #include <stdio.h>
 #include <string.h>
 
@@ -12,11 +12,11 @@
 #include "log.h"
 #include "ret_code.h"
 
-static void AT_OnLine(AT_Manager_t *mgr, const char *line);
+static void AT_OnLine(AT_Manager_t* mgr, const char* line);
 
-AT_Resp_t AT_Wait(AT_Command_t *h, uint32_t wait_ms);
+AT_Resp_t AT_Wait(AT_Command_t* h, uint32_t wait_ms);
 
-void AT_CmdRelease(AT_Manager_t *mgr, AT_Command_t *h);
+void AT_CmdRelease(AT_Manager_t* mgr, AT_Command_t* h);
 
 /**
  * @brief 初始化串口设备句柄初始化变量、消息队列、静态对象池
@@ -24,7 +24,7 @@ void AT_CmdRelease(AT_Manager_t *mgr, AT_Command_t *h);
  * @param uart      绑定的串口
  * @param hw_send   发送函数指针
  */
-void AT_Core_Init(AT_Manager_t *at_device, UART_HandleTypeDef *uart, const HW_Send hw_send) {
+void AT_Core_Init(AT_Manager_t* at_device, UART_HandleTypeDef* uart, const HW_Send hw_send) {
     /* 1、接收发送命令函数指针 */
     at_device->hw_send = hw_send;
 
@@ -78,7 +78,7 @@ void AT_Core_Init(AT_Manager_t *at_device, UART_HandleTypeDef *uart, const HW_Se
     at_device->tx_mode = (AT_TX_USE_DMA ? AT_TX_DMA : AT_TX_BLOCK);
 
     /*  创建队列（元素是 AT_Command_t*）*/
-    OSAL_msgq_create(&at_device->cmd_q, "AT_CMD_Q", sizeof(AT_Command_t *), AT_MAX_PENDING);
+    OSAL_msgq_create(&at_device->cmd_q, "AT_CMD_Q", sizeof(AT_Command_t*), AT_MAX_PENDING);
     if (!at_device->cmd_q) {
         LOG_E("AT", "cmd_q create failed");
     }
@@ -123,7 +123,7 @@ void AT_Core_Init(AT_Manager_t *at_device, UART_HandleTypeDef *uart, const HW_Se
  * @param Size  这次新增数据
  * @note  DMA + circle模式
  */
-void AT_Core_RxCallback(AT_Manager_t *at_manager, const UART_HandleTypeDef *huart, uint16_t Size) {
+void AT_Core_RxCallback(AT_Manager_t* at_manager, const UART_HandleTypeDef* huart, uint16_t Size) {
     (void)Size;
     bool has_line = false;
     bool stop     = false;
@@ -163,32 +163,32 @@ void AT_Core_RxCallback(AT_Manager_t *at_manager, const UART_HandleTypeDef *huar
     uint32_t write_size_one = 1;
 
     /* 定义一个宏来处理单个字节逻辑，避免回卷代码重复 */
-#define AT_HANDLE_BYTE(b)                                                                             \
-    do {                                                                                              \
-        /* 尝试写入 数据 RingBuffer */                                                                \
-        write_size_one = 1;                                                                           \
-        if (ret_is_ok(WriteRingBufferFromISR(&at_manager->rx_rb, &(b), &write_size_one, 0))) {        \
-            /* 只有写入成功才统计长度，防止 Buffer 满导致逻辑错位 */                                  \
-            ++(at_manager->isr_line_len);                                                             \
-                                                                                                      \
-            /* 检测结束符 \n 或 > */                                                                  \
-            if ((b) == '\n' || (b) == '>') {                                                          \
-                /* 将当前行的长度 (uint16_t) 存入 长度 RingBuffer */                                  \
-                uint16_t len_val         = at_manager->isr_line_len;                                  \
-                uint32_t len_size        = sizeof(uint16_t);                                          \
-                /* 把 &len_val 强转为 uint8_t* 写入 2 个字节 */                                       \
-                ret_code_t ok_len        = WriteRingBufferFromISR(&at_manager->msg_len_rb,            \
-                                                                  (uint8_t *)&len_val, &len_size, 0); \
-                at_manager->isr_line_len = 0;                                                         \
-                /* 溢出 */                                                                            \
-                if ((ret_is_err(ok_len))) {                                                           \
-                    at_manager->rx_overflow = 1;                                                      \
-                    stop                    = true;                                                   \
-                } else {                                                                              \
-                    has_line = true;                                                                  \
-                }                                                                                     \
-            }                                                                                         \
-        }                                                                                             \
+#define AT_HANDLE_BYTE(b)                                                                            \
+    do {                                                                                             \
+        /* 尝试写入 数据 RingBuffer */                                                               \
+        write_size_one = 1;                                                                          \
+        if (ret_is_ok(WriteRingBufferFromISR(&at_manager->rx_rb, &(b), &write_size_one, 0))) {       \
+            /* 只有写入成功才统计长度，防止 Buffer 满导致逻辑错位 */                                 \
+            ++(at_manager->isr_line_len);                                                            \
+                                                                                                     \
+            /* 检测结束符 \n 或 > */                                                                 \
+            if ((b) == '\n' || (b) == '>') {                                                         \
+                /* 将当前行的长度 (uint16_t) 存入 长度 RingBuffer */                                 \
+                uint16_t len_val         = at_manager->isr_line_len;                                 \
+                uint32_t len_size        = sizeof(uint16_t);                                         \
+                /* 把 &len_val 强转为 uint8_t* 写入 2 个字节 */                                      \
+                ret_code_t ok_len        = WriteRingBufferFromISR(&at_manager->msg_len_rb,           \
+                                                                  (uint8_t*)&len_val, &len_size, 0); \
+                at_manager->isr_line_len = 0;                                                        \
+                /* 溢出 */                                                                           \
+                if ((ret_is_err(ok_len))) {                                                          \
+                    at_manager->rx_overflow = 1;                                                     \
+                    stop                    = true;                                                  \
+                } else {                                                                             \
+                    has_line = true;                                                                 \
+                }                                                                                    \
+            }                                                                                        \
+        }                                                                                            \
     } while (0)
 
     /* 3. 第一段循环处理 */
@@ -220,7 +220,7 @@ void AT_Core_RxCallback(AT_Manager_t *at_manager, const UART_HandleTypeDef *huar
  * @brief 对串口接收的数据进行处理
  * @param at_manager AT管理句柄
  */
-void AT_Core_Process(AT_Manager_t *at_manager) {
+void AT_Core_Process(AT_Manager_t* at_manager) {
     /* 处理写入失败 */
     if (at_manager->rx_overflow) {
         at_manager->rx_overflow = 0;
@@ -276,7 +276,7 @@ void AT_Core_Process(AT_Manager_t *at_manager) {
         at_manager->line_buf[actual] = '\0';
 
         /* 8、开始状态机处理 */
-        AT_OnLine(at_manager, (const char *)at_manager->line_buf);
+        AT_OnLine(at_manager, (const char*)at_manager->line_buf);
         /* 打印返回数据 */
         LOG_W("AT", "RX: %s", at_manager->line_buf);
     }
@@ -290,12 +290,12 @@ void AT_Core_Process(AT_Manager_t *at_manager) {
  * @param timeout_ms 超时事件
  * @return 返回状态
  */
-AT_Resp_t AT_SendCmd(AT_Manager_t *mgr, const char *cmd, const char *expect, uint32_t timeout_ms) {
+AT_Resp_t AT_SendCmd(AT_Manager_t* mgr, const char* cmd, const char* expect, uint32_t timeout_ms) {
 #if !AT_RTOS_ENABLE
     return AT_RESP_ERROR;
 #else
 
-    AT_Command_t *h = AT_Submit(mgr, cmd, expect, timeout_ms);
+    AT_Command_t* h = AT_Submit(mgr, cmd, expect, timeout_ms);
     if (!h) return AT_RESP_BUSY;
 
     const AT_Resp_t r = AT_Wait(h, h->timeout_ms);
@@ -309,13 +309,13 @@ AT_Resp_t AT_SendCmd(AT_Manager_t *mgr, const char *cmd, const char *expect, uin
  * @param mgr AT设备句柄
  * @param line 返回的语句
  */
-static void AT_OnLine(AT_Manager_t *mgr, const char *line) {
+static void AT_OnLine(AT_Manager_t* mgr, const char* line) {
     if (!mgr || !line) return;
 
     /* 有正在执行的命令：优先作为响应处理 */
     if (mgr->curr_cmd) {
-        AT_Command_t *c    = mgr->curr_cmd;
-        const char *expect = (c->expect_buf[0] != '\0') ? c->expect_buf : "OK";
+        AT_Command_t* c    = mgr->curr_cmd;
+        const char* expect = (c->expect_buf[0] != '\0') ? c->expect_buf : "OK";
 
         if (strstr(line, expect)) {
             c->result     = AT_RESP_OK;
@@ -379,7 +379,7 @@ uint32_t AT_MsToTicks(const uint32_t ms) {
  * @param mgr AT设备句柄
  * @return 返回空闲命令对象
  */
-static AT_Command_t *AT_CmdAlloc(AT_Manager_t *mgr) {
+static AT_Command_t* AT_CmdAlloc(AT_Manager_t* mgr) {
     if (!mgr) return NULL;
 #if AT_RTOS_ENABLE
     /* 获取锁 */
@@ -392,7 +392,7 @@ static AT_Command_t *AT_CmdAlloc(AT_Manager_t *mgr) {
     /* 获取在池中的位置 */
     const uint16_t idx = mgr->free_stack[--mgr->free_top];
     /* 根据索引返回空闲对象指针 */
-    AT_Command_t *c    = &mgr->cmd_pool[idx];
+    AT_Command_t* c    = &mgr->cmd_pool[idx];
     /* 当前对象在内存池中标记为被使用 */
     c->in_use          = 1;
 
@@ -409,7 +409,7 @@ static AT_Command_t *AT_CmdAlloc(AT_Manager_t *mgr) {
  * @param mgr AT句柄
  * @param c   要发送的数据句柄
  */
-static void AT_CmdFree(AT_Manager_t *mgr, AT_Command_t *c) {
+static void AT_CmdFree(AT_Manager_t* mgr, AT_Command_t* c) {
 #if AT_RTOS_ENABLE
     if (!mgr || !c) return;
     /* 判断指针范围是否在池中 */
@@ -470,7 +470,7 @@ void AT_SemDrain(osal_sem_t sem) {
  * @param timeout_ms 超时时间
  * @return 返回一个装填好的命令对象指针
  */
-AT_Command_t *AT_Submit(AT_Manager_t *mgr, const char *cmd, const char *expect,
+AT_Command_t* AT_Submit(AT_Manager_t* mgr, const char* cmd, const char* expect,
                         uint32_t timeout_ms) {
 #if !AT_RTOS_ENABLE
     (void)mgr;
@@ -485,7 +485,7 @@ AT_Command_t *AT_Submit(AT_Manager_t *mgr, const char *cmd, const char *expect,
     if (timeout_ms == 0) timeout_ms = AT_CMD_TIMEOUT_DEF;
 
     /* 3、从静态池拿出其中一个空对象的指针 */
-    AT_Command_t *c = AT_CmdAlloc(mgr);
+    AT_Command_t* c = AT_CmdAlloc(mgr);
     if (!c) return NULL;
 
     /* 4、获取掉信号量 */
@@ -507,7 +507,7 @@ AT_Command_t *AT_Submit(AT_Manager_t *mgr, const char *cmd, const char *expect,
     c->result         = AT_RESP_WAITING;
 
     // 入队（队列满则归还）
-    AT_Command_t *ptr = c;
+    AT_Command_t* ptr = c;
     /* 消息队列获取失败释放命令*/
     if (OSAL_msgq_put(mgr->cmd_q, &ptr, 0) != RET_OK) {
         AT_CmdFree(mgr, c);
@@ -529,7 +529,7 @@ AT_Command_t *AT_Submit(AT_Manager_t *mgr, const char *cmd, const char *expect,
  * @param wait_ms 等待的时间
  * @return 返回
  */
-AT_Resp_t AT_Wait(AT_Command_t *h, const uint32_t wait_ms) {
+AT_Resp_t AT_Wait(AT_Command_t* h, const uint32_t wait_ms) {
 #if !AT_RTOS_ENABLE
     (void)h;
     (void)wait_ms;
@@ -553,7 +553,7 @@ AT_Resp_t AT_Wait(AT_Command_t *h, const uint32_t wait_ms) {
  * @param mgr AT设备对象指针
  * @param h   AT命令对象指针
  */
-void AT_CmdRelease(AT_Manager_t *mgr, AT_Command_t *h) {
+void AT_CmdRelease(AT_Manager_t* mgr, AT_Command_t* h) {
 #if AT_RTOS_ENABLE
     if (!mgr || !h) return;
     AT_CmdFree(mgr, h);
@@ -568,7 +568,7 @@ void AT_CmdRelease(AT_Manager_t *mgr, AT_Command_t *h) {
  * @param h AT设备句柄
  * @return 对象的进度状态
  */
-AT_Resp_t AT_Poll(AT_Command_t *h) {
+AT_Resp_t AT_Poll(AT_Command_t* h) {
     if (!h) return AT_RESP_ERROR;
     return h->result;  // WAITING/OK/ERROR/TIMEOUT
 }
@@ -579,7 +579,7 @@ AT_Resp_t AT_Poll(AT_Command_t *h) {
  * @param cb  绑定的URC回调函数
  * @param user 传递的上下文
  */
-void AT_SetUrcHandler(AT_Manager_t *mgr, const AT_UrcCb cb, void *user) {
+void AT_SetUrcHandler(AT_Manager_t* mgr, const AT_UrcCb cb, void* user) {
     mgr->urc_cb   = cb;
     mgr->urc_user = user;
 }
@@ -593,7 +593,7 @@ void AT_SetUrcHandler(AT_Manager_t *mgr, const AT_UrcCb cb, void *user) {
  * @return 返回一个装填好的命令对象指针
  * @note  非阻塞版
  */
-AT_Command_t *AT_SendAsync(AT_Manager_t *mgr, const char *cmd, const char *expect,
+AT_Command_t* AT_SendAsync(AT_Manager_t* mgr, const char* cmd, const char* expect,
                            uint32_t timeout_ms) {
     return AT_Submit(mgr, cmd, expect, timeout_ms);
 }
@@ -604,7 +604,7 @@ AT_Command_t *AT_SendAsync(AT_Manager_t *mgr, const char *cmd, const char *expec
  * @param len 发送数据的长度
  * @return 返回发送数据需要的数据时间
  */
-uint32_t AT_TxTimeoutMs(AT_Manager_t *mgr, uint16_t len) {
+uint32_t AT_TxTimeoutMs(AT_Manager_t* mgr, uint16_t len) {
     // 估算：1字节≈10bit（起始+8数据+停止），超时时间留余量
     const uint32_t baud = (mgr && mgr->uart) ? mgr->uart->Init.BaudRate : 115200;
     uint32_t ms         = (uint32_t)((uint64_t)len * 10u * 1000u / baud);
@@ -617,7 +617,7 @@ uint32_t AT_TxTimeoutMs(AT_Manager_t *mgr, uint16_t len) {
  * @param mgr AT设备句柄
  * @param mode 设定的模式
  */
-void AT_SetTxMode(AT_Manager_t *mgr, AT_TxMode mode) {
+void AT_SetTxMode(AT_Manager_t* mgr, AT_TxMode mode) {
     mgr->tx_mode = mode;
 }
 

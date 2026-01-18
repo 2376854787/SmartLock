@@ -1,3 +1,7 @@
+#include "APP_config.h"
+#include "stm32_hal_config.h"
+/* hal抽象选择宏 */
+#if defined(USE_STM32_HAL) && defined(ENABLE_HAL_GPIO)
 #include <stdint.h>
 #include <string.h>
 
@@ -8,7 +12,7 @@
 
 /* ---------------- 断言（热路径用） ---------------- */
 
-__WEAK void hal_gpio_assert_failed(const char *file, int line) {
+__WEAK void hal_gpio_assert_failed(const char* file, int line) {
     (void)file;
     (void)line;
     __disable_irq();
@@ -31,7 +35,7 @@ __WEAK void hal_gpio_assert_failed(const char *file, int line) {
 /* ---------------- 句柄定义（只在 port.c 可见） ---------------- */
 
 struct hal_gpio {
-    GPIO_TypeDef *port;
+    GPIO_TypeDef* port;
     uint16_t pin; /* 0..15 */
     uint32_t id;
 };
@@ -47,7 +51,7 @@ static inline uint16_t pin_mask(uint16_t pin) {
  * @param GPIOx GPIOx
  * @return 时钟开启结果
  */
-static ret_code_t gpio_enable_clock(const GPIO_TypeDef *GPIOx) {
+static ret_code_t gpio_enable_clock(const GPIO_TypeDef* GPIOx) {
     if (GPIOx == GPIOA) {
         __HAL_RCC_GPIOA_CLK_ENABLE();
         return RET_OK;
@@ -89,7 +93,7 @@ static ret_code_t gpio_enable_clock(const GPIO_TypeDef *GPIOx) {
  * @param out
  * @return 被映射的平台上下拉枚举
  */
-static ret_code_t map_pull(hal_gpio_pull_t p, uint32_t *out) {
+static ret_code_t map_pull(hal_gpio_pull_t p, uint32_t* out) {
     if (!out) return RET_E_INVALID_ARG;
     switch (p) {
         case HAL_GPIO_PULL_NONE:
@@ -112,7 +116,7 @@ static ret_code_t map_pull(hal_gpio_pull_t p, uint32_t *out) {
  * @param out
  * @return
  */
-static ret_code_t map_speed(hal_gpio_speed_t s, uint32_t *out) {
+static ret_code_t map_speed(hal_gpio_speed_t s, uint32_t* out) {
     if (!out) return RET_E_INVALID_ARG;
     switch (s) {
         case HAL_GPIO_SPEED_LOW:
@@ -138,7 +142,7 @@ static ret_code_t map_speed(hal_gpio_speed_t s, uint32_t *out) {
  * @param out_af
  * @return ret_code_t
  */
-static ret_code_t map_alternate(uint32_t in_af, uint32_t *out_af) {
+static ret_code_t map_alternate(uint32_t in_af, uint32_t* out_af) {
     if (!out_af) return RET_E_INVALID_ARG;
 
 #ifdef IS_GPIO_AF
@@ -162,7 +166,7 @@ static ret_code_t map_alternate(uint32_t in_af, uint32_t *out_af) {
  * @return 返回状态码
  * @note
  */
-ret_code_t hal_gpio_port_open(hal_gpio_t **out, uint32_t id) {
+ret_code_t hal_gpio_port_open(hal_gpio_t** out, uint32_t id) {
     if (!out) return RET_E_INVALID_ARG;
 
     board_gpio_hw_t hw;
@@ -201,7 +205,7 @@ ret_code_t hal_gpio_port_open(hal_gpio_t **out, uint32_t id) {
  * @param cfg 配置结构体
  * @return 运行状态
  */
-ret_code_t hal_gpio_port_config(hal_gpio_t *h, const hal_gpio_cfg_t *cfg) {
+ret_code_t hal_gpio_port_config(hal_gpio_t* h, const hal_gpio_cfg_t* cfg) {
     /* 检查非空指针 */
     if (!h || !cfg) return RET_E_INVALID_ARG;
     /* 检查合法参数 */
@@ -274,7 +278,7 @@ ret_code_t hal_gpio_port_config(hal_gpio_t *h, const hal_gpio_cfg_t *cfg) {
  * @param h
  * @return
  */
-ret_code_t hal_gpio_port_close(const hal_gpio_t *h) {
+ret_code_t hal_gpio_port_close(const hal_gpio_t* h) {
     /* 静态句柄方案：关闭可做 no-op */
     (void)h;
     return RET_OK;
@@ -286,7 +290,7 @@ ret_code_t hal_gpio_port_close(const hal_gpio_t *h) {
  * @param h GPIO
  * @param level 电平
  */
-void hal_gpio_port_write(const hal_gpio_t *h, hal_gpio_level_t level) {
+void hal_gpio_port_write(const hal_gpio_t* h, hal_gpio_level_t level) {
     HAL_GPIO_ASSERT(h != NULL);
     HAL_GPIO_ASSERT(h->port != NULL);
     HAL_GPIO_ASSERT(h->pin < 16u);
@@ -300,7 +304,7 @@ void hal_gpio_port_write(const hal_gpio_t *h, hal_gpio_level_t level) {
  * @param h
  * @return
  */
-hal_gpio_level_t hal_gpio_port_read(const hal_gpio_t *h) {
+hal_gpio_level_t hal_gpio_port_read(const hal_gpio_t* h) {
     HAL_GPIO_ASSERT(h != NULL);
     HAL_GPIO_ASSERT(h->port != NULL);
     HAL_GPIO_ASSERT(h->pin < 16u);
@@ -312,10 +316,12 @@ hal_gpio_level_t hal_gpio_port_read(const hal_gpio_t *h) {
  * @brief 翻转指定GPIO的输出电平
  * @param h
  */
-void hal_gpio_port_toggle(const hal_gpio_t *h) {
+void hal_gpio_port_toggle(const hal_gpio_t* h) {
     HAL_GPIO_ASSERT(h != NULL);
     HAL_GPIO_ASSERT(h->port != NULL);
     HAL_GPIO_ASSERT(h->pin < 16u);
 
     HAL_GPIO_TogglePin(h->port, pin_mask(h->pin));
 }
+
+#endif

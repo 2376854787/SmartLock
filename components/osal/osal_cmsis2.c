@@ -10,12 +10,12 @@
 
 /* ============ 断言 =============*/
 /* 断言系统全局配置 */
-#ifdef ENABLE_ASSERT_SYSTEM
+#if defined(ENABLE_ASSERT_SYSTEM)
 #include "assert_cus.h"
 #endif
-#ifdef ENABLE_ASSERT_SYSTEM
+#if defined(ENABLE_ASSERT_SYSTEM)
 #define OSAL_ASSERT(expr) ASSERT_PARAM(expr)
-#define OSAL_FAULT(expr) ASSERT_FATAL(expr)
+#define OSAL_FAULT(expr)  ASSERT_FATAL(expr)
 #else
 #define OSAL_ASSERT(expr) \
     do {                  \
@@ -34,10 +34,10 @@
 #endif
 
 /* ====== 临界区模式编码：使用 state 高位标记，低位存原始值 ====== */
-#define OSAL_CRIT_MODE_MASK (0xC0000000UL)
-#define OSAL_CRIT_MODE_PRIMASK (0x40000000UL)     /* 线程态&调度未启：PRIMASK 可恢复 */
+#define OSAL_CRIT_MODE_MASK        (0xC0000000UL)
+#define OSAL_CRIT_MODE_PRIMASK     (0x40000000UL) /* 线程态&调度未启：PRIMASK 可恢复 */
 #define OSAL_CRIT_MODE_RTOS_THREAD (0x80000000UL) /* 线程态&调度已启：taskENTER/EXIT_CRITICAL */
-#define OSAL_CRIT_MODE_RTOS_ISR (0xC0000000UL)    /* ISR：taskENTER/EXIT_CRITICAL_FROM_ISR */
+#define OSAL_CRIT_MODE_RTOS_ISR    (0xC0000000UL) /* ISR：taskENTER/EXIT_CRITICAL_FROM_ISR */
 
 #define OSAL_CRIT_PAYLOAD_MASK (0x3FFFFFFFUL) /* 低 30 位存 payload（足够容纳常见返回值） */
 /* ================================================ 内核状态/时间
@@ -207,7 +207,7 @@ void OSAL_exit_critical(void) {
  * @brief 进入临界区（可恢复版本）
  * @param state 保存进入前状态/模式
  */
-void OSAL_enter_critical_ex(osal_crit_state_t *state) {
+void OSAL_enter_critical_ex(osal_crit_state_t* state) {
     if (!state) return;
 
 #if OSAL_CRITICAL_IMPL_FREERTOS
@@ -274,7 +274,7 @@ void OSAL_exit_critical_ex(osal_crit_state_t state) {
  * @brief 进入临界区的中断版本
  * @param state 进入中断的变量
  */
-void OSAL_enter_critical_from_isr(osal_crit_state_t *state) {
+void OSAL_enter_critical_from_isr(osal_crit_state_t* state) {
     if (!state) return;
 
 #if OSAL_CRITICAL_IMPL_FREERTOS
@@ -320,7 +320,7 @@ void OSAL_exit_critical_from_isr(osal_crit_state_t state) {
  * @param prio_inherit
  * @return 锁是否创建成功
  */
-ret_code_t OSAL_mutex_create(osal_mutex_t *out, const char *name, bool recursive,
+ret_code_t OSAL_mutex_create(osal_mutex_t* out, const char* name, bool recursive,
                              bool prio_inherit) {
     if (!out) return RET_E_INVALID_ARG;
 
@@ -388,7 +388,7 @@ ret_code_t OSAL_mutex_unlock(osal_mutex_t mutex) {
  * @param max_count  最大数量
  * @return 返回创建结果
  */
-ret_code_t OSAL_sem_create(osal_sem_t *out, const char *name, uint32_t initial_count,
+ret_code_t OSAL_sem_create(osal_sem_t* out, const char* name, uint32_t initial_count,
                            uint32_t max_count) {
     if (!out || max_count == 0) return RET_E_INVALID_ARG;
     osSemaphoreAttr_t attr;
@@ -462,7 +462,7 @@ ret_code_t OSAL_sem_give_from_isr(osal_sem_t sem) {
  * @return消息队列创建是否成功
  * @norte 不可 ISR 中使用
  */
-ret_code_t OSAL_msgq_create(osal_msgq_t *out, const char *name, uint32_t item_size,
+ret_code_t OSAL_msgq_create(osal_msgq_t* out, const char* name, uint32_t item_size,
                             uint32_t item_count) {
     if (!out || item_count == 0 || item_size == 0) return RET_E_INVALID_ARG;
     osMessageQueueAttr_t attr;
@@ -502,7 +502,7 @@ ret_code_t OSAL_msgq_delete(osal_msgq_t msgq) {
  * @return 是否发送成功
  * @note 可以中断使用
  */
-ret_code_t OSAL_msgq_put(osal_msgq_t msgq, void *msg, uint32_t timeout_ms) {
+ret_code_t OSAL_msgq_put(osal_msgq_t msgq, void* msg, uint32_t timeout_ms) {
     if (!msgq || !msg) return RET_E_INVALID_ARG;
     const uint32_t to   = OSAL_timeout_ms_to_kernel_ticks(timeout_ms);
     const osStatus_t st = osMessageQueuePut((osMessageQueueId_t)msgq, msg, 0, to);
@@ -528,7 +528,7 @@ ret_code_t OSAL_msgq_put(osal_msgq_t msgq, void *msg, uint32_t timeout_ms) {
  * @return 是否获取成功
  * @note CMSIS-RTOS2 底层可从ISR执行
  */
-ret_code_t OSAL_msgq_get(osal_msgq_t msgq, void *msg, uint32_t timeout_ms) {
+ret_code_t OSAL_msgq_get(osal_msgq_t msgq, void* msg, uint32_t timeout_ms) {
     if (!msgq || !msg) return RET_E_INVALID_ARG;
     const uint32_t to   = OSAL_timeout_ms_to_kernel_ticks(timeout_ms);
     const osStatus_t st = osMessageQueueGet((osMessageQueueId_t)msgq, msg, NULL, to);
@@ -556,8 +556,8 @@ ret_code_t OSAL_msgq_get(osal_msgq_t msgq, void *msg, uint32_t timeout_ms) {
  * @param attr 需要传递的部分参数
  * @return 线程是否创建成功
  */
-ret_code_t OSAL_thread_create(osal_thread_t *out, osal_thread_fn_t fn, void *arg,
-                              const osal_thread_attr_t *attr) {
+ret_code_t OSAL_thread_create(osal_thread_t* out, osal_thread_fn_t fn, void* arg,
+                              const osal_thread_attr_t* attr) {
     if (!out || !fn || !attr) return RET_E_INVALID_ARG;
     osThreadAttr_t a;
     a.attr_bits     = 0;

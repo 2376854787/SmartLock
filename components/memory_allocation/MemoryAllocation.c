@@ -1,6 +1,6 @@
 #include "APP_config.h"
 /* 静态内存分配开启宏 */
-#ifdef ENABLE_STATIC_ALLOCATION
+#if defined(ENABLE_STATIC_ALLOCATION)
 #include <stdlib.h>
 
 #include "MemoryAllocation.h"
@@ -13,7 +13,7 @@ volatile uint16_t MemoryPondIndex = 0;  // 指向还没有被分配的空间的�
  * @param alignment 要对齐的字节 {1, 2, 4, 8}
  * @retval 返回指针基准地址
  **/
-uint8_t *static_alloc(const uint32_t size, const uint8_t alignment) {
+uint8_t* static_alloc(const uint32_t size, const uint8_t alignment) {
     // 1、计算当前指针的地址
     const uintptr_t cur = (uintptr_t)&MemoryPond[MemoryPondIndex];
     uint8_t padding     = 0;
@@ -29,7 +29,7 @@ uint8_t *static_alloc(const uint32_t size, const uint8_t alignment) {
     MemoryPondIndex += padding;
 
     // 5、分配内存并返回地址
-    uint8_t *ptr = &MemoryPond[MemoryPondIndex];
+    uint8_t* ptr = &MemoryPond[MemoryPondIndex];
     MemoryPondIndex += size;
     return ptr;
 }

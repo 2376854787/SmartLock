@@ -1,6 +1,6 @@
 #include "APP_config.h"
 /* 全局配置宏开关 */
-#ifdef ENABLE_LOG_SYSTEM
+#if defined(ENABLE_LOG_SYSTEM)
 #include <stdarg.h> /* 用于处理可变参数 va_list */
 #include <stdio.h>  /* 用于 snprintf, vsnprintf */
 #include <string.h> /* 用于 strrchr, memcpy */
@@ -14,34 +14,34 @@
 #include "osal.h"
 #include "ret_code.h"
 
-#define snprintf_my sniprintf
+#define snprintf_my  sniprintf
 #define vsnprintf_my vsniprintf
 /* ================= 宏定义与配置 ================= */
 
 /* 颜色代码 (ANSI Escape Code) - 用于串口终端显示颜色 */
 #if LOG_COLOR_ENABLE
-#define COLOR_RED "\033[31m"
-#define COLOR_GREEN "\033[32m"
+#define COLOR_RED    "\033[31m"
+#define COLOR_GREEN  "\033[32m"
 #define COLOR_YELLOW "\033[33m"
-#define COLOR_BLUE "\033[34m"
-#define COLOR_RESET "\033[0m"
+#define COLOR_BLUE   "\033[34m"
+#define COLOR_RESET  "\033[0m"
 #else
-#define COLOR_RED ""
-#define COLOR_GREEN ""
+#define COLOR_RED    ""
+#define COLOR_GREEN  ""
 #define COLOR_YELLOW ""
-#define COLOR_BLUE ""
-#define COLOR_RESET ""
+#define COLOR_BLUE   ""
+#define COLOR_RESET  ""
 #endif
 
 /* 单条日志最大长度 (字节) */
 #define LOG_LINE_MAX 256
 
 /* 定义用于唤醒后台任务的事件标志位 (任意未使用的位即可) */
-#define LOG_TASK_FLAG 0x0001
+#define LOG_TASK_FLAG    0x0001
 #define LOG_TX_DONE_FLAG 0x0002
 
 /* 将单字节写入环形缓冲区 */
-static void Log_PushBytes_NoBlock(const uint8_t *data, uint16_t len);
+static void Log_PushBytes_NoBlock(const uint8_t* data, uint16_t len);
 
 /* ================= 外部依赖 ================= */
 
@@ -79,7 +79,7 @@ static inline uint8_t Log_BackendReady(void) {
  * @brief 查询返回后端配置
  * @return
  */
-static inline const log_backend_t *Log_GetBackend(void) {
+static inline const log_backend_t* Log_GetBackend(void) {
     return &s_log_backend;
 }
 #if LOG_ASYNC_ENABLE
@@ -87,7 +87,7 @@ static inline const log_backend_t *Log_GetBackend(void) {
  * @brief 日志后台处理任务
  * @note  负责从 RingBuffer 取出数据并通过串口发送
  */
-void Log_Task_Entry(void *argument) {
+void Log_Task_Entry(void* argument) {
     static uint8_t send_buf[128];
     uint32_t read_len;
 
@@ -109,7 +109,7 @@ void Log_Task_Entry(void *argument) {
                 continue;
             }
 
-            const log_backend_t *b = Log_GetBackend();
+            const log_backend_t* b = Log_GetBackend();
 
             /* 启动发送：若忙则等待完成再重试 */
             int rc;
@@ -164,7 +164,7 @@ void Log_Init(void) {
 /**
  * @brief 核心日志打印函数
  */
-void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, const char *fmt,
+void Log_Printf(LogLevel_t level, const char* file, int line, const char* tag, const char* fmt,
                 ...) {
     /* 1. 过滤低等级日志 */
     if (level > LOG_CURRENT_LEVEL) return;
@@ -189,7 +189,7 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
     const uint32_t tick = HAL_GetTick();
 
     /* 设置颜色与等级字符 */
-    const char *color   = "";
+    const char* color   = "";
     char level_char     = ' ';
 
     /* 判断使用的日志 */
@@ -215,7 +215,7 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
     }
 
     /* 文件名简化处理：去除路径，只保留文件名 */
-    const char *short_file = strrchr(file, '/');
+    const char* short_file = strrchr(file, '/');
     if (!short_file) short_file = strrchr(file, '\\');
     short_file         = short_file ? short_file + 1 : file;
 
@@ -251,7 +251,7 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
             uint32_t write_len = total_len;
 
             /* 这里的 false 表示如果空间不足不写入全部丢弃 (或根据 RingBuffer 实现策略) */
-            if (ret_is_ok(WriteRingBuffer(&s_logRB, (uint8_t *)log_buf, &write_len, false))) {
+            if (ret_is_ok(WriteRingBuffer(&s_logRB, (uint8_t*)log_buf, &write_len, false))) {
                 /* 写入成功，设置标志位唤醒后台任务 */
                 if (s_logTaskHandle != NULL) {
                     /* OSAL_thread_flags_set 在 CMSIS-OS2 (STM32实现) 中通常是 ISR 安全的 */
@@ -276,7 +276,7 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
 
         uint32_t write_len = total_len;
         /* 发送数据到缓冲区 提示 */
-        if (ret_is_ok(WriteRingBufferFromISR(&s_logRB, (uint8_t *)buffer, &t_len, false))) {
+        if (ret_is_ok(WriteRingBufferFromISR(&s_logRB, (uint8_t*)buffer, &t_len, false))) {
             /* 写入成功，设置标志位唤醒后台任务 */
             if (s_logTaskHandle != NULL) {
                 /* OSAL_thread_flags_set 在 CMSIS-OS2 (STM32实现) 中通常是 ISR 安全的 */
@@ -289,7 +289,7 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
         }
 
         /* 发送数据到缓冲区 日志 */
-        if (ret_is_ok(WriteRingBufferFromISR(&s_logRB, (uint8_t *)log_buf, &write_len, false))) {
+        if (ret_is_ok(WriteRingBufferFromISR(&s_logRB, (uint8_t*)log_buf, &write_len, false))) {
             /* 写入成功，设置标志位唤醒后台任务 */
             if (s_logTaskHandle != NULL) {
                 /* OSAL_thread_flags_set 在 CMSIS-OS2 (STM32实现) 中通常是 ISR 安全的 */
@@ -321,11 +321,11 @@ void Log_Printf(LogLevel_t level, const char *file, int line, const char *tag, c
  * @param data 数据源
  * @param len  数据长度
  */
-static void Log_PushBytes_NoBlock(const uint8_t *data, uint16_t len) {
+static void Log_PushBytes_NoBlock(const uint8_t* data, uint16_t len) {
 #if LOG_ASYNC_ENABLE
     if (OSAL_kernel_is_running()) {
         uint32_t write_len = (uint32_t)len;
-        (void)WriteRingBufferFromISR(&s_logRB, (uint8_t *)data, &write_len, false);
+        (void)WriteRingBufferFromISR(&s_logRB, (uint8_t*)data, &write_len, false);
 
         if (s_logTaskHandle != NULL) {
             (void)OSAL_thread_flags_set(s_logTaskHandle, LOG_TASK_FLAG);
@@ -347,17 +347,17 @@ static void Log_PushBytes_NoBlock(const uint8_t *data, uint16_t len) {
  * @param len   数据长度
  * @note  buf为中文时ASC显示为...
  */
-void Log_Hexdump(LogLevel_t level, const char *file, int line, const char *tag, const void *buf,
+void Log_Hexdump(LogLevel_t level, const char* file, int line, const char* tag, const void* buf,
                  uint32_t len) {
     /* 1、检查日志等级 */
     if (level > LOG_CURRENT_LEVEL) return;
 
     /* 2、获取数据源的指针 */
-    const uint8_t *p    = (const uint8_t *)buf;
+    const uint8_t* p    = (const uint8_t*)buf;
 
     /* 3、获取时间戳、根据日志等级获取输出颜色 */
     const uint32_t tick = HAL_GetTick();
-    const char *color   = "";
+    const char* color   = "";
     char level_char     = ' ';
     switch (level) {
         case LOG_LEVEL_ERROR:
@@ -381,7 +381,7 @@ void Log_Hexdump(LogLevel_t level, const char *file, int line, const char *tag, 
     }
 
     /* 4、获取文件名 */
-    const char *short_file = strrchr(file, '/');
+    const char* short_file = strrchr(file, '/');
     if (!short_file) short_file = strrchr(file, '\\');
     short_file        = short_file ? short_file + 1 : file;
 
@@ -391,32 +391,32 @@ void Log_Hexdump(LogLevel_t level, const char *file, int line, const char *tag, 
     /* --- [收敛：定义输出宏，用于处理中断和非中断的不同路径] --- */
 #if LOG_ASYNC_ENABLE
 
-#define OUTPUT_LOG_LINE(ptr, length)                                                  \
-    do {                                                                              \
-        if (in_isr) {                                                                 \
-            Log_PushBytes_NoBlock((const uint8_t *)(ptr), (uint16_t)(length));        \
-        } else {                                                                      \
-            if (OSAL_kernel_is_running()) {                                           \
-                uint32_t write_len = (uint32_t)(length);                              \
-                (void)WriteRingBuffer(&s_logRB, (uint8_t *)(ptr), &write_len, false); \
-                if (write_len > 0 && s_logTaskHandle != NULL) {                       \
-                    (void)OSAL_thread_flags_set(s_logTaskHandle, LOG_TASK_FLAG);      \
-                }                                                                     \
-            } else {                                                                  \
-                printf("HEX打印缓冲区已满！！！%s \r\n", ptr);                        \
-            }                                                                         \
-        }                                                                             \
+#define OUTPUT_LOG_LINE(ptr, length)                                                 \
+    do {                                                                             \
+        if (in_isr) {                                                                \
+            Log_PushBytes_NoBlock((const uint8_t*)(ptr), (uint16_t)(length));        \
+        } else {                                                                     \
+            if (OSAL_kernel_is_running()) {                                          \
+                uint32_t write_len = (uint32_t)(length);                             \
+                (void)WriteRingBuffer(&s_logRB, (uint8_t*)(ptr), &write_len, false); \
+                if (write_len > 0 && s_logTaskHandle != NULL) {                      \
+                    (void)OSAL_thread_flags_set(s_logTaskHandle, LOG_TASK_FLAG);     \
+                }                                                                    \
+            } else {                                                                 \
+                printf("HEX打印缓冲区已满！！！%s \r\n", ptr);                       \
+            }                                                                        \
+        }                                                                            \
     } while (0)
 
 #else
 
-#define OUTPUT_LOG_LINE(ptr, length)                                           \
-    do {                                                                       \
-        if (in_isr) {                                                          \
-            Log_PushBytes_NoBlock((const uint8_t *)(ptr), (uint16_t)(length)); \
-        } else {                                                               \
-            Hardware_Send((uint8_t *)(ptr), (uint16_t)(length));               \
-        }                                                                      \
+#define OUTPUT_LOG_LINE(ptr, length)                                          \
+    do {                                                                      \
+        if (in_isr) {                                                         \
+            Log_PushBytes_NoBlock((const uint8_t*)(ptr), (uint16_t)(length)); \
+        } else {                                                              \
+            Hardware_Send((uint8_t*)(ptr), (uint16_t)(length));               \
+        }                                                                     \
     } while (0)
 
 #endif

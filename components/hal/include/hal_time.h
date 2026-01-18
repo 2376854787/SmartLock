@@ -1,13 +1,10 @@
-//
-// Created by yan on 2025/12/31.
-//
-
 #ifndef HAL_TIME_H
 #define HAL_TIME_H
+
 #include <stdint.h>
 /* 判断 a 是否在 b 的前面或者后面 */
-#define HAL_TIME_AFTER_EQ(a, b)  ((int32_t)((uint32_t)(a) - (uint32_t)(b)) >= 0)
-#define HAL_TIME_BEFORE(a, b)    ((int32_t)((uint32_t)(a) - (uint32_t)(b)) < 0)
+#define HAL_TIME_AFTER_EQ(a, b) ((int32_t)((uint32_t)(a) - (uint32_t)(b)) >= 0)
+#define HAL_TIME_BEFORE(a, b)   ((int32_t)((uint32_t)(a) - (uint32_t)(b)) < 0)
 
 /**
  * @brief 获取系统启动以来的毫秒数
@@ -34,4 +31,5 @@ void hal_time_delay_ms(uint32_t ms);
  * @note 严禁在 ISR 调用。在裸机下为死等，在 RTOS 下应被映射为 task_delay。
  */
 void hal_time_delay_us(uint32_t us);
-#endif //SMARTLOCK_HAL_TIME_H
+
+#endif  // HAL_TIME_H
