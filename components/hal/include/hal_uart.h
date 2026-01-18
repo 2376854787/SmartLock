@@ -68,28 +68,42 @@ typedef struct hal_uart hal_uart_t; /* 实现文件具体内容 */
  */
 typedef void (*hal_uart_rx_cb_t)(void *user_ctx, uint8_t *data, uint16_t len);
 
-
 /**
- * @brief 启动异步接收（非阻塞）
- * @param handle 句柄
- * @param rx_buffer 接收缓冲区（通常由上层提供）
- * @param max_len   缓冲区最大长度
- * @note 底层通常开启 DMA + IDLE 中断。只要收到一串连续数据且总线空闲，就触发 RX_DATA 回调。
+ * @brief 将板级ID、参数映射后返回统一操作指针变量
+ * @param id 板级串口id
+ * @param cfg 串口配置
+ * @param out 将底层内部静态串口配置变量的地址返回
+ * @return 状态码
+ * @note 必须在map文件 映射板级资源
  */
-ret_code_t hal_uart_read_async(hal_uart_handle_t handle, uint8_t *rx_buffer, uint16_t max_len);
-
-
-
 ret_code_t hal_uart_open(hal_uart_id_t id, const hal_uart_cfg_t *cfg, hal_uart_t **out);
+/**
+ * @brief 将串口配置、DMA、中断配置为默认状态
+ * @param h 串口句柄
+ * @return 状态码
+ */
 ret_code_t hal_uart_close(hal_uart_t *h);
 
+/**
+ * @brief 启动对应串口的接收功能 一般是 DMA + 半满　＋ 全满 ＋IDLE
+ * @param h 串口句柄
+ * @return 状态码
+ * @note 可以通过宏配置接收配置 DMA/IT
+ */
 ret_code_t hal_uart_rx_start(hal_uart_t *h);
-
-ret_code_t hal_uart_read(hal_uart_t *h, uint8_t *out, uint32_t max, uint32_t *nread);
+/**
+ * @brief 在回调通知后
+ * @param h 串口句柄
+ * @param out 接收数据的容器地址
+ * @param want 想要读取的字节数
+ * @param nread 实际读取的字节数
+ * @return 状态码
+ */
+ret_code_t hal_uart_read(hal_uart_t *h, uint8_t *out, uint32_t want, uint32_t *nread);
 
 ret_code_t hal_uart_set_evt_cb(hal_uart_t *h, hal_uart_evt_cb_t cb, void *user);
 
-/* 临界区保护：商业级架构必备，用于解决并发冲突 */
+/* 临界区保护 */
 void hal_enter_critical(void);
 
 void hal_exit_critical(void);

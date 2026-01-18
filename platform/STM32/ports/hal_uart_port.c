@@ -13,31 +13,36 @@
 
 /* ========== UART 上下文 ========== */
 struct hal_uart {
-    const char *name; /*串口名称*/
-    void *cb_user;
-    hal_uart_id_t id;     /*串口内部id*/
-    stm32_uart_bsp_t bsp; /* 串口映射配置 */
-
-    RingBuffer rb;        /* 软件 RB：用于上层 read */
-    uint32_t rx_last_pos; /* 上次处理的 DMA 写指针 */
-
-    volatile uint8_t tx_busy;  // 0/1
-    uint32_t last_tx_len;
-
-    bool isCompatible;
-    hal_uart_evt_cb_t cb; /* 事件回调函数 */
+    const char *name;         /*串口名称*/
+    void *cb_user;            /* 用户上下文 */
+    hal_uart_id_t id;         /*串口内部id*/
+    stm32_uart_bsp_t bsp;     /* 串口映射配置 */
+    RingBuffer rb;            /* 软件 RB：用于上层 read */
+    uint32_t rx_last_pos;     /* 上次处理的 DMA 写指针 */
+    volatile uint8_t tx_busy; /* 0/1 */
+    uint32_t last_tx_len;     /* 上次DMA的位置 */
+    bool isCompatible;        /* RB 严格模式/ 兼容模式 */
+    hal_uart_evt_cb_t cb;     /* 事件回调函数 */
 };
 
 static struct hal_uart g_uarts[HAL_UART_ID_MAX];
 
-/* =========================
- * 系列差异：H7/F7 Cache（默认空）
- * 可在 series/h7 覆盖实现
- * ========================= */
+/**
+ * @brief 占位
+ * @param ptr DMA初始地址
+ * @param len 长度
+ * @note 在使用 F7/H7 必须覆盖实现并 32位字节对齐
+ */
 __WEAK void stm32_uart_dma_tx_clean(const void *ptr, uint32_t len) {
     (void)ptr;
     (void)len;
 }
+/**
+ * @brief 占位
+ * @param ptr DMA初始地址
+ * @param len 长度
+ * @note 在使用 F7/H7 必须覆盖实现并 32位字节对齐
+ */
 __WEAK void stm32_uart_dma_rx_invalidate(const void *ptr, uint32_t len) {
     (void)ptr;
     (void)len;
@@ -222,7 +227,7 @@ void hal_uart_rx_event_case(const UART_HandleTypeDef *huart, uint16_t Size) {
 #endif
 
 /**
- * @brief  消除空闲中断的flag
+ * @brief  消除空闲中断的flag 提交DMA接收增量
  * @param u 抽象串口句柄
  */
 static void handle_idle_irq(hal_uart_t *u) {
@@ -234,9 +239,10 @@ static void handle_idle_irq(hal_uart_t *u) {
 #endif
 }
 
-/* =========================
- * IRQ 入口：在 stm32xx_it.c 的 USARTx_IRQHandler 调用
- * ========================= */
+/**
+ * @brief 执行 HAL_UART_IRQHandler + 检测DMA接收增量并提交
+ * @param id 串口句柄
+ */
 void stm32_uart_irq_usart(hal_uart_id_t id) {
     if (id >= HAL_UART_ID_MAX) return;
     hal_uart_t *u = &g_uarts[id];
@@ -246,12 +252,20 @@ void stm32_uart_irq_usart(hal_uart_id_t id) {
     handle_idle_irq(u);
 }
 
+/**
+ * @brief 执行 HAL_DMA_IRQHandler
+ * @param id 串口句柄
+ */
 void stm32_uart_irq_dma_rx(hal_uart_id_t id) {
     if (id >= HAL_UART_ID_MAX) return;
     hal_uart_t *u = &g_uarts[id];
     if (u->bsp.hdma_rx) HAL_DMA_IRQHandler(u->bsp.hdma_rx);
 }
 
+/**
+ * @brief 执行 HAL_DMA_IRQHandler
+ * @param id 串口句柄
+ */
 void stm32_uart_irq_dma_tx(hal_uart_id_t id) {
     if (id >= HAL_UART_ID_MAX) return;
     const hal_uart_t *u = &g_uarts[id];
@@ -277,7 +291,7 @@ ret_code_t hal_uart_port_open(hal_uart_id_t id, const hal_uart_cfg_t *cfg, hal_u
     /* 填充id */
     u->id         = id;
     /* 将地址传输过去 填充实现的bsp 参数 */
-    ret_code_t rc = stm32_uart_bsp_get(id,  &u->bsp);
+    ret_code_t rc = stm32_uart_bsp_get(id, &u->bsp);
     if (ret_is_err(rc)) return rc;
 
     /* 参数检查传输的 指针是否有效, DMA长度是否是2的幂次大小 */
@@ -379,9 +393,9 @@ ret_code_t hal_uart_port_rx_start(hal_uart_t *h) {
     if (HAL_UART_Receive_DMA(u->bsp.huart, u->bsp.rx_dma_buf, (uint16_t)u->bsp.rx_dma_len) !=
         HAL_OK)
         return UART_RET(RET_ERRNO_IO);
-    /* DMA 接收开启失败 退化为中断接收 */
+    /* DMA 接收开启成功 */
 #if defined(UART_IT_IDLE)
-    /* 中断方式的传输 */
+    /* 使能空闲中断 */
     __HAL_UART_ENABLE_IT(u->bsp.huart, UART_IT_IDLE);
 #endif
 #endif
@@ -415,14 +429,14 @@ ret_code_t hal_uart_port_send_async(hal_uart_t *h, const uint8_t *buf, uint32_t 
     return RET_OK;
 }
 
-/* 读：严格=必须足够才读且不消费；兼容=尽力读 */
 /**
  *
  * @param h 串口句柄
  * @param out 数据接收地址
  * @param want 想要读取的字节数
  * @param nread 实际读取的字节数
- * @return
+ * @return状态码
+ * @note 读：严格=必须足够才读且不消费；兼容=尽力读
  */
 ret_code_t hal_uart_port_read(hal_uart_t *h, uint8_t *out, uint32_t want, uint32_t *nread) {
     if (!h || !out || want == 0u || !nread) return UART_RET(RET_ERRNO_INVALID_ARG);
