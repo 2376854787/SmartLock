@@ -1,8 +1,9 @@
-
 #ifndef STM32_HAL_H
 #define STM32_HAL_H
-#include "stm32_hal_config.h"
 
+#include "stm32_hal_config.h"
+/* hal抽象选择宏 */
+#if defined(USE_STM32_HAL)
 /* 保证有且只定义了一个平台的宏 */
 #if (defined(STM32C0XX) + defined(STM32F0XX) + defined(STM32F1XX) + defined(STM32F2XX) +     \
          defined(STM32F3XX) + defined(STM32F4XX) + defined(STM32F7XX) + defined(STM32H5XX) + \
@@ -89,4 +90,6 @@
 #ifdef STM32U5XX
 #include "stm32u5xx_hal.h"
 #endif
-#endif  // STM32_HAL_H
+
+#endif
+#endif

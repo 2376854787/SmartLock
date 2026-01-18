@@ -1,6 +1,5 @@
 #ifndef HAL_GPIO_H
 #define HAL_GPIO_H
-
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -67,18 +66,18 @@ typedef struct {
  * @param id    板级编号（由 board_gpio_map.c 定义）
  * @note  必须放在Init单线程时初始化
  */
-ret_code_t hal_gpio_open(hal_gpio_t **out, uint32_t id);
+ret_code_t hal_gpio_open(hal_gpio_t** out, uint32_t id);
 
 /**
  * @brief 配置 GPIO（低频路径：返回状态码）
  * @note  若 irq != NONE：本函数仅配置 EXTI 触发方式；NVIC 由 board 层配置（商业常见分层）
  */
-ret_code_t hal_gpio_config(hal_gpio_t *h, const hal_gpio_cfg_t *cfg);
+ret_code_t hal_gpio_config(hal_gpio_t* h, const hal_gpio_cfg_t* cfg);
 
 /**
  * @brief 关闭句柄（做静态句柄映射，可实现为 no-op）
  */
-ret_code_t hal_gpio_close(hal_gpio_t *h);
+ret_code_t hal_gpio_close(hal_gpio_t* h);
 
 /* ---------------- 热路径 API：不返回状态码 ---------------- */
 
@@ -86,20 +85,20 @@ ret_code_t hal_gpio_close(hal_gpio_t *h);
  * @brief 写电平
  * @note  参数错误属于编程错误：Debug 断言；Release 可不检查
  */
-void hal_gpio_write(hal_gpio_t *h, hal_gpio_level_t level);
+void hal_gpio_write(hal_gpio_t* h, hal_gpio_level_t level);
 
 /**
  * @brief 读电平
  */
-hal_gpio_level_t hal_gpio_read(hal_gpio_t *h);
+hal_gpio_level_t hal_gpio_read(hal_gpio_t* h);
 
 /**
  * @brief 翻转
  */
-void hal_gpio_toggle(hal_gpio_t *h);
+void hal_gpio_toggle(hal_gpio_t* h);
 
 /* 可选：断言失败钩子（弱符号由 port 层提供默认实现，上层可覆盖） */
-void hal_gpio_assert_failed(const char *file, int line);
+void hal_gpio_assert_failed(const char* file, int line);
 
 #ifdef __cplusplus
 }

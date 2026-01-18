@@ -1,5 +1,8 @@
 #include "board_uart_map.h"
 
+#include "hal_uart.h"
+#include "main.h"
+
 /* 根据当前所属模块id 与返回状态生成32位状态码 */
 #define UART_MAP_RET(errno_) RET_MAKE(RET_MOD_PORT, (errno_))
 
@@ -18,7 +21,7 @@ static __ALIGNED(32) uint8_t g_uart1_rx_dma[512];
 static uint8_t g_uart1_rx_dma[512];
 #endif
 
-ret_code_t stm32_uart_bsp_get(hal_uart_id_t id, stm32_uart_bsp_t *out) {
+ret_code_t stm32_uart_bsp_get(hal_uart_id_t id, stm32_uart_bsp_t* out) {
     if (!out) return UART_MAP_RET(RET_ERRNO_INVALID_ARG);
     switch (id) {
         case HAL_UART_ID_0:

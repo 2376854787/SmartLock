@@ -1,5 +1,6 @@
 #ifndef HAL_UART_H
 #define HAL_UART_H
+
 #include <stdint.h>
 
 #include "ret_code.h"
@@ -18,7 +19,7 @@ typedef enum {
 } hal_uart_id_t;
 
 /* 句柄定义：应用层只持有指针 */
-typedef void *hal_uart_handle_t;
+typedef void* hal_uart_handle_t;
 
 /* UART 事件类型 */
 typedef enum {
@@ -49,7 +50,7 @@ typedef struct {
 } hal_uart_event_t;
 
 /* 串口事件回调 */
-typedef void (*hal_uart_evt_cb_t)(void *user, const hal_uart_event_t *evt);
+typedef void (*hal_uart_evt_cb_t)(void* user, const hal_uart_event_t* evt);
 
 typedef struct {
     uint32_t baud;                /*　波特率　*/
@@ -66,7 +67,7 @@ typedef struct hal_uart hal_uart_t; /* 实现文件具体内容 */
  * @param data 接收到的数据指针
  * @param len 数据长度
  */
-typedef void (*hal_uart_rx_cb_t)(void *user_ctx, uint8_t *data, uint16_t len);
+typedef void (*hal_uart_rx_cb_t)(void* user_ctx, uint8_t* data, uint16_t len);
 
 /**
  * @brief 将板级ID、参数映射后返回统一操作指针变量
@@ -76,13 +77,13 @@ typedef void (*hal_uart_rx_cb_t)(void *user_ctx, uint8_t *data, uint16_t len);
  * @return 状态码
  * @note 必须在map文件 映射板级资源
  */
-ret_code_t hal_uart_open(hal_uart_id_t id, const hal_uart_cfg_t *cfg, hal_uart_t **out);
+ret_code_t hal_uart_open(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_uart_t** out);
 /**
  * @brief 将串口配置、DMA、中断配置为默认状态
  * @param h 串口句柄
  * @return 状态码
  */
-ret_code_t hal_uart_close(hal_uart_t *h);
+ret_code_t hal_uart_close(hal_uart_t* h);
 
 /**
  * @brief 启动对应串口的接收功能 一般是 DMA + 半满　＋ 全满 ＋IDLE
@@ -90,7 +91,7 @@ ret_code_t hal_uart_close(hal_uart_t *h);
  * @return 状态码
  * @note 可以通过宏配置接收配置 DMA/IT
  */
-ret_code_t hal_uart_rx_start(hal_uart_t *h);
+ret_code_t hal_uart_rx_start(hal_uart_t* h);
 /**
  * @brief 在回调通知后
  * @param h 串口句柄
@@ -99,9 +100,9 @@ ret_code_t hal_uart_rx_start(hal_uart_t *h);
  * @param nread 实际读取的字节数
  * @return 状态码
  */
-ret_code_t hal_uart_read(hal_uart_t *h, uint8_t *out, uint32_t want, uint32_t *nread);
+ret_code_t hal_uart_read(hal_uart_t* h, uint8_t* out, uint32_t want, uint32_t* nread);
 
-ret_code_t hal_uart_set_evt_cb(hal_uart_t *h, hal_uart_evt_cb_t cb, void *user);
+ret_code_t hal_uart_set_evt_cb(hal_uart_t* h, hal_uart_evt_cb_t cb, void* user);
 
 /* 临界区保护 */
 void hal_enter_critical(void);

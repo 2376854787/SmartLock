@@ -1,3 +1,6 @@
+#include "stm32_hal_config.h"
+/* hal抽象选择宏 */
+#if defined(USE_STM32_HAL)
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -91,3 +94,5 @@ uint32_t hal_get_tick_us32(void) {
     const uint32_t us = (uint32_t)DWT->CYCCNT / cycles_per_us;
     return us;
 }
+
+#endif

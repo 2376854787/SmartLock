@@ -1,3 +1,6 @@
+#include "stm32_hal_config.h"
+/* hal抽象选择宏 */
+#if defined(USE_STM32_HAL)
 #include <stdio.h>
 #include <string.h>
 
@@ -13,8 +16,8 @@
 
 /* ========== UART 上下文 ========== */
 struct hal_uart {
-    const char *name;         /*串口名称*/
-    void *cb_user;            /* 用户上下文 */
+    const char* name;         /*串口名称*/
+    void* cb_user;            /* 用户上下文 */
     hal_uart_id_t id;         /*串口内部id*/
     stm32_uart_bsp_t bsp;     /* 串口映射配置 */
     RingBuffer rb;            /* 软件 RB：用于上层 read */
@@ -33,7 +36,7 @@ static struct hal_uart g_uarts[HAL_UART_ID_MAX];
  * @param len 长度
  * @note 在使用 F7/H7 必须覆盖实现并 32位字节对齐
  */
-__WEAK void stm32_uart_dma_tx_clean(const void *ptr, uint32_t len) {
+__WEAK void stm32_uart_dma_tx_clean(const void* ptr, uint32_t len) {
     (void)ptr;
     (void)len;
 }
@@ -43,7 +46,7 @@ __WEAK void stm32_uart_dma_tx_clean(const void *ptr, uint32_t len) {
  * @param len 长度
  * @note 在使用 F7/H7 必须覆盖实现并 32位字节对齐
  */
-__WEAK void stm32_uart_dma_rx_invalidate(const void *ptr, uint32_t len) {
+__WEAK void stm32_uart_dma_rx_invalidate(const void* ptr, uint32_t len) {
     (void)ptr;
     (void)len;
 }
@@ -61,7 +64,7 @@ static inline bool isPowerOfTwo_Size(uint32_t size) {
  * @param u 串口句柄
  * @param evt 发生的事件类型 以及对应的参数 比如增量、或者错误原因
  */
-static inline void emit_evt(const hal_uart_t *u, const hal_uart_event_t *evt) {
+static inline void emit_evt(const hal_uart_t* u, const hal_uart_event_t* evt) {
     if (u->cb) u->cb(u->cb_user, evt);
 }
 
@@ -71,7 +74,7 @@ static inline void emit_evt(const hal_uart_t *u, const hal_uart_event_t *evt) {
  * @return
  * @note 返回的是下一个可以直接填写的指针偏移量
  */
-static inline uint32_t dma_pos(const hal_uart_t *u) {
+static inline uint32_t dma_pos(const hal_uart_t* u) {
     /*  获取当前 DMA 传输中剩余的数据量 */
     const uint32_t ndtr = __HAL_DMA_GET_COUNTER(u->bsp.hdma_rx);
     /* (DMA传输长度 - 当前待传输的数据量) %  DMA传输长度  计算出 当前所在的地址*/
@@ -89,7 +92,7 @@ static inline uint32_t dma_pos(const hal_uart_t *u) {
  * 兼容模式：
  *   - 写能写的，剩余丢弃，推进 rx_last_pos，发 ERROR(overflow 可选)
  */
-static void rx_commit_delta(hal_uart_t *u) {
+static void rx_commit_delta(hal_uart_t* u) {
     /* DMA接收总长度 */
     const uint32_t len  = u->bsp.rx_dma_len;
     /* DMA当前位置 */
@@ -177,9 +180,9 @@ static void rx_commit_delta(hal_uart_t *u) {
  * @brief 放在 HAL_UART_TxCpltCallback 中利用事件回调通知上层
  * @param huart 串口句柄
  */
-void hal_uart_txCp_case(const UART_HandleTypeDef *huart) {
+void hal_uart_txCp_case(const UART_HandleTypeDef* huart) {
     for (int i = 0; i < (int)HAL_UART_ID_MAX; i++) {
-        hal_uart_t *u = &g_uarts[i];
+        hal_uart_t* u = &g_uarts[i];
         if (u->bsp.huart == huart) {
             u->tx_busy           = 0;
             hal_uart_event_t evt = {.type = HAL_UART_EVT_TX_DONE};
@@ -195,9 +198,9 @@ void hal_uart_txCp_case(const UART_HandleTypeDef *huart) {
  * @param huart 串口句柄
  * @note  evt.err.flags 上层需要自己映射
  */
-void hal_uart_error_case(const UART_HandleTypeDef *huart) {
+void hal_uart_error_case(const UART_HandleTypeDef* huart) {
     for (int i = 0; i < (int)HAL_UART_ID_MAX; i++) {
-        const hal_uart_t *u = &g_uarts[i];
+        const hal_uart_t* u = &g_uarts[i];
         if (u->bsp.huart == huart) {
             hal_uart_event_t evt = {.type = HAL_UART_EVT_ERROR};
             evt.err.flags        = (uint32_t)huart->ErrorCode;
@@ -214,10 +217,10 @@ void hal_uart_error_case(const UART_HandleTypeDef *huart) {
  * @note 注意 需要判断当前芯片是否有空闲中断后 定义 HAL_UARTEx_ReceiveToIdle_DMA 宏
  */
 #if defined(USE_HAL_UARTEx_ReceiveToIdle_DMA)
-void hal_uart_rx_event_case(const UART_HandleTypeDef *huart, uint16_t Size) {
+void hal_uart_rx_event_case(const UART_HandleTypeDef* huart, uint16_t Size) {
     (void)Size;
     for (int i = 0; i < (int)HAL_UART_ID_MAX; i++) {
-        hal_uart_t *u = &g_uarts[i];
+        hal_uart_t* u = &g_uarts[i];
         if (u->bsp.huart == huart) {
             rx_commit_delta(u);
             return;
@@ -230,7 +233,7 @@ void hal_uart_rx_event_case(const UART_HandleTypeDef *huart, uint16_t Size) {
  * @brief  消除空闲中断的flag 提交DMA接收增量
  * @param u 抽象串口句柄
  */
-static void handle_idle_irq(hal_uart_t *u) {
+static void handle_idle_irq(hal_uart_t* u) {
 #if defined(UART_FLAG_IDLE)
     if (__HAL_UART_GET_FLAG(u->bsp.huart, UART_FLAG_IDLE) != RESET) {
         __HAL_UART_CLEAR_IDLEFLAG(u->bsp.huart);
@@ -245,7 +248,7 @@ static void handle_idle_irq(hal_uart_t *u) {
  */
 void stm32_uart_irq_usart(hal_uart_id_t id) {
     if (id >= HAL_UART_ID_MAX) return;
-    hal_uart_t *u = &g_uarts[id];
+    hal_uart_t* u = &g_uarts[id];
     if (!u->bsp.huart) return;
 
     HAL_UART_IRQHandler(u->bsp.huart);
@@ -258,7 +261,7 @@ void stm32_uart_irq_usart(hal_uart_id_t id) {
  */
 void stm32_uart_irq_dma_rx(hal_uart_id_t id) {
     if (id >= HAL_UART_ID_MAX) return;
-    hal_uart_t *u = &g_uarts[id];
+    hal_uart_t* u = &g_uarts[id];
     if (u->bsp.hdma_rx) HAL_DMA_IRQHandler(u->bsp.hdma_rx);
 }
 
@@ -268,7 +271,7 @@ void stm32_uart_irq_dma_rx(hal_uart_id_t id) {
  */
 void stm32_uart_irq_dma_tx(hal_uart_id_t id) {
     if (id >= HAL_UART_ID_MAX) return;
-    const hal_uart_t *u = &g_uarts[id];
+    const hal_uart_t* u = &g_uarts[id];
     if (u->bsp.hdma_tx) HAL_DMA_IRQHandler(u->bsp.hdma_tx);
 }
 
@@ -279,13 +282,13 @@ void stm32_uart_irq_dma_tx(hal_uart_id_t id) {
  * @param out 返回配置好的串口句柄
  * @return 返回状态码
  */
-ret_code_t hal_uart_port_open(hal_uart_id_t id, const hal_uart_cfg_t *cfg, hal_uart_t **out) {
+ret_code_t hal_uart_port_open(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_uart_t** out) {
     /* 参数错误检查 */
     if (!out) return UART_RET(RET_ERRNO_INVALID_ARG);
     if (id >= HAL_UART_ID_MAX) return UART_RET(RET_ERRNO_INVALID_ARG);
 
     /* 获取到该id 对应的静态数组地址 */
-    hal_uart_t *u = &g_uarts[id];
+    hal_uart_t* u = &g_uarts[id];
     /* 初始填充 0 */
     memset(u, 0, sizeof(*u));
     /* 填充id */
@@ -340,7 +343,7 @@ ret_code_t hal_uart_port_open(hal_uart_id_t id, const hal_uart_cfg_t *cfg, hal_u
     u->tx_busy     = 0;
     u->last_tx_len = 0;
 
-    *out           = (hal_uart_t *)u;
+    *out           = (hal_uart_t*)u;
     return RET_OK;
 }
 
@@ -348,9 +351,9 @@ ret_code_t hal_uart_port_open(hal_uart_id_t id, const hal_uart_cfg_t *cfg, hal_u
  * @brief 将串口恢复默认配置
  * @param h 串口句柄
  */
-ret_code_t hal_uart_port_close(hal_uart_t *h) {
+ret_code_t hal_uart_port_close(hal_uart_t* h) {
     if (!h) return UART_RET(RET_ERRNO_INVALID_ARG);
-    const hal_uart_t *u = (hal_uart_t *)h;
+    const hal_uart_t* u = (hal_uart_t*)h;
     if (HAL_UART_DeInit(u->bsp.huart) != HAL_OK) return UART_RET(RET_ERRNO_IO);
     return RET_OK;
 }
@@ -361,9 +364,9 @@ ret_code_t hal_uart_port_close(hal_uart_t *h) {
  * @param cb 事件回调函数
  * @param user user上下文
  */
-ret_code_t hal_uart_port_set_evt_cb(hal_uart_t *h, hal_uart_evt_cb_t cb, void *user) {
+ret_code_t hal_uart_port_set_evt_cb(hal_uart_t* h, hal_uart_evt_cb_t cb, void* user) {
     if (!h) return UART_RET(RET_ERRNO_INVALID_ARG);
-    hal_uart_t *u = (hal_uart_t *)h;
+    hal_uart_t* u = (hal_uart_t*)h;
     u->cb         = cb;
     u->cb_user    = user;
     return RET_OK;
@@ -374,9 +377,9 @@ ret_code_t hal_uart_port_set_evt_cb(hal_uart_t *h, hal_uart_evt_cb_t cb, void *u
  * @param h 串口句柄
  * @return 状态码
  */
-ret_code_t hal_uart_port_rx_start(hal_uart_t *h) {
+ret_code_t hal_uart_port_rx_start(hal_uart_t* h) {
     if (!h) return UART_RET(RET_ERRNO_INVALID_ARG);
-    hal_uart_t *u = (hal_uart_t *)h;
+    hal_uart_t* u = (hal_uart_t*)h;
 
 #if defined(USE_HAL_UARTEx_ReceiveToIdle_DMA)
     /* DMA + IDLE 方式接收方式 */
@@ -410,9 +413,9 @@ ret_code_t hal_uart_port_rx_start(hal_uart_t *h) {
  * @param len 数据长度
  * @return 状态码
  */
-ret_code_t hal_uart_port_send_async(hal_uart_t *h, const uint8_t *buf, uint32_t len) {
+ret_code_t hal_uart_port_send_async(hal_uart_t* h, const uint8_t* buf, uint32_t len) {
     if (!h || !buf || len == 0u) return UART_RET(RET_ERRNO_INVALID_ARG);
-    hal_uart_t *u = (hal_uart_t *)h;
+    hal_uart_t* u = (hal_uart_t*)h;
 
     if (u->tx_busy) return UART_RET(RET_ERRNO_BUSY);
     u->tx_busy     = 1;
@@ -421,7 +424,7 @@ ret_code_t hal_uart_port_send_async(hal_uart_t *h, const uint8_t *buf, uint32_t 
     /** H7/F7 缓存处理 */
     stm32_uart_dma_tx_clean(buf, len);
 
-    if (HAL_UART_Transmit_DMA(u->bsp.huart, (uint8_t *)buf, (uint16_t)len) != HAL_OK) {
+    if (HAL_UART_Transmit_DMA(u->bsp.huart, (uint8_t*)buf, (uint16_t)len) != HAL_OK) {
         /* 状态回滚 */
         u->tx_busy = 0;
         return UART_RET(RET_ERRNO_IO);
@@ -438,9 +441,9 @@ ret_code_t hal_uart_port_send_async(hal_uart_t *h, const uint8_t *buf, uint32_t 
  * @return状态码
  * @note 读：严格=必须足够才读且不消费；兼容=尽力读
  */
-ret_code_t hal_uart_port_read(hal_uart_t *h, uint8_t *out, uint32_t want, uint32_t *nread) {
+ret_code_t hal_uart_port_read(hal_uart_t* h, uint8_t* out, uint32_t want, uint32_t* nread) {
     if (!h || !out || want == 0u || !nread) return UART_RET(RET_ERRNO_INVALID_ARG);
-    hal_uart_t *u       = (hal_uart_t *)h;
+    hal_uart_t* u       = (hal_uart_t*)h;
 
     uint32_t size       = want;
     const ret_code_t rc = ReadRingBuffer(&u->rb, out, &size, u->isCompatible ? 1 : 0);
@@ -450,3 +453,5 @@ ret_code_t hal_uart_port_read(hal_uart_t *h, uint8_t *out, uint32_t want, uint32
     *nread              = size;
     return rc;
 }
+
+#endif

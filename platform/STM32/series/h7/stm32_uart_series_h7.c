@@ -1,8 +1,9 @@
+#include "stm32_hal_config.h"
+#if defined(USE_STM32_HAL)
 #include <stdint.h>
 
 #include "ret_code.h"
 #include "stm32_hal.h"
-#include "stm32_hal_config.h"
 #include "stm32_uart_series.h"
 #include "utils_def.h"
 
@@ -30,3 +31,5 @@ void stm32_uart_dma_rx_invalidate(const void* ptr, uint32_t len) {
     (void)len;
 #endif
 }
+
+#endif

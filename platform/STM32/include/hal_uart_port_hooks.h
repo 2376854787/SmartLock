@@ -1,5 +1,8 @@
-#pragma once
-
+#ifndef HAL_UART_PORT_HOOKS_H
+#define HAL_UART_PORT_HOOKS_H
+#include "stm32_hal_config.h"
+/* hal抽象选择宏 */
+#if defined(USE_STM32_HAL)
 #include "hal_uart.h"
 #include "stm32_hal.h"
 
@@ -13,15 +16,20 @@
  */
 
 /* 放到 `HAL_UART_TxCpltCallback()` 中调用：通知 HAL_UART_EVT_TX_DONE */
-void hal_uart_txCp_case(const UART_HandleTypeDef *huart);
+void hal_uart_txCp_case(const UART_HandleTypeDef* huart);
 
 /* 放到 `HAL_UART_ErrorCallback()` 中调用：通知 HAL_UART_EVT_ERROR */
-void hal_uart_error_case(const UART_HandleTypeDef *huart);
+void hal_uart_error_case(const UART_HandleTypeDef* huart);
 
-/* 放到 `HAL_UARTEx_RxEventCallback()` 中调用（启用 `USE_HAL_UARTEx_ReceiveToIdle_DMA` 时）：提交 RX 增量并通知 HAL_UART_EVT_RX */
-void hal_uart_rx_event_case(const UART_HandleTypeDef *huart, uint16_t Size);
+/* 放到 `HAL_UARTEx_RxEventCallback()` 中调用（启用 `USE_HAL_UARTEx_ReceiveToIdle_DMA` 时）：提交 RX
+ * 增量并通知 HAL_UART_EVT_RX */
+void hal_uart_rx_event_case(const UART_HandleTypeDef* huart, uint16_t Size);
 
 /* 可选：如果你希望用统一入口，在 `USARTx_IRQHandler` / DMA IRQHandler 里调用这些函数 */
 void stm32_uart_irq_usart(hal_uart_id_t id);
 void stm32_uart_irq_dma_rx(hal_uart_id_t id);
 void stm32_uart_irq_dma_tx(hal_uart_id_t id);
+
+#endif
+
+#endif
