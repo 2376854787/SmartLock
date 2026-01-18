@@ -1,8 +1,7 @@
 #include "APP_config.h"
 
 /* 全局配置开启宏 */
-#ifdef ENABLE_ASSERT_SYSTEM
-
+#if defined(ENABLE_ASSERT_SYSTEM)
 #include <stdio.h>
 #include <string.h>
 
@@ -87,7 +86,7 @@ static inline uint32_t read_psr(void) {
  * @param func 函数名
  * @param line 具体哪一行
  */
-static void record_assert(const char *expr, const char *file, const char *func, uint32_t line) {
+static void record_assert(const char* expr, const char* file, const char* func, uint32_t line) {
     if (!g_cfg.enable_record) return;
 
     if (g_assert_record.magic != ASSERT_RECORD_MAGIC) {
@@ -114,7 +113,7 @@ static void record_assert(const char *expr, const char *file, const char *func, 
  * @brief 配置断言全局参数
  * @param cfg 需要传入的 配置句柄
  */
-void Assert_SetConfig(const assert_config_t *cfg) {
+void Assert_SetConfig(const assert_config_t* cfg) {
     if (cfg) {
         g_cfg = *cfg;
     }
@@ -130,9 +129,9 @@ assert_config_t Assert_GetConfig(void) {
  * @brief 获取上次断言失败的信息
  * @return 返回断言失败的信息结构体
  */
-const assert_record_t *Assert_GetLastRecord(void) {
+const assert_record_t* Assert_GetLastRecord(void) {
     if (g_assert_record.magic == ASSERT_RECORD_MAGIC) {
-        return (const assert_record_t *)&g_assert_record;
+        return (const assert_record_t*)&g_assert_record;
     }
     return NULL;
 }
@@ -149,7 +148,7 @@ void Assert_ClearLastRecord(void) {
  * @brief 通过传入消息字符串异步输出
  * @param msg 消息字符串
  */
-__WEAK void Assert_PlatformLog(const char *msg) {
+__WEAK void Assert_PlatformLog(const char* msg) {
     (void)msg;
     /* 空 */
 }
@@ -183,7 +182,7 @@ __WEAK void Assert_PlatformHalt(void) {
 /* ===================== 核心处理  ===================== */
 
 /* 内部：统一输出一条日志（可复用） */
-static void assert_log_common(const char *expr, const char *file, const char *func, uint32_t line) {
+static void assert_log_common(const char* expr, const char* file, const char* func, uint32_t line) {
     if (g_cfg.enable_log) {
         char buf[160];
         /* 待更改为更轻的格式化 */
@@ -205,7 +204,7 @@ static void assert_log_common(const char *expr, const char *file, const char *fu
  * - NORMAL：按 g_cfg.action 执行
  * - PARAM：通常仅 Debug 生效；若走到这里，按 NORMAL 处理
  */
-void Assert_OnFailEx(assert_level_t level, const char *expr, const char *file, const char *func,
+void Assert_OnFailEx(assert_level_t level, const char* expr, const char* file, const char* func,
                      uint32_t line) {
     /* 获取断言失败的上下文 寄存器层面 */
     g_assert_record.sp  = read_sp();
@@ -260,4 +259,3 @@ void Assert_OnFailEx(assert_level_t level, const char *expr, const char *file, c
 }
 
 #endif /* ENABLE_ASSERT_SYSTEM */
-

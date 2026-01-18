@@ -1,6 +1,6 @@
 #include "APP_config.h"
 /* 全局配置开启宏 */
-#ifdef ENABLE_HFSM_SYSTEM
+#if defined(ENABLE_HFSM_SYSTEM)
 #include <stddef.h>
 #include <stdio.h>  // 用于 printf 调试
 
@@ -61,7 +61,7 @@
  * @param fsm 指向状态机实例的指针
  * @param initial_state 指向初始状态的指针
  */
-void HFSM_Init(StateMachine *fsm, const State *initial_state) {
+void HFSM_Init(StateMachine* fsm, const State* initial_state) {
     if (fsm == NULL || initial_state == NULL) {
         HFSM_LOGI("HFSM_Init: Invalid parameters");
         return;
@@ -75,12 +75,12 @@ void HFSM_Init(StateMachine *fsm, const State *initial_state) {
  * @param fsm 指向状态机实例的指针
  * @param new_state 指向新的状态的指针
  */
-void HFSM_Transition(StateMachine *fsm, const State *new_state) {
+void HFSM_Transition(StateMachine* fsm, const State* new_state) {
     if (fsm == NULL || new_state == NULL) return;
     HFSM_LOGD("HFSM_Transition: Transitioning from %s to %s",
               fsm->current_state ? fsm->current_state->state_name : "NULL", new_state->state_name);
     // 转换到新的状态、
-    const State *s = fsm->current_state;
+    const State* s = fsm->current_state;
     while (s && s != new_state && s != new_state->parent) {
         if (s->on_exit) {
             s->on_exit(fsm);
@@ -100,16 +100,16 @@ void HFSM_Transition(StateMachine *fsm, const State *new_state) {
  * @param fsm 指向状态机实例的指针
  * @param event 指向事件的指针
  */
-void HFSM_HandleEvent(StateMachine *fsm, const Event *event) {
+void HFSM_HandleEvent(StateMachine* fsm, const Event* event) {
     HFSM_LOGD("\n>>> Handling event: %d...", event->event_id);
-    const State *s = fsm->current_state;
+    const State* s = fsm->current_state;
 
     while (s) {
         /* 1、判断当前是否有映射表 */
         if (s->event_actions) {
             /* 2、有就遍历该表并判断当前状态是否有可以被该事件触发的事项 */
             for (int i = 0; s->event_actions[i].handler != NULL; i++) {
-                const EventAction_t *act = &s->event_actions[i];
+                const EventAction_t* act = &s->event_actions[i];
                 if (act->event_id == event->event_id) {
                     const bool handled = act->handler(fsm, event);
                     if (handled) {

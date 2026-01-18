@@ -1,6 +1,6 @@
 #ifndef SMARTLOCK_OSAL_CONFIG_H
 #define SMARTLOCK_OSAL_CONFIG_H
 
+/* OSAL 实现开启宏选择对应的系统实现 */
 
-
-#endif //SMARTLOCK_OSAL_CONFIG_H
+#endif  // SMARTLOCK_OSAL_CONFIG_H
