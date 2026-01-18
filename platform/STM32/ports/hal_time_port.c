@@ -1,6 +1,7 @@
+#include "APP_config.h"
 #include "stm32_hal_config.h"
 /* hal抽象选择宏 */
-#if defined(USE_STM32_HAL)
+#if defined(USE_STM32_HAL) && defined(ENABLE_HAL_TIME)
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -93,6 +94,25 @@ uint32_t hal_get_tick_us32(void) {
     if (cycles_per_us == 0U) return hal_get_tick_ms() * 1000U;
     const uint32_t us = (uint32_t)DWT->CYCCNT / cycles_per_us;
     return us;
+}
+
+#else
+#include <stdint.h>
+
+uint32_t hal_get_tick_ms(void) {
+    return 0U;
+}
+
+uint32_t hal_get_tick_us32(void) {
+    return 0U;
+}
+
+void hal_time_delay_ms(uint32_t ms) {
+    (void)ms;
+}
+
+void hal_time_delay_us(uint32_t us) {
+    (void)us;
 }
 
 #endif

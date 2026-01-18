@@ -2,10 +2,11 @@
 
 #include <stdint.h>
 
+#include "APP_config.h"
 #include "board_gpio_ids.h"
 #include "platform_config.h"
 
-#if defined(USE_STM32_HAL)
+#if defined(USE_STM32_HAL) && defined(ENABLE_HAL_GPIO)
 #include "stm32_hal.h"
 
 typedef struct {

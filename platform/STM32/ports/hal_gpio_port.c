@@ -1,6 +1,7 @@
+#include "APP_config.h"
 #include "stm32_hal_config.h"
 /* hal抽象选择宏 */
-#if defined(USE_STM32_HAL)
+#if defined(USE_STM32_HAL) && defined(ENABLE_HAL_GPIO)
 #include <stdint.h>
 #include <string.h>
 

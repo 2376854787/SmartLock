@@ -1,8 +1,9 @@
 #ifndef HAL_UART_PORT_HOOKS_H
 #define HAL_UART_PORT_HOOKS_H
+#include "APP_config.h"
 #include "stm32_hal_config.h"
 /* hal抽象选择宏 */
-#if defined(USE_STM32_HAL)
+#if defined(USE_STM32_HAL) && defined(ENABLE_HAL_UART)
 #include "hal_uart.h"
 #include "stm32_hal.h"
 

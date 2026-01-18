@@ -1,7 +1,8 @@
 #ifndef STM32_UART_BSP_H
 #define STM32_UART_BSP_H
+#include "APP_config.h"
 #include "stm32_hal_config.h"
-#if defined(USE_STM32_HAL)
+#if defined(USE_STM32_HAL) && defined(ENABLE_HAL_UART)
 #include <stdint.h>
 
 #include "hal_uart.h"
