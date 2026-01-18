@@ -12,7 +12,6 @@
 #define ENABLE_RINGBUFFER_SYSTEM        /* 环形缓冲区系统 */
 #define ENABLE_HFSM_SYSTEM              /* HFSM系统 */
 #define ENABLE_KEYS                     /* 使能按键系统 */
-#define ENABLE_ASSERT_SYSTEM            /* 使能断言系统 */
 
 
 /* 协议标准配置宏  取消注释即开启整个项目的 执行标准*/
