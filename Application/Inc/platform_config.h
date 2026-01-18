@@ -1,0 +1,10 @@
+#ifndef SMARTLOCK_PLATFORM_CONFIG_H
+#define SMARTLOCK_PLATFORM_CONFIG_H
+
+/* 平台选择（唯一真源） */
+#define USE_STM32_HAL
+
+/* USE_STM32_HAL 启用时，必须只选择一个 STM32 系列 */
+#define STM32F4XX
+
+#endif  // SMARTLOCK_PLATFORM_CONFIG_H
