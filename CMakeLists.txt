@@ -67,10 +67,12 @@ add_executable(${CMAKE_PROJECT_NAME}
         example/GPIO/ex_hal_gpio.c
         components/core_base/no_malloc_wrap.c
         components/hal/hal_uart.c
-        platform/STM32/series/stm32_uart_series_h7.c
+        platform/STM32/series/h7/stm32_uart_series_h7.c
         components/board/explorer/board_uart_map.c
         components/printf/printf.c
         platform/STM32/ports/bsp_assert_port.c
+        components/core_mpu/src/core_mpu.c
+        platform/STM32/common/core_mpu_port.c
 
 )
 
@@ -108,12 +110,17 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         components/board/Include
         platform/STM32/include
         components/printf
+        components/core_mpu/include
+        platform/STM32/common
 
 )
 
 # Add project symbols (macros)
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
         # Add user defined symbols
+        # 解决：某些工程未从 device header 导入 __MPU_PRESENT，导致 core_mpu 被编译为 no-op。
+        # 若你确认当前芯片具备 MPU（如 STM32F497），开启该兜底宏即可。
+        CORE_MPU_ASSUME_PRESENT=1
 )
 
 # Remove wrong libob.a library dependency when using cpp files
