@@ -29,10 +29,10 @@ typedef enum {
     HAL_GPIO_PULL_MAX
 } hal_gpio_pull_t;
 
-/** 输出类型（仅对输出有效） **/
+/** 输出类型 **/
 typedef enum { HAL_GPIO_OUT_PP = 0, HAL_GPIO_OUT_OD, HAL_GPIO_OUT_MAX } hal_gpio_out_t;
 
-/** 速度（不同平台可能忽略） **/
+/** 速度 **/
 typedef enum {
     HAL_GPIO_SPEED_LOW = 0,
     HAL_GPIO_SPEED_MEDIUM,
@@ -41,7 +41,7 @@ typedef enum {
     HAL_GPIO_SPEED_MAX
 } hal_gpio_speed_t;
 
-/** 中断触发（不同平台可能需要额外 NVIC 配置） **/
+/** 中断触发 **/
 typedef enum {
     HAL_GPIO_IRQ_NONE = 0,
     HAL_GPIO_IRQ_RISING,
@@ -76,7 +76,7 @@ ret_code_t hal_gpio_open(hal_gpio_t **out, uint32_t id);
 ret_code_t hal_gpio_config(hal_gpio_t *h, const hal_gpio_cfg_t *cfg);
 
 /**
- * @brief 关闭句柄（若你做静态句柄映射，可实现为 no-op）
+ * @brief 关闭句柄（做静态句柄映射，可实现为 no-op）
  */
 ret_code_t hal_gpio_close(hal_gpio_t *h);
 
