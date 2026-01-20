@@ -170,6 +170,7 @@ ret_code_t hal_gpio_port_open(hal_gpio_t** out, uint32_t id) {
     if (!out) return RET_E_INVALID_ARG;
 
     board_gpio_hw_t hw;
+    /* 返回 port & Pin */
     const ret_code_t rc = board_gpio_lookup(id, &hw);
     if (rc != RET_OK) return rc;
     if (!hw.port || hw.pin >= 16u) return RET_E_NOT_FOUND;
@@ -178,6 +179,7 @@ ret_code_t hal_gpio_port_open(hal_gpio_t** out, uint32_t id) {
     static uint8_t used[BOARD_GPIO_MAP_MAX] = {0}; /* 标记使用过的GPIO */
 
     /* 简化策略：id 必须 < BOARD_GPIO_MAP_MAX，直接映射到句柄槽位 */
+    /*　如果在静态池中找到了　*/
     for (uint32_t i = 0; i < (uint32_t)(sizeof(handles) / sizeof(handles[0])); ++i) {
         if (used[i] && handles[i].id == id) {
             *out = &handles[i];
@@ -185,6 +187,7 @@ ret_code_t hal_gpio_port_open(hal_gpio_t** out, uint32_t id) {
         }
     }
 
+    /* 静态池中没有，将获取到的 rc 和 id 绑定添加进去 */
     for (uint32_t i = 0; i < (uint32_t)(sizeof(handles) / sizeof(handles[0])); ++i) {
         if (!used[i]) {
             handles[i].id   = id;

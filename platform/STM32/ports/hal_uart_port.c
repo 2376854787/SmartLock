@@ -28,7 +28,7 @@ struct hal_uart {
     bool isCompatible;        /* RB 严格模式/ 兼容模式 */
     hal_uart_evt_cb_t cb;     /* 事件回调函数 */
 };
-
+/*　存储全局串口资源 */
 static struct hal_uart g_uarts[HAL_UART_ID_MAX];
 
 /**
@@ -294,7 +294,7 @@ ret_code_t hal_uart_port_open(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_u
     memset(u, 0, sizeof(*u));
     /* 填充id */
     u->id         = id;
-    /* 将地址传输过去 填充实现的bsp 参数 */
+    /* 将静态池成员对应地址传输过去 填充实现的bsp 参数 */
     ret_code_t rc = stm32_uart_bsp_get(id, &u->bsp);
     if (ret_is_err(rc)) return rc;
 
