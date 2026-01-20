@@ -73,6 +73,7 @@ add_executable(${CMAKE_PROJECT_NAME}
         platform/STM32/ports/bsp_assert_port.c
         components/core_mpu/src/core_mpu.c
         platform/STM32/common/core_mpu_port.c
+        components/CRC/CRC16/crc16.c
 
 )
 
@@ -112,6 +113,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         components/printf
         components/core_mpu/include
         platform/STM32/common
+        components/CRC/CRC16
 
 )
 
