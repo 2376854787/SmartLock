@@ -123,6 +123,8 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
         # 解决：某些工程未从 device header 导入 __MPU_PRESENT，导致 core_mpu 被编译为 no-op。
         # 若你确认当前芯片具备 MPU（如 STM32F497），开启该兜底宏即可。
         CORE_MPU_ASSUME_PRESENT=1
+        USER_VECT_TAB_ADDRESS
+        VECT_TAB_OFFSET=0x20000
 )
 
 # Remove wrong libob.a library dependency when using cpp files

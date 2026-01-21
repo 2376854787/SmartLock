@@ -59,7 +59,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-void keyCallback(KEY_TypedefHandle *key, KEY_ActionType action) {
+void keyCallback(KEY_TypedefHandle* key, KEY_ActionType action) {
     switch (action) {
         case KEY_ACTION_SINGLE_CLICK:
             LOG_I("key1", "单击回调函数触发");
@@ -133,10 +133,10 @@ void MX_FREERTOS_Init(void);
 #ifdef __GNUC__
 #define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
 #else
-#define PUTCHAR_PROTOTYPE int fputc(int ch, FILE *f)
+#define PUTCHAR_PROTOTYPE int fputc(int ch, FILE* f)
 #endif
 PUTCHAR_PROTOTYPE {
-    HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1,
+    HAL_UART_Transmit(&huart1, (uint8_t*)&ch, 1,
                       HAL_MAX_DELAY);  // 修改为你的UART句柄，例如 huart1
     return ch;
 }
@@ -149,7 +149,7 @@ PUTCHAR_PROTOTYPE {
  */
 int main(void) {
     /* USER CODE BEGIN 1 */
-
+    __enable_irq();
     /* USER CODE END 1 */
 
     /* MCU Configuration--------------------------------------------------------*/
@@ -268,7 +268,7 @@ void SystemClock_Config(void) {
  * @param  htim : TIM handle
  * @retval None
  */
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim) {
     /* USER CODE BEGIN Callback 0 */
 
     /* USER CODE END Callback 0 */
@@ -300,7 +300,7 @@ void Error_Handler(void) {
  * @param  line: assert_param error line source number
  * @retval None
  */
-void assert_failed(uint8_t *file, uint32_t line) {
+void assert_failed(uint8_t* file, uint32_t line) {
     /* USER CODE BEGIN 6 */
     /* User can add his own implementation to report the file name and line
        number, ex: printf("Wrong parameters value: file %s on line %d\r\n", file,
