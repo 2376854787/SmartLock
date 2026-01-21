@@ -291,7 +291,7 @@ void StartTask02(void* argument) {
     /* USER CODE BEGIN StartTask02 */
     char buffer[128];
     /* Infinite loop */
-    uint8_t example[] = {0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99};
+    uint8_t example[] = {0x01, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99};
     for (;;) {
         uint32_t read_size = RingBuffer_GetUsedSize(&g_rb_uart1);
         if (read_size > 0) {
@@ -306,9 +306,9 @@ void StartTask02(void* argument) {
             }
         }
         uint16_t res = 0x00;
-        crc16_cal_default_table(MODBUS, example, 9, &res);
+        crc16_cal_default_table(MODBUS, example, 1, &res);
         HAL_GPIO_TogglePin(LED0_GPIO_Port, LED0_Pin);
-        LOG_W("CRC16_MODBUS", "{0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99} =%X", res);
+        LOG_W("CRC16_MODBUS", "{0x01} =%X", res);
         const UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
         printf("lcdTask high watermark = %lu\r\n", (unsigned long)watermark);
         osDelay(1000);

@@ -154,6 +154,7 @@ static ret_code_t crc16_cal_table_impl(const crc16_config_t* cfg, const uint8_t*
         }
 
         for (uint16_t i = 0; i < length; i++) {
+            /* 取高8位 */
             const uint8_t idx = (uint8_t)((crc >> 8) ^ data[i]);
             crc               = (uint16_t)((crc << 8) ^ crc16_table_1021[idx]);
         }
@@ -166,6 +167,7 @@ static ret_code_t crc16_cal_table_impl(const crc16_config_t* cfg, const uint8_t*
         }
 
         for (uint16_t i = 0; i < length; i++) {
+            /* 取低8位 */
             const uint8_t idx = (uint8_t)((crc ^ data[i]) & 0xFFu);
             crc               = (uint16_t)((crc >> 8) ^ crc16_table_a001[idx]);
         }
