@@ -310,7 +310,7 @@ void StartTask02(void* argument) {
         HAL_GPIO_TogglePin(LED0_GPIO_Port, LED0_Pin);
         LOG_W("CRC16_MODBUS", "{0x01} =%X", res);
         const UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
-        printf("lcdTask high watermark = %lu\r\n", (unsigned long)watermark);
+        LOG_E("Watermask", "lcdTask high watermark = %lu\r\n", (unsigned long)watermark);
         osDelay(1000);
     }
     /* USER CODE END StartTask02 */

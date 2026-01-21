@@ -248,10 +248,11 @@ void Log_Printf(LogLevel_t level, const char* file, int line, const char* tag, c
     if (__get_IPSR() == 0) {
         if (OSAL_kernel_is_running()) {
             /* 尝试写入 RingBuffer */
-            uint32_t write_len = total_len;
+            uint32_t write_len    = total_len;
 
             /* 这里的 false 表示如果空间不足不写入全部丢弃 (或根据 RingBuffer 实现策略) */
-            if (ret_is_ok(WriteRingBuffer(&s_logRB, (uint8_t*)log_buf, &write_len, false))) {
+            const uint32_t result = WriteRingBuffer(&s_logRB, (uint8_t*)log_buf, &write_len, false);
+            if (ret_is_ok(result)) {
                 /* 写入成功，设置标志位唤醒后台任务 */
                 if (s_logTaskHandle != NULL) {
                     /* OSAL_thread_flags_set 在 CMSIS-OS2 (STM32实现) 中通常是 ISR 安全的 */
@@ -260,6 +261,8 @@ void Log_Printf(LogLevel_t level, const char* file, int line, const char* tag, c
                 }
             } else {
                 /* 缓冲区已满：可以选择丢弃，或者在此处强制改为阻塞发送(会影响实时性) */
+                printf("is_no_mem：%d\r\n", ret_is_no_mem(result));
+                printf("is_valid_param ：%d\r\n", ret_is_invalid_arg(result));
                 printf("缓冲区已满！！！%s \r\n", log_buf);
             }
         } else {
