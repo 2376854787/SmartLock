@@ -1,123 +1,123 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-# =========================
-# 商业级 pre-commit：仅格式化“已暂存（staged）”的 C/C++ 文件
-# - 自动隔离未暂存（unstaged）与未跟踪（untracked）修改，避免误格式化/误提交
-# - 仅对 staged 版本执行 clang-format，并将格式化结果重新 add 回暂存区
-# - 脚本退出时自动恢复现场（把 stash 的内容弹出）
-# =========================
-
-# 0) 基本环境检查：必须在 Git 仓库内执行
-if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  echo "Pre-commit: Not inside a Git repository." >&2
-  exit 1
-fi
-
-# 1) 检查 clang-format 是否安装
-if ! command -v clang-format >/dev/null 2>&1; then
-  echo "Pre-commit: clang-format not found in PATH." >&2
-  exit 1
-fi
-
-# 2) 强制要求仓库根目录存在 .clang-format（避免不同机器/不同目录下出现不一致风格）
-REPO_ROOT="$(git rev-parse --show-toplevel)"
-if [ ! -f "${REPO_ROOT}/.clang-format" ]; then
-  echo "Pre-commit: ${REPO_ROOT}/.clang-format not found. Please add it to enforce a consistent style." >&2
-  exit 1
-fi
-
-# 3) 判断是否存在“未暂存修改（tracked, unstaged）”或“未跟踪文件（untracked）”
-#    - tracked unstaged：git diff --quiet 退出码为 1 表示有差异
-#    - untracked：git ls-files -o --exclude-standard 有输出表示存在未跟踪文件
-HAS_UNSTAGED=0
-
-if ! git diff --quiet --; then
-  HAS_UNSTAGED=1
-fi
-
-if [ -n "$(git ls-files -o --exclude-standard)" ]; then
-  HAS_UNSTAGED=1
-fi
-
-# 4) 如果存在未暂存/未跟踪内容，则先 stash，防止它们影响“磁盘上的 staged 版本”
-#    --keep-index：保留暂存区（staged）不动，只把 worktree（未暂存）藏起来
-#    --include-untracked：把未跟踪文件也一起藏起来（否则可能被误格式化或干扰）
-STASH_REF=""
-STASH_MSG="pre-commit-formatting-stash"
-
-if [ "${HAS_UNSTAGED}" -eq 1 ]; then
-  echo "Pre-commit: Stashing unstaged/untracked changes..."
-  git stash push --keep-index --include-untracked -m "${STASH_MSG}" >/dev/null
-  # stash push 会把新 stash 放到最顶层
-  STASH_REF="stash@{0}"
-fi
-
-# 5) 无论脚本成功/失败/中断，都尝试恢复现场（注意：stash pop 可能产生冲突）
-cleanup() {
-  # cleanup 阶段不要因为 pop 失败导致“把原始错误吞掉”或造成更混乱
-  set +e
-
-  if [ "${HAS_UNSTAGED}" -eq 1 ]; then
-    echo "Pre-commit: Restoring unstaged/untracked changes..."
-    if ! git stash pop "${STASH_REF}" >/dev/null; then
-      echo "Pre-commit: WARNING: Failed to pop stash (${STASH_REF})." >&2
-      echo "Pre-commit: Your changes are NOT lost. Resolve conflicts and/or restore manually:" >&2
-      echo "  - git stash list" >&2
-      echo "  - git stash show -p ${STASH_REF}" >&2
-      echo "  - git stash apply ${STASH_REF}   # (or pop after resolving)" >&2
-      echo "  - git stash drop ${STASH_REF}    # (after you are sure it's safely applied)" >&2
-      # 这里不强制 exit 1：让 git 显示原始 hook 失败原因更直观
-    fi
-  fi
-}
-
-# 6) 生成“已暂存（staged）文件列表”临时文件（NUL 分隔）
-#    注意：不能用变量承接 `-z` 输出（Bash 变量无法可靠保存 NUL 字节），必须走文件/FD。
-if command -v mktemp >/dev/null 2>&1; then
-  TMP_LIST="$(mktemp)"
-else
-  TMP_LIST="${TMPDIR:-/tmp}/pre-commit-staged.$$"
-  : > "${TMP_LIST}"
-fi
-
-trap 'rm -f "${TMP_LIST}"; cleanup' EXIT
-
-git diff --cached --name-only -z --diff-filter=ACMR > "${TMP_LIST}"
-
-# 若暂存区没有任何文件，直接通过
-if [ ! -s "${TMP_LIST}" ]; then
-  exit 0
-fi
-
-# 7) 对 staged 的 C/C++ 相关文件执行 clang-format，并重新 add 回暂存区
-#    说明：
-#    - 我们在第 4 步 stash 了 worktree 的未暂存内容，因此磁盘上的文件内容应对应 staged 版本
-#    - clang-format 会原地修改文件，然后我们 git add，将格式化后的版本写回暂存区
-#    - 如果你使用“部分暂存（hunk add）”，此策略会把格式化后的整文件加入暂存区，
-#      可能改变原来的补丁结构；这属于“提交即规范化”的常见团队策略
-CHANGED=0
-
-# bash 的 read -d 支持 NUL 分隔；因此这里使用 bash（见 shebang）
-while IFS= read -r -d '' f; do
-  case "${f}" in
-    *.c|*.cc|*.cpp|*.cxx|*.h|*.hh|*.hpp|*.hxx)
-      # 跳过不存在的路径（例如某些边界情况：重命名/移动过程中路径瞬态）
-      if [ -f "${f}" ] && [ ! -L "${f}" ]; then
-        # -L 判断软链接：商业仓库通常不希望对 symlink 目标做原地格式化
-        clang-format -i --style=file "${f}"
-        git add -- "${f}"
-        CHANGED=1
-      fi
-      ;;
-    *)
-      # 非 C/C++ 文件忽略
-      ;;
-  esac
-done < "${TMP_LIST}"
-
-if [ "${CHANGED}" -eq 1 ]; then
-  echo "Pre-commit: clang-format applied successfully."
-fi
-
-exit 0
+##!/usr/bin/env bash
+#set -euo pipefail
+#
+## =========================
+## 商业级 pre-commit：仅格式化“已暂存（staged）”的 C/C++ 文件
+## - 自动隔离未暂存（unstaged）与未跟踪（untracked）修改，避免误格式化/误提交
+## - 仅对 staged 版本执行 clang-format，并将格式化结果重新 add 回暂存区
+## - 脚本退出时自动恢复现场（把 stash 的内容弹出）
+## =========================
+#
+## 0) 基本环境检查：必须在 Git 仓库内执行
+#if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+#  echo "Pre-commit: Not inside a Git repository." >&2
+#  exit 1
+#fi
+#
+## 1) 检查 clang-format 是否安装
+#if ! command -v clang-format >/dev/null 2>&1; then
+#  echo "Pre-commit: clang-format not found in PATH." >&2
+#  exit 1
+#fi
+#
+## 2) 强制要求仓库根目录存在 .clang-format（避免不同机器/不同目录下出现不一致风格）
+#REPO_ROOT="$(git rev-parse --show-toplevel)"
+#if [ ! -f "${REPO_ROOT}/.clang-format" ]; then
+#  echo "Pre-commit: ${REPO_ROOT}/.clang-format not found. Please add it to enforce a consistent style." >&2
+#  exit 1
+#fi
+#
+## 3) 判断是否存在“未暂存修改（tracked, unstaged）”或“未跟踪文件（untracked）”
+##    - tracked unstaged：git diff --quiet 退出码为 1 表示有差异
+##    - untracked：git ls-files -o --exclude-standard 有输出表示存在未跟踪文件
+#HAS_UNSTAGED=0
+#
+#if ! git diff --quiet --; then
+#  HAS_UNSTAGED=1
+#fi
+#
+#if [ -n "$(git ls-files -o --exclude-standard)" ]; then
+#  HAS_UNSTAGED=1
+#fi
+#
+## 4) 如果存在未暂存/未跟踪内容，则先 stash，防止它们影响“磁盘上的 staged 版本”
+##    --keep-index：保留暂存区（staged）不动，只把 worktree（未暂存）藏起来
+##    --include-untracked：把未跟踪文件也一起藏起来（否则可能被误格式化或干扰）
+#STASH_REF=""
+#STASH_MSG="pre-commit-formatting-stash"
+#
+#if [ "${HAS_UNSTAGED}" -eq 1 ]; then
+#  echo "Pre-commit: Stashing unstaged/untracked changes..."
+#  git stash push --keep-index --include-untracked -m "${STASH_MSG}" >/dev/null
+#  # stash push 会把新 stash 放到最顶层
+#  STASH_REF="stash@{0}"
+#fi
+#
+## 5) 无论脚本成功/失败/中断，都尝试恢复现场（注意：stash pop 可能产生冲突）
+#cleanup() {
+#  # cleanup 阶段不要因为 pop 失败导致“把原始错误吞掉”或造成更混乱
+#  set +e
+#
+#  if [ "${HAS_UNSTAGED}" -eq 1 ]; then
+#    echo "Pre-commit: Restoring unstaged/untracked changes..."
+#    if ! git stash pop "${STASH_REF}" >/dev/null; then
+#      echo "Pre-commit: WARNING: Failed to pop stash (${STASH_REF})." >&2
+#      echo "Pre-commit: Your changes are NOT lost. Resolve conflicts and/or restore manually:" >&2
+#      echo "  - git stash list" >&2
+#      echo "  - git stash show -p ${STASH_REF}" >&2
+#      echo "  - git stash apply ${STASH_REF}   # (or pop after resolving)" >&2
+#      echo "  - git stash drop ${STASH_REF}    # (after you are sure it's safely applied)" >&2
+#      # 这里不强制 exit 1：让 git 显示原始 hook 失败原因更直观
+#    fi
+#  fi
+#}
+#
+## 6) 生成“已暂存（staged）文件列表”临时文件（NUL 分隔）
+##    注意：不能用变量承接 `-z` 输出（Bash 变量无法可靠保存 NUL 字节），必须走文件/FD。
+#if command -v mktemp >/dev/null 2>&1; then
+#  TMP_LIST="$(mktemp)"
+#else
+#  TMP_LIST="${TMPDIR:-/tmp}/pre-commit-staged.$$"
+#  : > "${TMP_LIST}"
+#fi
+#
+#trap 'rm -f "${TMP_LIST}"; cleanup' EXIT
+#
+#git diff --cached --name-only -z --diff-filter=ACMR > "${TMP_LIST}"
+#
+## 若暂存区没有任何文件，直接通过
+#if [ ! -s "${TMP_LIST}" ]; then
+#  exit 0
+#fi
+#
+## 7) 对 staged 的 C/C++ 相关文件执行 clang-format，并重新 add 回暂存区
+##    说明：
+##    - 我们在第 4 步 stash 了 worktree 的未暂存内容，因此磁盘上的文件内容应对应 staged 版本
+##    - clang-format 会原地修改文件，然后我们 git add，将格式化后的版本写回暂存区
+##    - 如果你使用“部分暂存（hunk add）”，此策略会把格式化后的整文件加入暂存区，
+##      可能改变原来的补丁结构；这属于“提交即规范化”的常见团队策略
+#CHANGED=0
+#
+## bash 的 read -d 支持 NUL 分隔；因此这里使用 bash（见 shebang）
+#while IFS= read -r -d '' f; do
+#  case "${f}" in
+#    *.c|*.cc|*.cpp|*.cxx|*.h|*.hh|*.hpp|*.hxx)
+#      # 跳过不存在的路径（例如某些边界情况：重命名/移动过程中路径瞬态）
+#      if [ -f "${f}" ] && [ ! -L "${f}" ]; then
+#        # -L 判断软链接：商业仓库通常不希望对 symlink 目标做原地格式化
+#        clang-format -i --style=file "${f}"
+#        git add -- "${f}"
+#        CHANGED=1
+#      fi
+#      ;;
+#    *)
+#      # 非 C/C++ 文件忽略
+#      ;;
+#  esac
+#done < "${TMP_LIST}"
+#
+#if [ "${CHANGED}" -eq 1 ]; then
+#  echo "Pre-commit: clang-format applied successfully."
+#fi
+#
+#exit 0
