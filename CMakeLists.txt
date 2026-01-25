@@ -70,7 +70,6 @@ add_executable(${CMAKE_PROJECT_NAME}
         components/core_base/assert_cus.c
         components/hal/hal_gpio.c
         components/board/Src/board_gpio_map.c
-
         example/GPIO/ex_hal_gpio.c
         components/core_base/no_malloc_wrap.c
         components/hal/hal_uart.c
@@ -81,6 +80,8 @@ add_executable(${CMAKE_PROJECT_NAME}
         components/core_mpu/src/core_mpu.c
         platform/STM32/common/core_mpu_port.c
         components/CRC/CRC16/crc16.c
+        components/memory_pool/memory_pool.c
+
 
 )
 
