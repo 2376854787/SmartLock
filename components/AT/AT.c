@@ -540,7 +540,7 @@ AT_Resp_t AT_Wait(AT_Command_t* h, const uint32_t wait_ms) {
     /* 阻塞等待 */
     const ret_code_t st = OSAL_sem_take(h->done_sem, wait_ms);
 
-    if (st == RET_E_TIMEOUT) {
+    if (ret_is_timeout(st)) {
         /* 理论上 core_task 会在超时时释放 done_sem；这里 st!=OK 意味着系统异常 */
         return AT_RESP_TIMEOUT;
     }

@@ -4,6 +4,8 @@
 
 #include "ret_code.h"
 
+#define RET_MOD_UTIL(clas_, err_) \
+    RET_MAKE(RET_MOD_TOOLS, RET_SUB_TOOLS_CRC, RET_CODE_MAKE((clas_), (err_)))
 /* 用于 CRC-16/MODBUS 和 CRC-16/USB 的查表（poly=0xA001, refin/refout=true）*/
 static const uint16_t crc16_table_a001[256] = {
     0x0000, 0xC0C1, 0xC181, 0x0140, 0xC301, 0x03C0, 0x0280, 0xC241, 0xC601, 0x06C0, 0x0780, 0xC741,
@@ -123,7 +125,7 @@ ret_code_t crc16_cal_default(crc16_config_default name, const uint8_t* data, uin
                              uint16_t* out) {
     /* 边界检查，防止数组越界 */
     if (name >= config_count) {
-        return RET_E_INVALID_ARG;
+        return RET_MOD_UTIL(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     }
     return crc16_cal(&g_crc16_config[name], data, length, out);
 }
@@ -139,7 +141,7 @@ ret_code_t crc16_cal_default(crc16_config_default name, const uint8_t* data, uin
 static ret_code_t crc16_cal_table_impl(const crc16_config_t* cfg, const uint8_t* data,
                                        uint16_t length, uint16_t* out) {
     if (!cfg || (!data && length != 0) || !out) {
-        return RET_E_INVALID_ARG;
+        return RET_MOD_UTIL(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     }
 
     uint16_t crc = cfg->init;
@@ -150,7 +152,7 @@ static ret_code_t crc16_cal_table_impl(const crc16_config_t* cfg, const uint8_t*
          */
         if (cfg->poly != 0x1021u) {
             /* 防止用错表：你也可以改成 RET_E_INVALID_STATE 或直接不检查 */
-            return RET_E_INVALID_ARG;
+            return RET_MOD_UTIL(RET_CLASS_PARAM, RET_R_INVALID_ARG);
         }
 
         for (uint16_t i = 0; i < length; i++) {
@@ -163,7 +165,7 @@ static ret_code_t crc16_cal_table_impl(const crc16_config_t* cfg, const uint8_t*
          * 查表法：idx = (crc ^ data[i]) & 0xFF；crc = (crc>>8) ^ table[idx]
          */
         if (cfg->poly != 0xA001u) {
-            return RET_E_INVALID_ARG;
+            return RET_MOD_UTIL(RET_CLASS_PARAM, RET_R_INVALID_ARG);
         }
 
         for (uint16_t i = 0; i < length; i++) {
@@ -203,7 +205,7 @@ ret_code_t crc16_cal_table(const crc16_config_t* cfg, const uint8_t* data, uint1
 ret_code_t crc16_cal_default_table(crc16_config_default name, const uint8_t* data, uint16_t length,
                                    uint16_t* out) {
     if (name >= config_count) {
-        return RET_E_INVALID_ARG;
+        return RET_MOD_UTIL(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     }
     return crc16_cal_table_impl(&g_crc16_config[name], data, length, out);
 }

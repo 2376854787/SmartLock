@@ -13,7 +13,8 @@
 #include "stm32_uart_series.h"
 
 /* 根据当前所属模块id 与返回状态生成32位状态码 */
-#define UART_RET(errno_) RET_MAKE(RET_MOD_PORT, (errno_))
+#define UART_RET(clas_, errno_) \
+    RET_MAKE(RET_MOD_PORT, RET_SUB_PORT_STM32, RET_CODE_MAKE((clas_), (errno_)))
 
 /* ========== UART 上下文 ========== */
 struct hal_uart {
@@ -116,10 +117,11 @@ static void rx_commit_delta(hal_uart_t* u) {
     if (!u->isCompatible) {
         /* 严格：空间不足 -> 全丢 */
         if (remain < delta) {
-            u->rx_last_pos     = pos;                               /* 更新上次坐标为新的坐标 */
-            hal_uart_event_t e = {.type = HAL_UART_EVT_ERROR};      /* 返回事件类型 错误 + 原因 */
-            e.err.flags        = (uint32_t)RET_ERRNO_DATA_OVERFLOW; /* 错误类型 ：数据溢出*/
-            emit_evt(u, &e);                                        /* 执行事件回调函数 */
+            u->rx_last_pos     = pos;                          /* 更新上次坐标为新的坐标 */
+            hal_uart_event_t e = {.type = HAL_UART_EVT_ERROR}; /* 返回事件类型 错误 + 原因 */
+            e.err.flags =
+                UART_RET(RET_CLASS_RESOURCE, RET_R_BUFFER_FULL); /* 错误类型 ：缓冲区空间不够*/
+            emit_evt(u, &e);                                     /* 执行事件回调函数 */
             return;
         }
         /* 空间足够，完整写入 */
@@ -171,9 +173,10 @@ static void rx_commit_delta(hal_uart_t* u) {
 
     /* 当丢弃了数据 返回错误 */
     if (dropped > 0u) {
-        hal_uart_event_t e = {.type = HAL_UART_EVT_ERROR};      /* 返回事件类型 错误 + 原因 */
-        e.err.flags        = (uint32_t)RET_ERRNO_DATA_OVERFLOW; /* 错误类型 ：数据溢出*/
-        emit_evt(u, &e);                                        /* 执行事件回调函数 */
+        hal_uart_event_t e = {.type = HAL_UART_EVT_ERROR}; /* 返回事件类型 错误 + 原因 */
+        e.err.flags        = UART_RET(RET_CLASS_RESOURCE, RET_R_BUFFER_FULL);
+        ;                /* 错误类型 ：数据溢出*/
+        emit_evt(u, &e); /* 执行事件回调函数 */
     }
 }
 
@@ -285,8 +288,8 @@ void stm32_uart_irq_dma_tx(hal_uart_id_t id) {
  */
 ret_code_t hal_uart_port_open(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_uart_t** out) {
     /* 参数错误检查 */
-    if (!out) return UART_RET(RET_ERRNO_INVALID_ARG);
-    if (id >= HAL_UART_ID_MAX) return UART_RET(RET_ERRNO_INVALID_ARG);
+    if (!out) return UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    if (id >= HAL_UART_ID_MAX) return UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
 
     /* 获取到该id 对应的静态数组地址 */
     hal_uart_t* u = &g_uarts[id];
@@ -301,7 +304,7 @@ ret_code_t hal_uart_port_open(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_u
     /* 参数检查传输的 指针是否有效, DMA长度是否是2的幂次大小 */
     if (!u->bsp.huart || !u->bsp.hdma_rx || !u->bsp.hdma_tx || !u->bsp.rx_dma_buf ||
         u->bsp.rx_dma_len < 2u || !isPowerOfTwo_Size(u->bsp.rx_dma_len) || u->bsp.sw_rb_len < 2u) {
-        return UART_RET(RET_ERRNO_INVALID_ARG);
+        return UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     }
 
     /* 兼容模式（cfg 没有就默认 false=严格） */
@@ -324,7 +327,7 @@ ret_code_t hal_uart_port_open(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_u
     }
 
     /* 串口初始化 */
-    if (HAL_UART_Init(u->bsp.huart) != HAL_OK) return UART_RET(RET_ERRNO_IO);
+    if (HAL_UART_Init(u->bsp.huart) != HAL_OK) return UART_RET(RET_CLASS_IO, RET_R_IO);
 
     /* NVIC 可由 BSP 配，也可这里开 */
     if (u->bsp.usart_irq > 0) {
@@ -353,9 +356,9 @@ ret_code_t hal_uart_port_open(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_u
  * @param h 串口句柄
  */
 ret_code_t hal_uart_port_close(hal_uart_t* h) {
-    if (!h) return UART_RET(RET_ERRNO_INVALID_ARG);
+    if (!h) return UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     const hal_uart_t* u = (hal_uart_t*)h;
-    if (HAL_UART_DeInit(u->bsp.huart) != HAL_OK) return UART_RET(RET_ERRNO_IO);
+    if (HAL_UART_DeInit(u->bsp.huart) != HAL_OK) return UART_RET(RET_CLASS_IO, RET_R_IO);
     return RET_OK;
 }
 
@@ -366,7 +369,7 @@ ret_code_t hal_uart_port_close(hal_uart_t* h) {
  * @param user user上下文
  */
 ret_code_t hal_uart_port_set_evt_cb(hal_uart_t* h, hal_uart_evt_cb_t cb, void* user) {
-    if (!h) return UART_RET(RET_ERRNO_INVALID_ARG);
+    if (!h) return UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     hal_uart_t* u = (hal_uart_t*)h;
     u->cb         = cb;
     u->cb_user    = user;
@@ -379,14 +382,14 @@ ret_code_t hal_uart_port_set_evt_cb(hal_uart_t* h, hal_uart_evt_cb_t cb, void* u
  * @return 状态码
  */
 ret_code_t hal_uart_port_rx_start(hal_uart_t* h) {
-    if (!h) return UART_RET(RET_ERRNO_INVALID_ARG);
+    if (!h) return UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     hal_uart_t* u = (hal_uart_t*)h;
 
 #if defined(USE_HAL_UARTEx_ReceiveToIdle_DMA)
     /* DMA + IDLE 方式接收方式 */
     if (HAL_UARTEx_ReceiveToIdle_DMA(u->bsp.huart, u->bsp.rx_dma_buf,
                                      (uint16_t)u->bsp.rx_dma_len) != HAL_OK)
-        return UART_RET(RET_ERRNO_IO);
+        return UART_RET(RET_CLASS_IO, RET_R_IO);
     /* 可选：关 HT 降低中断 */
 #if (DISABLE_DMA_IT_HT)
     __HAL_DMA_DISABLE_IT(u->bsp.huart->hdmarx, DMA_IT_HT);
@@ -415,10 +418,10 @@ ret_code_t hal_uart_port_rx_start(hal_uart_t* h) {
  * @return 状态码
  */
 ret_code_t hal_uart_port_send_async(hal_uart_t* h, const uint8_t* buf, uint32_t len) {
-    if (!h || !buf || len == 0u) return UART_RET(RET_ERRNO_INVALID_ARG);
+    if (!h || !buf || len == 0u) return UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     hal_uart_t* u = (hal_uart_t*)h;
 
-    if (u->tx_busy) return UART_RET(RET_ERRNO_BUSY);
+    if (u->tx_busy) return UART_RET(RET_CLASS_STATE, RET_R_BUSY);
     u->tx_busy     = 1;
     u->last_tx_len = len;
 
@@ -428,7 +431,7 @@ ret_code_t hal_uart_port_send_async(hal_uart_t* h, const uint8_t* buf, uint32_t 
     if (HAL_UART_Transmit_DMA(u->bsp.huart, (uint8_t*)buf, (uint16_t)len) != HAL_OK) {
         /* 状态回滚 */
         u->tx_busy = 0;
-        return UART_RET(RET_ERRNO_IO);
+        return UART_RET(RET_CLASS_IO, RET_R_IO);
     }
     return RET_OK;
 }
@@ -443,7 +446,7 @@ ret_code_t hal_uart_port_send_async(hal_uart_t* h, const uint8_t* buf, uint32_t 
  * @note 读：严格=必须足够才读且不消费；兼容=尽力读
  */
 ret_code_t hal_uart_port_read(hal_uart_t* h, uint8_t* out, uint32_t want, uint32_t* nread) {
-    if (!h || !out || want == 0u || !nread) return UART_RET(RET_ERRNO_INVALID_ARG);
+    if (!h || !out || want == 0u || !nread) return UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     hal_uart_t* u       = (hal_uart_t*)h;
 
     uint32_t size       = want;

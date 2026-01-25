@@ -8,32 +8,39 @@ cmake_minimum_required(VERSION 3.22)
 #
 
 # Setup compiler settings
+#c 语言最低标准
 set(CMAKE_C_STANDARD 11)
+#如果编译器不支持 C11，则直接报错停止构建。
 set(CMAKE_C_STANDARD_REQUIRED ON)
+#允许使用编译器特定的扩展
 set(CMAKE_C_EXTENSIONS ON)
+#手动指定 C 编译器和对象转换工具
 set(CMAKE_C_COMPILER arm-none-eabi-gcc)
 set(CMAKE_OBJCOPY arm-none-eabi-objcopy)
 
 
 # Define the build type
+#设置默认编译类型为 Debug
 if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Debug")
 endif ()
 
 # Set the project name
+# 设置变量名为 SmartLock 并正式定义 CMake 工程。
 set(CMAKE_PROJECT_NAME SmartLock)
-
-# Enable compile command to ease indexing with e.g. clangd
-set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
-
 # Core project settings
 project(${CMAKE_PROJECT_NAME})
 message("Build type: " ${CMAKE_BUILD_TYPE})
 
+# Enable compile command to ease indexing with e.g. clangd
+#生成 compile_commands.json
+set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 # Enable CMake support for ASM and C languages
+#包含 C 代码 和 汇编代码
 enable_language(C ASM)
 
 # Create an executable object type
+# 定义最终生成的二进制文件对象
 add_executable(${CMAKE_PROJECT_NAME}
         components/ring_buffer/RingBuffer.c
         components/memory_allocation/MemoryAllocation.c
@@ -78,6 +85,7 @@ add_executable(${CMAKE_PROJECT_NAME}
 )
 
 # Add STM32CubeMX generated sources
+#引入子模块
 add_subdirectory(cmake/stm32cubemx)
 
 # Link directories setup
@@ -131,13 +139,15 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
 list(REMOVE_ITEM CMAKE_C_IMPLICIT_LINK_LIBRARIES ob)
 
 # Add linked libraries
+# 链接库
 target_link_libraries(${CMAKE_PROJECT_NAME}
         stm32cubemx
 
         # Add user defined libraries
 )
-## 启用浮点数打印
+#链接选项
 target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
+        ## 启用浮点数打印
         #        -Wl,-u,_printf_float
         #        -Wl,-u,_scanf_float
 
@@ -151,6 +161,7 @@ target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
 # 为 Debug 模式定义 DEBUG_MODE 宏
 # 为 Release 模式定义 RELEASE_MODE 宏
 add_compile_definitions(
+        #生成器表达式
         $<$<CONFIG:Debug>:DEBUG_MODE>
         $<$<CONFIG:Release>:RELEASE_MODE>
 )

@@ -112,15 +112,15 @@ void Log_Task_Entry(void* argument) {
             const log_backend_t* b = Log_GetBackend();
 
             /* 启动发送：若忙则等待完成再重试 */
-            int rc;
+            uint32_t rc;
             do {
                 rc = b->send_async(send_buf, (uint16_t)read_len, b->user);
-                if (rc == RET_E_BUSY) {
+                if (ret_is_busy(rc)) {
                     printf("LOG发送BUSY！！！\r\n");
                     (void)OSAL_thread_flags_wait(LOG_TX_DONE_FLAG, OSAL_FLAGS_WAIT_ANY,
                                                  OSAL_WAIT_FOREVER);
                 }
-            } while (rc == RET_E_BUSY);
+            } while (ret_is_busy(rc));
 
             /* 启动成功后必须等这笔发送完成，才能复用 send_buf 读下一段 */
             (void)OSAL_thread_flags_wait(LOG_TX_DONE_FLAG, OSAL_FLAGS_WAIT_ANY, OSAL_WAIT_FOREVER);

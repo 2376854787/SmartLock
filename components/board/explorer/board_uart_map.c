@@ -4,7 +4,7 @@
 #include "main.h"
 
 /* 根据当前所属模块id 与返回状态生成32位状态码 */
-#define UART_MAP_RET(errno_) RET_MAKE(RET_MOD_PORT, (errno_))
+#define UART_MAP_RET(clas_, errno_) RET_MAKE(RET_MOD_HAL, RET_SUB_HAL_UART, RET_CODE_MAKE((clas_), (errno_)))
 
 /* cubemx 或者自己初始化定义的句柄 */
 /* 串口1 */
@@ -22,7 +22,7 @@ static uint8_t g_uart1_rx_dma[512];
 #endif
 
 ret_code_t stm32_uart_bsp_get(hal_uart_id_t id, stm32_uart_bsp_t* out) {
-    if (!out) return UART_MAP_RET(RET_ERRNO_INVALID_ARG);
+    if (!out) return UART_MAP_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     switch (id) {
         case HAL_UART_ID_0:
             /* 串口 MSP 配置 */
@@ -36,8 +36,8 @@ ret_code_t stm32_uart_bsp_get(hal_uart_id_t id, stm32_uart_bsp_t* out) {
             out->rx_dma_len = sizeof(g_uart1_rx_dma);  // 长度 必须为2的幂次大小
             out->sw_rb_len  = 2048;                    /* 软件RB的容量 KB 尽量为2的幂次大小 */
             out->irq_prio   = 5;
-            return UART_MAP_RET(RET_ERRNO_OK);
+            return UART_MAP_RET(RET_CLASS_PARAM,  RET_R_OK);
         default:
-            return UART_MAP_RET(RET_ERRNO_NOT_READY);
+            return UART_MAP_RET(RET_CLASS_RESOURCE, RET_R_NO_RESOURCE);
     }
 }

@@ -8,7 +8,8 @@
 
 #if defined(USE_STM32_HAL) && defined(ENABLE_HAL_GPIO)
 #include "stm32_hal.h"
-
+#define PORT_RET(clas_, err_) \
+    RET_MAKE(RET_MOD_PORT, RET_SUB_PORT_STM32, RET_CODE_MAKE((clas_), (err_)))
 typedef struct {
     uint32_t id;
     board_gpio_hw_t hw;
@@ -21,15 +22,18 @@ static const board_gpio_map_entry_t s_map[] = {
 };
 
 ret_code_t board_gpio_lookup(uint32_t id, board_gpio_hw_t* out) {
-    if (!out) return RET_E_INVALID_ARG;
+    if (!out) return PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     for (uint32_t i = 0; i < (uint32_t)(sizeof(s_map) / sizeof(s_map[0])); ++i) {
         if (s_map[i].id == id) {
-            if (!s_map[i].hw.port || s_map[i].hw.pin >= 16u) return RET_E_NOT_FOUND;
+            if (!s_map[i].hw.port || s_map[i].hw.pin >= 16u)
+                return PORT_RET(RET_CLASS_STATE, RET_R_NOT_READY);
+            ;
             *out = s_map[i].hw;
             return RET_OK;
         }
     }
-    return RET_E_NOT_FOUND;
+    return PORT_RET(RET_CLASS_STATE, RET_R_NOT_READY);
+    ;
 }
 #else
 /* 非 STM32 HAL 平台：不提供映射 */

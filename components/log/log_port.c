@@ -6,12 +6,13 @@
 #include "usart.h"
 // 简单忙标志：1=DMA/IT 正在发送
 static volatile uint8_t s_uart_tx_busy = 0;
-
+#define LOG_PORT_RET(clas_, err_) \
+    RET_MAKE(RET_MOD_LOG, RET_SUB_LOG_CORE, RET_CODE_MAKE((clas_), (err_)))
 static int Log_uart_send_async(const uint8_t *d, uint16_t n, void *user) {
     UART_HandleTypeDef *huart = (UART_HandleTypeDef *)user;
-    if (!huart || !d || n == 0) return RET_E_INVALID_ARG;
+    if (!huart || !d || n == 0) return LOG_PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
 
-    if (s_uart_tx_busy) return RET_E_BUSY;
+    if (s_uart_tx_busy) return LOG_PORT_RET(RET_CLASS_STATE, RET_R_BUSY);
 
     s_uart_tx_busy       = 1;
 
@@ -24,10 +25,10 @@ static int Log_uart_send_async(const uint8_t *d, uint16_t n, void *user) {
     s_uart_tx_busy = 0;
 
     // HAL_BUSY：外设忙（可能上一笔还没完全释放/状态机没回到READY）
-    if (st == HAL_BUSY) return RET_E_BUSY;
+    if (st == HAL_BUSY) return LOG_PORT_RET(RET_CLASS_STATE, RET_R_BUSY);
 
     // 其它：真正错误
-    return RET_E_IO;
+    return LOG_PORT_RET(RET_CLASS_FATAL, RET_R_PANIC);
 }
 
 /**

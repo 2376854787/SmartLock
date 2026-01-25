@@ -7,7 +7,7 @@
 #include "MemoryAllocation.h"
 #include "RingBuffer.h"
 #include "rb_port.h"
-
+#define RB_RET(clas_, err_) RET_MAKE(RET_MOD_RB, RET_SUB_RB_CORE, RET_CODE_MAKE((clas_), (err_)))
 static inline uint32_t RingBuffer_GetUsedSize_Internal(const RingBuffer* rb);
 
 static inline uint32_t RingBuffer_GetRemainSize_Internal(const RingBuffer* rb);
@@ -21,7 +21,7 @@ static inline uint32_t RingBuffer_GetRemainSize_Internal(const RingBuffer* rb);
  */
 ret_code_t CreateRingBuffer(RingBuffer* rb, const char* name, const uint32_t size) {
     // 1、检擦输入参数的合法性
-    if (rb == NULL || size < 2) return RET_E_INVALID_ARG;
+    if (rb == NULL || size < 2) return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
 
     // 2、动态分配内存
     rb->buffer = static_alloc(size, DEFAULT_ALIGNMENT);
@@ -31,9 +31,8 @@ ret_code_t CreateRingBuffer(RingBuffer* rb, const char* name, const uint32_t siz
         rb->front_index = rb->rear_index = 0;
         rb->size                         = 0;
         rb->isPowerOfTwo_Size            = false;
-        return RET_E_NO_MEM;
+        return RB_RET(RET_CLASS_RESOURCE, RET_R_NO_MEM);
     }
-
     // 4、分配成功
     rb->name              = name;
     rb->front_index       = 0;
@@ -155,7 +154,7 @@ ret_code_t WriteRingBuffer(RingBuffer* rb, const uint8_t* add, uint32_t* size,
     // 1、参数合法性检查
     if (rb == NULL || add == NULL || size == NULL || *size == 0 || rb->buffer == NULL ||
         rb->size < 2)
-        return RET_E_INVALID_ARG;
+        return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     // --- 进入临界区，保护所有对 rb 成员的访问 ---
     RB_ENTER_CRITICAL();
     // 2、检查当前缓冲区的大小是否能够装入
@@ -166,16 +165,14 @@ ret_code_t WriteRingBuffer(RingBuffer* rb, const uint8_t* add, uint32_t* size,
         } else {
             // --- 在返回前，退出临界区 ---
             RB_EXIT_CRITICAL();
-            return RET_E_NO_MEM;
+            return RB_RET(RET_CLASS_RESOURCE, RET_R_NO_MEM);
         }
     }
-
     // 如果窥视大小为0（可能在isForcePeek后发生），则直接成功返回
     if (*size == 0) {
         RB_EXIT_CRITICAL();
         return RET_OK;
     }
-
     // 3、写入缓冲区
     // 判断当前的空间是否足够一次性写入
     const uint32_t end_size = rb->size - rb->rear_index;
@@ -192,7 +189,6 @@ ret_code_t WriteRingBuffer(RingBuffer* rb, const uint8_t* add, uint32_t* size,
     } else {
         rb->rear_index = (rb->rear_index + *size) % rb->size;
     }
-
     // --- 在返回前，退出临界区 ---
     RB_EXIT_CRITICAL();
     return RET_OK;
@@ -210,7 +206,7 @@ ret_code_t ReadRingBuffer(RingBuffer* rb, uint8_t* add, uint32_t* size, const ui
     // 1、参数合法性检查
     if (rb == NULL || add == NULL || size == NULL || *size == 0 || rb->buffer == NULL ||
         rb->size < 2)
-        return RET_E_INVALID_ARG;
+        return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     // --- 进入临界区，保护所有对 rb 成员的访问 ---
     RB_ENTER_CRITICAL();
     const uint32_t usedSize = RingBuffer_GetUsedSize_Internal(rb);
@@ -223,16 +219,14 @@ ret_code_t ReadRingBuffer(RingBuffer* rb, uint8_t* add, uint32_t* size, const ui
             // --- 在返回前，退出临界区 ---
             RB_EXIT_CRITICAL();
             // 不强制读取当前数据不足就不读取
-            return RET_E_DATA_NOT_ENOUGH;
+            return RB_RET(RET_CLASS_DATA, RET_R_DATA_NOT_ENOUGH);
         }
     }
-
     // 如果窥视大小为0（可能在isForcePeek后发生），则直接成功返回
     if (*size == 0) {
         RB_EXIT_CRITICAL();
         return RET_OK;
     }
-
     // 3、写入缓冲区
     // 判断当前的空间是否足够一次性读取
     const uint32_t end_size = rb->size - rb->front_index;
@@ -249,7 +243,6 @@ ret_code_t ReadRingBuffer(RingBuffer* rb, uint8_t* add, uint32_t* size, const ui
     } else {
         rb->front_index = (rb->front_index + *size) % rb->size;
     }
-
     // --- 在返回前，退出临界区 ---
     RB_EXIT_CRITICAL();
     return RET_OK;
@@ -268,13 +261,10 @@ ret_code_t PeekRingBuffer(const RingBuffer* rb, uint8_t* add, uint32_t* size,
     // 1、参数合法性检查
     if (rb == NULL || add == NULL || size == NULL || *size == 0 || rb->buffer == NULL ||
         rb->size < 2)
-        return RET_E_INVALID_ARG;
-
+        return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     // --- 进入临界区，保护所有对 rb 成员的访问 ---
     RB_ENTER_CRITICAL();  // 注意：如果是在任务中调用，应使用 taskENTER_CRITICAL()
-
     const uint32_t usedSize = RingBuffer_GetUsedSize_Internal(rb);
-
     // 2、检查当前缓冲区中是否有足够的数据
     if (usedSize < *size) {
         // 强制窥视剩余的
@@ -284,16 +274,14 @@ ret_code_t PeekRingBuffer(const RingBuffer* rb, uint8_t* add, uint32_t* size,
             // --- 在返回前，退出临界区 ---
             RB_EXIT_CRITICAL();
             // 不强制窥视，且数据不足，则操作失败
-            return RET_E_DATA_NOT_ENOUGH;
+            return RB_RET(RET_CLASS_DATA, RET_R_DATA_NOT_ENOUGH);
         }
     }
-
     // 如果窥视大小为0（可能在isForcePeek后发生），则直接成功返回
     if (*size == 0) {
         RB_EXIT_CRITICAL();
         return RET_OK;
     }
-
     // 3、从缓冲区复制数据
     // 判断当前的空间是否足够一次性复制
     const uint32_t end_size = rb->size - rb->front_index;
@@ -304,7 +292,6 @@ ret_code_t PeekRingBuffer(const RingBuffer* rb, uint8_t* add, uint32_t* size,
         memcpy(add, rb->buffer + rb->front_index, end_size);
         memcpy(add + end_size, rb->buffer, *size - end_size);
     }
-
     // --- 在返回前，退出临界区 ---
     RB_EXIT_CRITICAL();
     return RET_OK;
@@ -323,7 +310,7 @@ ret_code_t WriteRingBufferFromISR(RingBuffer* rb, const uint8_t* add, uint32_t* 
     // 1、参数合法性检查
     if (rb == NULL || add == NULL || size == NULL || *size == 0 || rb->buffer == NULL ||
         rb->size < 2)
-        return RET_E_INVALID_ARG;
+        return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     // --- 进入临界区，保护所有对 rb 成员的访问 ---
     rb_isr_state_t saved;
     RB_ENTER_CRITICAL_FROM_ISR(saved);
@@ -335,7 +322,7 @@ ret_code_t WriteRingBufferFromISR(RingBuffer* rb, const uint8_t* add, uint32_t* 
         } else {
             // --- 在返回前，退出临界区 ---
             RB_EXIT_CRITICAL_FROM_ISR(saved);
-            return RET_E_NO_MEM;
+            return RB_RET(RET_CLASS_RESOURCE, RET_R_NO_MEM);
         }
     }
 
@@ -344,7 +331,6 @@ ret_code_t WriteRingBufferFromISR(RingBuffer* rb, const uint8_t* add, uint32_t* 
         RB_EXIT_CRITICAL_FROM_ISR(saved);
         return RET_OK;
     }
-
     // 3、写入缓冲区
     // 判断当前的空间是否足够一次性写入
     const uint32_t end_size = rb->size - rb->rear_index;
@@ -381,7 +367,7 @@ ret_code_t ReadRingBufferFromISR(RingBuffer* rb, uint8_t* add, uint32_t* size,
     // 1、参数合法性检查
     if (rb == NULL || add == NULL || size == NULL || *size == 0 || rb->buffer == NULL ||
         rb->size < 2)
-        return RET_E_INVALID_ARG;
+        return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     // --- 进入临界区，保护所有对 rb 成员的访问 ---
     rb_isr_state_t saved;
     RB_ENTER_CRITICAL_FROM_ISR(saved);
@@ -395,7 +381,7 @@ ret_code_t ReadRingBufferFromISR(RingBuffer* rb, uint8_t* add, uint32_t* size,
             // --- 在返回前，退出临界区 ---
             RB_EXIT_CRITICAL_FROM_ISR(saved);
             // 不强制读取当前数据不足就不读取
-            return RET_E_DATA_NOT_ENOUGH;
+            return RB_RET(RET_CLASS_DATA, RET_R_DATA_NOT_ENOUGH);
         }
     }
 
@@ -433,7 +419,7 @@ ret_code_t ReadRingBufferFromISR(RingBuffer* rb, uint8_t* add, uint32_t* size,
  * @return
  */
 ret_code_t ResetRingBuffer(RingBuffer* rb) {
-    if (rb == NULL) return RET_E_INVALID_ARG;
+    if (rb == NULL) return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     RB_ENTER_CRITICAL();
     rb->front_index = 0;
     rb->rear_index  = 0;
@@ -448,7 +434,7 @@ ret_code_t ResetRingBuffer(RingBuffer* rb) {
  */
 ret_code_t ResetRingBufferFromISR(RingBuffer* rb) {
     if (rb == NULL) {
-        return RET_E_INVALID_ARG;
+        return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     }
     rb_isr_state_t saved;
     RB_ENTER_CRITICAL_FROM_ISR(saved);
@@ -469,15 +455,12 @@ ret_code_t ResetRingBufferFromISR(RingBuffer* rb) {
  */
 ret_code_t RingBuffer_WriteReserve(RingBuffer* rb, uint32_t want, RingBufferSpan* out,
                                    uint32_t* granted, bool isCompatible) {
-    if (!rb || !out || !granted || !rb->buffer || rb->size < 2) return RET_E_INVALID_ARG;
-
+    if (!rb || !out || !granted || !rb->buffer || rb->size < 2)
+        return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     RB_ENTER_CRITICAL();
-
     /* 1、获取剩余空间大小 */
     const uint32_t remain = RingBuffer_GetRemainSize_Internal(rb);
-
     uint32_t g            = want;
-
     if (g == 0) {
         out->p1  = NULL;
         out->n1  = 0;
@@ -487,28 +470,23 @@ ret_code_t RingBuffer_WriteReserve(RingBuffer* rb, uint32_t want, RingBufferSpan
         RB_EXIT_CRITICAL();
         return RET_OK;
     }
-
     if (g > remain) {
         if (isCompatible)
             g = remain;
         else {
             RB_EXIT_CRITICAL();
-            return RET_E_NO_MEM;
+            return RB_RET(RET_CLASS_RESOURCE, RET_R_NO_MEM);
         }
     }
-
     const uint32_t rear  = rb->rear_index;
     const uint32_t front = rb->front_index;
     const uint32_t size  = rb->size;
-
     uint32_t n1 = 0, n2 = 0;
-
     if (rear < front) {
         // 可写连续段：rear .. front-1 之间（预留 1 字节区分满/空）
         const uint32_t seg = front - rear - 1;
         n1                 = (g < seg) ? g : seg;
         n2                 = 0;
-
         out->p1            = (n1 > 0) ? (rb->buffer + rear) : NULL;
         out->n1            = n1;
         out->p2            = NULL;
@@ -521,7 +499,6 @@ ret_code_t RingBuffer_WriteReserve(RingBuffer* rb, uint32_t want, RingBufferSpan
         const uint32_t tailFree = (front == 0) ? (size - rear - 1) : (size - rear);
         n1                      = (g < tailFree) ? g : tailFree;
         n2                      = g - n1;
-
         out->p1                 = (n1 > 0) ? (rb->buffer + rear) : NULL;
         out->n1                 = n1;
         out->p2                 = (n2 > 0) ? (rb->buffer) : NULL;
@@ -540,20 +517,17 @@ ret_code_t RingBuffer_WriteReserve(RingBuffer* rb, uint32_t want, RingBufferSpan
  * @return 成功或者失败
  */
 ret_code_t RingBuffer_WriteCommit(RingBuffer* rb, uint32_t commit) {
-    if (!rb || !rb->buffer || rb->size < 2) return RET_E_INVALID_ARG;
-
+    if (!rb || !rb->buffer || rb->size < 2) return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     RB_ENTER_CRITICAL();
     const uint32_t remain = RingBuffer_GetRemainSize_Internal(rb);
     if (commit > remain) {
         RB_EXIT_CRITICAL();
-        return RET_E_NO_MEM;
+        return RB_RET(RET_CLASS_RESOURCE, RET_R_NO_MEM);
     }
-
     if (rb->isPowerOfTwo_Size)
         rb->rear_index = (rb->rear_index + commit) & (rb->size - 1);
     else
         rb->rear_index = (rb->rear_index + commit) % rb->size;
-
     RB_EXIT_CRITICAL();
     return RET_OK;
 }
@@ -570,16 +544,13 @@ ret_code_t RingBuffer_WriteCommit(RingBuffer* rb, uint32_t commit) {
  */
 ret_code_t RingBuffer_WriteReserveFromISR(RingBuffer* rb, uint32_t want, RingBufferSpan* out,
                                           uint32_t* granted, bool isCompatible) {
-    if (!rb || !out || !granted || !rb->buffer || rb->size < 2) return RET_E_INVALID_ARG;
-
+    if (!rb || !out || !granted || !rb->buffer || rb->size < 2)
+        return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     rb_isr_state_t saved;
     RB_ENTER_CRITICAL_FROM_ISR(saved);
-
     /* 1、获取剩余空间大小 */
     const uint32_t remain = RingBuffer_GetRemainSize_Internal(rb);
-
     uint32_t g            = want;
-
     if (g == 0) {
         out->p1  = NULL;
         out->n1  = 0;
@@ -589,13 +560,12 @@ ret_code_t RingBuffer_WriteReserveFromISR(RingBuffer* rb, uint32_t want, RingBuf
         RB_EXIT_CRITICAL_FROM_ISR(saved);
         return RET_OK;  // 或 return false; 取决于你接口约定
     }
-
     if (g > remain) {
         if (isCompatible)
             g = remain;
         else {
             RB_EXIT_CRITICAL_FROM_ISR(saved);
-            return RET_E_NO_MEM;
+            return RB_RET(RET_CLASS_RESOURCE, RET_R_NO_MEM);
         }
     }
 
@@ -610,7 +580,6 @@ ret_code_t RingBuffer_WriteReserveFromISR(RingBuffer* rb, uint32_t want, RingBuf
         const uint32_t seg = front - rear - 1;
         n1                 = (g < seg) ? g : seg;
         n2                 = 0;
-
         out->p1            = (n1 > 0) ? (rb->buffer + rear) : NULL;
         out->n1            = n1;
         out->p2            = NULL;
@@ -623,7 +592,6 @@ ret_code_t RingBuffer_WriteReserveFromISR(RingBuffer* rb, uint32_t want, RingBuf
         const uint32_t tailFree = (front == 0) ? (size - rear - 1) : (size - rear);
         n1                      = (g < tailFree) ? g : tailFree;
         n2                      = g - n1;
-
         out->p1                 = (n1 > 0) ? (rb->buffer + rear) : NULL;
         out->n1                 = n1;
         out->p2                 = (n2 > 0) ? (rb->buffer) : NULL;
@@ -642,22 +610,18 @@ ret_code_t RingBuffer_WriteReserveFromISR(RingBuffer* rb, uint32_t want, RingBuf
  * @return 成功或者失败
  */
 ret_code_t RingBuffer_WriteCommitFromISR(RingBuffer* rb, uint32_t commit) {
-    if (!rb || !rb->buffer || rb->size < 2) return RET_E_INVALID_ARG;
-
+    if (!rb || !rb->buffer || rb->size < 2) return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     rb_isr_state_t saved;
     RB_ENTER_CRITICAL_FROM_ISR(saved);
-
     const uint32_t remain = RingBuffer_GetRemainSize_Internal(rb);
     if (commit > remain) {
         RB_EXIT_CRITICAL_FROM_ISR(saved);
-        return RET_E_NO_MEM;
+        return RB_RET(RET_CLASS_RESOURCE, RET_R_NO_MEM);
     }
-
     if (rb->isPowerOfTwo_Size)
         rb->rear_index = (rb->rear_index + commit) & (rb->size - 1);
     else
         rb->rear_index = (rb->rear_index + commit) % rb->size;
-
     RB_EXIT_CRITICAL_FROM_ISR(saved);
     return RET_OK;
 }
@@ -674,8 +638,8 @@ ret_code_t RingBuffer_WriteCommitFromISR(RingBuffer* rb, uint32_t commit) {
  */
 ret_code_t RingBuffer_ReadReserve(RingBuffer* rb, uint32_t want, RingBufferSpan* out,
                                   uint32_t* granted, bool isCompatible) {
-    if (!rb || !out || !granted || !rb->buffer || rb->size < 2) return RET_E_INVALID_ARG;
-
+    if (!rb || !out || !granted || !rb->buffer || rb->size < 2)
+        return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     // 约定：want==0 直接视为成功但授予0（你也可以选择直接 return false，但要一致）
     if (want == 0) {
         out->p1  = NULL;
@@ -685,21 +649,17 @@ ret_code_t RingBuffer_ReadReserve(RingBuffer* rb, uint32_t want, RingBufferSpan*
         *granted = 0;
         return RET_OK;
     }
-
     RB_ENTER_CRITICAL();
-
     const uint32_t used = RingBuffer_GetUsedSize_Internal(rb);
-
     uint32_t g          = want;
     if (g > used) {
         if (isCompatible)
             g = used;
         else {
             RB_EXIT_CRITICAL();
-            return RET_E_DATA_NOT_ENOUGH;
+            return RB_RET(RET_CLASS_DATA, RET_R_DATA_NOT_ENOUGH);
         }
     }
-
     /* 若 used==0 且兼容模式，则 g 可能变为0：按成功但授予0处理 */
     if (g == 0) {
         out->p1  = NULL;
@@ -710,11 +670,9 @@ ret_code_t RingBuffer_ReadReserve(RingBuffer* rb, uint32_t want, RingBufferSpan*
         RB_EXIT_CRITICAL();
         return RET_OK;
     }
-
     const uint32_t front = rb->front_index;
     const uint32_t rear  = rb->rear_index;
     const uint32_t size  = rb->size;
-
     if (front < rear) {
         /* 连续可读：front..rear-1 */
         const uint32_t seg = rear - front;
@@ -736,7 +694,6 @@ ret_code_t RingBuffer_ReadReserve(RingBuffer* rb, uint32_t want, RingBufferSpan*
         out->n2                  = n2;
         *granted                 = n1 + n2;
     }
-
     RB_EXIT_CRITICAL();
     return RET_OK;
 }
@@ -752,8 +709,8 @@ ret_code_t RingBuffer_ReadReserve(RingBuffer* rb, uint32_t want, RingBufferSpan*
  */
 ret_code_t RingBuffer_ReadReserveFromISR(RingBuffer* rb, uint32_t want, RingBufferSpan* out,
                                          uint32_t* granted, bool isCompatible) {
-    if (!rb || !out || !granted || !rb->buffer || rb->size < 2) return RET_E_INVALID_ARG;
-
+    if (!rb || !out || !granted || !rb->buffer || rb->size < 2)
+        return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     // 约定：want==0 直接视为成功但授予0（你也可以选择直接 return false，但要一致）
     if (want == 0) {
         out->p1  = NULL;
@@ -763,22 +720,18 @@ ret_code_t RingBuffer_ReadReserveFromISR(RingBuffer* rb, uint32_t want, RingBuff
         *granted = 0;
         return RET_OK;
     }
-
     rb_isr_state_t saved;
     RB_ENTER_CRITICAL_FROM_ISR(saved);
-
     const uint32_t used = RingBuffer_GetUsedSize_Internal(rb);
-
     uint32_t g          = want;
     if (g > used) {
         if (isCompatible)
             g = used;
         else {
             RB_EXIT_CRITICAL_FROM_ISR(saved);
-            return RET_E_DATA_NOT_ENOUGH;
+            return RB_RET(RET_CLASS_DATA, RET_R_DATA_NOT_ENOUGH);
         }
     }
-
     /* 若 used==0 且兼容模式，则 g 可能变为0：按成功但授予0处理 */
     if (g == 0) {
         out->p1  = NULL;
@@ -789,16 +742,13 @@ ret_code_t RingBuffer_ReadReserveFromISR(RingBuffer* rb, uint32_t want, RingBuff
         RB_EXIT_CRITICAL_FROM_ISR(saved);
         return RET_OK;
     }
-
     const uint32_t front = rb->front_index;
     const uint32_t rear  = rb->rear_index;
     const uint32_t size  = rb->size;
-
     if (front < rear) {
         /* 连续可读：front..rear-1 */
         const uint32_t seg = rear - front;
         const uint32_t n1  = (g < seg) ? g : seg;
-
         out->p1            = rb->buffer + front;
         out->n1            = n1;
         out->p2            = NULL;
@@ -809,7 +759,6 @@ ret_code_t RingBuffer_ReadReserveFromISR(RingBuffer* rb, uint32_t want, RingBuff
         const uint32_t tailAvail = size - front;
         const uint32_t n1        = (g < tailAvail) ? g : tailAvail;
         const uint32_t n2        = g - n1;
-
         out->p1                  = (n1 > 0) ? (rb->buffer + front) : NULL;
         out->n1                  = n1;
         out->p2                  = (n2 > 0) ? rb->buffer : NULL;
@@ -828,20 +777,17 @@ ret_code_t RingBuffer_ReadReserveFromISR(RingBuffer* rb, uint32_t want, RingBuff
  * @return 成功或者失败
  */
 ret_code_t RingBuffer_ReadCommit(RingBuffer* rb, uint32_t commit) {
-    if (!rb || !rb->buffer || rb->size < 2) return RET_E_INVALID_ARG;
-
+    if (!rb || !rb->buffer || rb->size < 2) return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     RB_ENTER_CRITICAL();
     const uint32_t used = RingBuffer_GetUsedSize_Internal(rb);
     if (commit > used) {
         RB_EXIT_CRITICAL();
-        return RET_E_DATA_NOT_ENOUGH;
+        return RB_RET(RET_CLASS_DATA, RET_R_DATA_NOT_ENOUGH);
     }
-
     if (rb->isPowerOfTwo_Size)
         rb->front_index = (rb->front_index + commit) & (rb->size - 1);
     else
         rb->front_index = (rb->front_index + commit) % rb->size;
-
     RB_EXIT_CRITICAL();
     return RET_OK;
 }
@@ -853,21 +799,18 @@ ret_code_t RingBuffer_ReadCommit(RingBuffer* rb, uint32_t commit) {
  * @return 成功或者失败
  */
 ret_code_t RingBuffer_ReadCommitFromISR(RingBuffer* rb, uint32_t commit) {
-    if (!rb || !rb->buffer || rb->size < 2) return RET_E_INVALID_ARG;
-
+    if (!rb || !rb->buffer || rb->size < 2) return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     rb_isr_state_t saved;
     RB_ENTER_CRITICAL_FROM_ISR(saved);
     const uint32_t used = RingBuffer_GetUsedSize_Internal(rb);
     if (commit > used) {
         RB_EXIT_CRITICAL_FROM_ISR(saved);
-        return RET_E_DATA_NOT_ENOUGH;
+        return RB_RET(RET_CLASS_DATA, RET_R_DATA_NOT_ENOUGH);
     }
-
     if (rb->isPowerOfTwo_Size)
         rb->front_index = (rb->front_index + commit) & (rb->size - 1);
     else
         rb->front_index = (rb->front_index + commit) % rb->size;
-
     RB_EXIT_CRITICAL_FROM_ISR(saved);
     return RET_OK;
 }
@@ -882,8 +825,8 @@ ret_code_t RingBuffer_ReadCommitFromISR(RingBuffer* rb, uint32_t commit) {
  * @note  兼容模式下 used为0会返回true
  */
 ret_code_t RingBuffer_Drop(RingBuffer* rb, uint32_t drop, uint32_t* dropped, bool isCompatible) {
-    if (!rb || !rb->buffer || rb->size < 2 || !dropped) return RET_E_INVALID_ARG;
-
+    if (!rb || !rb->buffer || rb->size < 2 || !dropped)
+        return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     /* 1、判断剩余的存储字节数 */
     RB_ENTER_CRITICAL();
     const uint32_t used = RingBuffer_GetUsedSize_Internal(rb);
@@ -900,7 +843,7 @@ ret_code_t RingBuffer_Drop(RingBuffer* rb, uint32_t drop, uint32_t* dropped, boo
         else {
             *dropped = 0;
             RB_EXIT_CRITICAL();
-            return RET_E_DATA_NOT_ENOUGH;
+            return RB_RET(RET_CLASS_DATA, RET_R_DATA_NOT_ENOUGH);
         }
     }
 
@@ -925,10 +868,9 @@ ret_code_t RingBuffer_Drop(RingBuffer* rb, uint32_t drop, uint32_t* dropped, boo
  */
 ret_code_t RingBuffer_DropFromISR(RingBuffer* rb, uint32_t drop, uint32_t* dropped,
                                   bool isCompatible) {
-    if (!rb || !rb->buffer || rb->size < 2 || !dropped) return RET_E_INVALID_ARG;
-
+    if (!rb || !rb->buffer || rb->size < 2 || !dropped)
+        return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     /* 1、判断剩余的存储字节数 */
-
     rb_isr_state_t saved;
     RB_ENTER_CRITICAL_FROM_ISR(saved);
     const uint32_t used = RingBuffer_GetUsedSize_Internal(rb);
@@ -945,10 +887,9 @@ ret_code_t RingBuffer_DropFromISR(RingBuffer* rb, uint32_t drop, uint32_t* dropp
         else {
             *dropped = 0;
             RB_EXIT_CRITICAL_FROM_ISR(saved);
-            return RET_E_DATA_NOT_ENOUGH;
+            return RB_RET(RET_CLASS_DATA, RET_R_DATA_NOT_ENOUGH);
         }
     }
-
     /* 3、开始丢弃 */
     if (rb->isPowerOfTwo_Size)
         rb->front_index = (rb->front_index + g) & (rb->size - 1);
