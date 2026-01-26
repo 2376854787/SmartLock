@@ -81,6 +81,7 @@ add_executable(${CMAKE_PROJECT_NAME}
         platform/STM32/common/core_mpu_port.c
         components/CRC/CRC16/crc16.c
         components/memory_pool/memory_pool.c
+        Drivers/BSP/bh1750/bh1750.c
 
 
 )
@@ -123,6 +124,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         components/core_mpu/include
         platform/STM32/common
         components/CRC/CRC16
+        Drivers/BSP/bh1750
 
 )
 
