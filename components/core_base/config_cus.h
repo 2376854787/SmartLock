@@ -13,6 +13,7 @@
 #define ENABLE_HFSM_SYSTEM       /* HFSM系统 */
 #define ENABLE_KEYS              /* 使能按键 */
 #define ENABLE_CRC16             /* 启动CRC16 */
+#define ENABLE_MEMORY_POOL       /* 启动内存池 */
 /* 自定义实现的 HAL 层功能启用 */
 #define ENABLE_HAL_GPIO
 #define ENABLE_HAL_UART
