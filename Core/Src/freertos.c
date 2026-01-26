@@ -36,6 +36,7 @@
 #include "Light_Sensor_task.h"
 #include "RingBuffer.h"
 #include "Usart1_manage.h"
+#include "bh1750.h"
 #include "crc16.h"
 #include "lcd.h"
 #include "log.h"
@@ -70,14 +71,14 @@
 osThreadId_t KeyScanTaskHandle;
 const osThreadAttr_t KeyScanTask_attributes = {
     .name       = "KeyScanTask",
-    .stack_size = 256 * 5,
+    .stack_size = 256 * 8,
     .priority   = (osPriority_t)osPriorityNormal,
 };
 /* Definitions for uartTask */
 osThreadId_t uartTaskHandle;
 const osThreadAttr_t uartTask_attributes = {
     .name       = "uartTask",
-    .stack_size = 256 * 6,
+    .stack_size = 256 * 8,
     .priority   = (osPriority_t)osPriorityLow,
 };
 /* Definitions for lcdTask */
@@ -115,25 +116,18 @@ const osThreadAttr_t Water_Sensor_attributes = {
 };
 /* USER CODE END FunctionPrototypes */
 
-void StartDefaultTask(void* argument);
-
-void StartTask02(void* argument);
-
-void StartTask_LCD(void* argument);
+void StartDefaultTask(void *argument);
+void StartTask02(void *argument);
+void StartTask_LCD(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
 /* Hook prototypes */
 void configureTimerForRunTimeStats(void);
-
 unsigned long getRunTimeCounterValue(void);
-
 void vApplicationIdleHook(void);
-
 void vApplicationTickHook(void);
-
-void vApplicationStackOverflowHook(xTaskHandle xTask, signed char* pcTaskName);
-
+void vApplicationStackOverflowHook(xTaskHandle xTask, signed char *pcTaskName);
 void vApplicationMallocFailedHook(void);
 
 /* USER CODE BEGIN 1 */
@@ -174,7 +168,7 @@ void vApplicationTickHook(void) {
 /* USER CODE END 3 */
 
 /* USER CODE BEGIN 4 */
-void vApplicationStackOverflowHook(xTaskHandle xTask, signed char* pcTaskName) {
+void vApplicationStackOverflowHook(xTaskHandle xTask, signed char *pcTaskName) {
     printf("Stack overflow in task: %s\r\n", pcTaskName);
     taskDISABLE_INTERRUPTS();
     for (;;) {
@@ -266,7 +260,7 @@ void MX_FREERTOS_Init(void) {
  * @retval None
  */
 /* USER CODE END Header_StartDefaultTask */
-void StartDefaultTask(void* argument) {
+void StartDefaultTask(void *argument) {
     /* USER CODE BEGIN StartDefaultTask */
     /* Infinite loop */
     for (;;) {
@@ -275,7 +269,13 @@ void StartDefaultTask(void* argument) {
         KEY_Tasks();
         // UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
         //  printf("keyscanTask high watermark = %lu\r\n", (unsigned long) watermark);
-        osDelay(10);
+        const float lx       = BH1750_Get_LX();
+        const uint32_t prase = (uint32_t)(lx * 100);
+        LOG_D("光照度", "环境光lx：%ld.%02ld\r\n", prase / 100, prase % 100);
+        char buffer[64];
+        sprintf(buffer, "%ld", prase);
+        lcd_show_string(10, 400, 240, 32, 32, buffer, RED);
+        osDelay(500);
     }
     /* USER CODE END StartDefaultTask */
 }
@@ -287,7 +287,7 @@ void StartDefaultTask(void* argument) {
  * @retval None
  */
 /* USER CODE END Header_StartTask02 */
-void StartTask02(void* argument) {
+void StartTask02(void *argument) {
     /* USER CODE BEGIN StartTask02 */
     char buffer[128];
     /* Infinite loop */
@@ -296,7 +296,7 @@ void StartTask02(void* argument) {
         uint32_t read_size = RingBuffer_GetUsedSize(&g_rb_uart1);
         if (read_size > 0) {
             if (read_size > 127) read_size = 127;
-            if (ReadRingBuffer(&g_rb_uart1, (uint8_t*)buffer, &read_size, 0)) {
+            if (ReadRingBuffer(&g_rb_uart1, (uint8_t *)buffer, &read_size, 0)) {
                 buffer[read_size] = '\0';
                 // printf("%s\n", buffer);
                 // HAL_UART_Transmit(&huart3, (const uint8_t *) buffer, strlen((char *) buffer),
@@ -308,10 +308,10 @@ void StartTask02(void* argument) {
         uint16_t res = 0x00;
         crc16_cal_default_table(MODBUS, example, 1, &res);
         HAL_GPIO_TogglePin(LED0_GPIO_Port, LED0_Pin);
-        LOG_W("CRC16_MODBUS", "{0x01} =%X", res);
+        // LOG_W("CRC16_MODBUS", "{0x01} =%X", res);
         const UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
-        LOG_E("Watermask", "lcdTask high watermark = %lu\r\n", (unsigned long)watermark);
-        osDelay(1000);
+        // LOG_D("Watermask", "lcdTask high watermark = %lu\r\n", (unsigned long)watermark);
+        osDelay(250);
     }
     /* USER CODE END StartTask02 */
 }
@@ -323,7 +323,7 @@ void StartTask02(void* argument) {
  * @retval None
  */
 /* USER CODE END Header_StartTask_LCD */
-void StartTask_LCD(void* argument) {
+void StartTask_LCD(void *argument) {
     /* USER CODE BEGIN StartTask_LCD */
     /* Infinite loop */
     char buffer[128];
@@ -345,7 +345,7 @@ void StartTask_LCD(void* argument) {
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
 
-void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef* huart, uint16_t Size) {
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
     if (huart->Instance == USART1) {
         // 串口1任务 维护一个指针在IDLE 以及半满全满中断中处理
         process_dma_data();
@@ -357,7 +357,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef* huart, uint16_t Size) {
     }
 }
 
-void HAL_UART_ErrorCallback(UART_HandleTypeDef* huart) {
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
     if (huart->Instance == USART1) {
         // uint32_t error = HAL_UART_GetError(huart);
         //  处理错误，如 ORE/FE
