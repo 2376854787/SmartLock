@@ -81,6 +81,10 @@ add_executable(${CMAKE_PROJECT_NAME}
         platform/STM32/common/core_mpu_port.c
         components/CRC/CRC16/crc16.c
         components/memory_pool/memory_pool.c
+        components/ota/ota_storage.c
+        components/ota/ota_storage.c
+        components/ota/ota_manager.c
+        components/ota/ota_http.c
         Drivers/BSP/bh1750/bh1750.c
 
 
@@ -122,6 +126,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         platform/STM32/include
         components/printf
         components/core_mpu/include
+        components/ota
         platform/STM32/common
         components/CRC/CRC16
         Drivers/BSP/bh1750
