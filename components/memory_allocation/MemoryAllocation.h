@@ -5,7 +5,7 @@
 #ifndef TEST_MEMORYALLOCATION_H
 #define TEST_MEMORYALLOCATION_H
 #include <stdint.h>
-#define MEMORY_POND_MAX_SIZE 8192  //单位kb
+#define MEMORY_POND_MAX_SIZE 25600  //单位kb
 
 uint8_t *static_alloc(uint32_t size, uint8_t alignment);
 

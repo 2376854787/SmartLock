@@ -19,10 +19,9 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "FreeRTOS.h"
-
-#include "cmsis_os.h"
-#include "main.h"
 #include "task.h"
+#include "main.h"
+#include "cmsis_os.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -42,10 +41,15 @@
 #include "log.h"
 #include "log_port.h"
 #include "mqtt_at_task.h"
+#include "ota_http.h"
+#include "ota_manager.h"
+#include "ota_version.h"
+#include "ret_code.h"
 #include "tim.h"
 #include "usart.h"
 #include "water_adc.h"
 #include "wifi_mqtt_task.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -70,23 +74,23 @@
 /* Definitions for KeyScanTask */
 osThreadId_t KeyScanTaskHandle;
 const osThreadAttr_t KeyScanTask_attributes = {
-    .name       = "KeyScanTask",
-    .stack_size = 256 * 8,
-    .priority   = (osPriority_t)osPriorityNormal,
+  .name = "KeyScanTask",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for uartTask */
 osThreadId_t uartTaskHandle;
 const osThreadAttr_t uartTask_attributes = {
-    .name       = "uartTask",
-    .stack_size = 256 * 8,
-    .priority   = (osPriority_t)osPriorityLow,
+  .name = "uartTask",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityLow,
 };
 /* Definitions for lcdTask */
 osThreadId_t lcdTaskHandle;
 const osThreadAttr_t lcdTask_attributes = {
-    .name       = "lcdTask",
-    .stack_size = 256 * 6,
-    .priority   = (osPriority_t)osPriorityLow,
+  .name = "lcdTask",
+  .stack_size = 1024 * 4,
+  .priority = (osPriority_t) osPriorityLow,
 };
 
 /* Private function prototypes -----------------------------------------------*/
@@ -168,7 +172,7 @@ void vApplicationTickHook(void) {
 /* USER CODE END 3 */
 
 /* USER CODE BEGIN 4 */
-void vApplicationStackOverflowHook(xTaskHandle xTask, signed char *pcTaskName) {
+void vApplicationStackOverflowHook(xTaskHandle xTask, signed char* pcTaskName) {
     printf("Stack overflow in task: %s\r\n", pcTaskName);
     taskDISABLE_INTERRUPTS();
     for (;;) {
@@ -194,42 +198,42 @@ void vApplicationMallocFailedHook(void) {
 /* USER CODE END 5 */
 
 /**
- * @brief  FreeRTOS initialization
- * @param  None
- * @retval None
- */
+  * @brief  FreeRTOS initialization
+  * @param  None
+  * @retval None
+  */
 void MX_FREERTOS_Init(void) {
-    /* USER CODE BEGIN Init */
+  /* USER CODE BEGIN Init */
 
-    /* USER CODE END Init */
+  /* USER CODE END Init */
 
-    /* USER CODE BEGIN RTOS_MUTEX */
+  /* USER CODE BEGIN RTOS_MUTEX */
     /* add mutexes, ... */
-    /* USER CODE END RTOS_MUTEX */
+  /* USER CODE END RTOS_MUTEX */
 
-    /* USER CODE BEGIN RTOS_SEMAPHORES */
+  /* USER CODE BEGIN RTOS_SEMAPHORES */
     /* add semaphores, ... */
-    /* USER CODE END RTOS_SEMAPHORES */
+  /* USER CODE END RTOS_SEMAPHORES */
 
-    /* USER CODE BEGIN RTOS_TIMERS */
+  /* USER CODE BEGIN RTOS_TIMERS */
     /* start timers, add new ones, ... */
-    /* USER CODE END RTOS_TIMERS */
+  /* USER CODE END RTOS_TIMERS */
 
-    /* USER CODE BEGIN RTOS_QUEUES */
+  /* USER CODE BEGIN RTOS_QUEUES */
     /* add queues, ... */
-    /* USER CODE END RTOS_QUEUES */
+  /* USER CODE END RTOS_QUEUES */
 
-    /* Create the thread(s) */
-    /* creation of KeyScanTask */
-    KeyScanTaskHandle       = osThreadNew(StartDefaultTask, NULL, &KeyScanTask_attributes);
+  /* Create the thread(s) */
+  /* creation of KeyScanTask */
+  KeyScanTaskHandle = osThreadNew(StartDefaultTask, NULL, &KeyScanTask_attributes);
 
-    /* creation of uartTask */
-    uartTaskHandle          = osThreadNew(StartTask02, NULL, &uartTask_attributes);
+  /* creation of uartTask */
+  uartTaskHandle = osThreadNew(StartTask02, NULL, &uartTask_attributes);
 
-    /* creation of lcdTask */
-    lcdTaskHandle           = osThreadNew(StartTask_LCD, NULL, &lcdTask_attributes);
+  /* creation of lcdTask */
+  lcdTaskHandle = osThreadNew(StartTask_LCD, NULL, &lcdTask_attributes);
 
-    /* USER CODE BEGIN RTOS_THREADS */
+  /* USER CODE BEGIN RTOS_THREADS */
     /* add threads, ... */
 
     /* 光敏传感器 */
@@ -245,12 +249,13 @@ void MX_FREERTOS_Init(void) {
     /* 串口AT解析任务 创建信号量、创建任务*/
     at_core_task_init(&g_at_manager, &huart3);
 
-    /* USER CODE END RTOS_THREADS */
+  /* USER CODE END RTOS_THREADS */
 
-    /* USER CODE BEGIN RTOS_EVENTS */
+  /* USER CODE BEGIN RTOS_EVENTS */
     /* add events, ... */
 
-    /* USER CODE END RTOS_EVENTS */
+  /* USER CODE END RTOS_EVENTS */
+
 }
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -260,8 +265,9 @@ void MX_FREERTOS_Init(void) {
  * @retval None
  */
 /* USER CODE END Header_StartDefaultTask */
-void StartDefaultTask(void *argument) {
-    /* USER CODE BEGIN StartDefaultTask */
+void StartDefaultTask(void *argument)
+{
+  /* USER CODE BEGIN StartDefaultTask */
     /* Infinite loop */
     for (;;) {
         // LED 1翻转
@@ -271,13 +277,13 @@ void StartDefaultTask(void *argument) {
         //  printf("keyscanTask high watermark = %lu\r\n", (unsigned long) watermark);
         const float lx       = BH1750_Get_LX();
         const uint32_t prase = (uint32_t)(lx * 100);
-        LOG_D("光照度", "环境光lx：%ld.%02ld\r\n", prase / 100, prase % 100);
+        // LOG_D("光照度", "环境光lx：%ld.%02ld\r\n", prase / 100, prase % 100);
         char buffer[64];
         sprintf(buffer, "%ld", prase);
         lcd_show_string(10, 400, 240, 32, 32, buffer, RED);
-        osDelay(500);
+        osDelay(30);
     }
-    /* USER CODE END StartDefaultTask */
+  /* USER CODE END StartDefaultTask */
 }
 
 /* USER CODE BEGIN Header_StartTask02 */
@@ -287,33 +293,69 @@ void StartDefaultTask(void *argument) {
  * @retval None
  */
 /* USER CODE END Header_StartTask02 */
-void StartTask02(void *argument) {
-    /* USER CODE BEGIN StartTask02 */
+void StartTask02(void *argument)
+{
+  /* USER CODE BEGIN StartTask02 */
     char buffer[128];
     /* Infinite loop */
-    uint8_t example[] = {0x01, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99};
     for (;;) {
         uint32_t read_size = RingBuffer_GetUsedSize(&g_rb_uart1);
         if (read_size > 0) {
             if (read_size > 127) read_size = 127;
-            if (ReadRingBuffer(&g_rb_uart1, (uint8_t *)buffer, &read_size, 0)) {
+            if (ReadRingBuffer(&g_rb_uart1, (uint8_t*)buffer, &read_size, 0) == RET_OK) {
                 buffer[read_size] = '\0';
-                // printf("%s\n", buffer);
-                // HAL_UART_Transmit(&huart3, (const uint8_t *) buffer, strlen((char *) buffer),
-                // HAL_MAX_DELAY);
-            } else {
-                printf("读取失败\n");
+
+                /* 检查是否收到 OTA 升级命令 */
+                if (strstr(buffer, "OTA") != NULL) {
+                    LOG_I("OTA_CMD", "Received OTA command, triggering upgrade...");
+
+                    /* 写入 MCUBoot Magic 到 Slot 1 末尾 */
+                    if (ota_manager_finish() == RET_OK) {
+                        LOG_I("OTA_CMD", "Magic written! Rebooting in 1s...");
+                        osDelay(1000);
+                        NVIC_SystemReset();
+                    } else {
+                        LOG_E("OTA_CMD", "Failed to write magic!");
+                    }
+                }
+
+                /* 检查是否收到 CONFIRM 命令（手动确认升级成功）*/
+                if (strstr(buffer, "CONFIRM") != NULL) {
+                    LOG_I("OTA_CONFIRM", "=== OTA Upgrade Confirmed! ===");
+                    LOG_I("OTA_CONFIRM", "New firmware is running successfully.");
+                    ota_manager_confirm_upgrade();
+                }
+
+                /* 透传命令：以 "AT:" 开头的命令直接发送给 ESP01S
+                 * 例如：AT:AT+CIFSR 会发送 "AT+CIFSR\r\n" 给 ESP01S
+                 */
+                if (strncmp(buffer, "AT:", 3) == 0) {
+                    char at_cmd[128];
+                    snprintf(at_cmd, sizeof(at_cmd), "%s\r\n", buffer + 3);
+                    LOG_I("AT_PASSTHROUGH", "Sending: %s", at_cmd);
+                    AT_Resp_t resp = AT_SendCmd(&g_at_manager, at_cmd, "OK", 5000);
+                    LOG_I("AT_PASSTHROUGH", "Response: %d", resp);
+                }
+
+                /* 波特率切换命令：BAUD:921600 */
+                if (strncmp(buffer, "BAUD:", 5) == 0) {
+                    unsigned int baud = 0;
+                    if (sscanf(buffer + 5, "%u", &baud) == 1) {
+                        LOG_I("CMD", "Request to switch baudrate to %u", baud);
+                        if (AT_SwitchBaudrate(&g_at_manager, (uint32_t)baud)) {
+                            LOG_I("CMD", "Switch Success!");
+                        } else {
+                            LOG_E("CMD", "Switch Failed!");
+                        }
+                    }
+                }
             }
         }
-        uint16_t res = 0x00;
-        crc16_cal_default_table(MODBUS, example, 1, &res);
+
         HAL_GPIO_TogglePin(LED0_GPIO_Port, LED0_Pin);
-        // LOG_W("CRC16_MODBUS", "{0x01} =%X", res);
-        const UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
-        // LOG_D("Watermask", "lcdTask high watermark = %lu\r\n", (unsigned long)watermark);
-        osDelay(250);
+        osDelay(100);
     }
-    /* USER CODE END StartTask02 */
+  /* USER CODE END StartTask02 */
 }
 
 /* USER CODE BEGIN Header_StartTask_LCD */
@@ -323,15 +365,46 @@ void StartTask02(void *argument) {
  * @retval None
  */
 /* USER CODE END Header_StartTask_LCD */
-void StartTask_LCD(void *argument) {
-    /* USER CODE BEGIN StartTask_LCD */
+void StartTask_LCD(void *argument)
+{
+  /* USER CODE BEGIN StartTask_LCD */
     /* Infinite loop */
     char buffer[128];
     osDelay(2000);
     esp01s_Init(&huart3, 1024);
+    extern volatile bool g_trigger_ota;
     LOG_I("StartTask_LCD", "启动完成");
     LOG_I("111", "启动完成");
+
+    /* 显示固件版本号 (从 MCUBoot 镜像头读取) */
+    mcuboot_version_t fw_ver;
+    char ver_str[32];
+    if (ota_get_running_version(&fw_ver) == 0) {
+        ota_version_to_string(&fw_ver, ver_str, sizeof(ver_str));
+    } else {
+        snprintf(ver_str, sizeof(ver_str), "v?.?.?");  // 无有效头
+    }
+    char ver_display[48];
+    snprintf(ver_display, sizeof(ver_display), "FW: %s", ver_str);
+    lcd_show_string(10, 10, 240, 24, 24, ver_display, BLUE);
+
     for (;;) {
+        if (g_trigger_ota) {
+            g_trigger_ota = false;
+            LOG_I("LCDTask", "检测到 OTA 请求，开始执行...");
+
+            ota_http_config_t config = {.server_ip   = "192.168.31.223",  // 请修改为实际 IP
+                                        .server_port = 8000,
+                                        .url_path    = "/123.bin"};
+            if (ota_http_download(&config) == RET_OK) {
+                LOG_I("OTA", "Success! Rebooting...");
+                HAL_Delay(1000);
+                NVIC_SystemReset();
+            } else {
+                LOG_E("OTA", "Failed!");
+            }
+        }
+
         sniprintf(buffer, 128, "Time:%lu", HAL_GetTick());
         lcd_show_string(50, 300, 240, 32, 32, buffer, BLACK);
 
@@ -339,13 +412,13 @@ void StartTask_LCD(void *argument) {
         // printf("lcdTask high watermark = %lu\r\n", (unsigned long) watermark);
         osDelay(20);
     }
-    /* USER CODE END StartTask_LCD */
+  /* USER CODE END StartTask_LCD */
 }
 
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
 
-void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef* huart, uint16_t Size) {
     if (huart->Instance == USART1) {
         // 串口1任务 维护一个指针在IDLE 以及半满全满中断中处理
         process_dma_data();
@@ -357,7 +430,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
     }
 }
 
-void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
+void HAL_UART_ErrorCallback(UART_HandleTypeDef* huart) {
     if (huart->Instance == USART1) {
         // uint32_t error = HAL_UART_GetError(huart);
         //  处理错误，如 ORE/FE
@@ -371,3 +444,4 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
 }
 
 /* USER CODE END Application */
+

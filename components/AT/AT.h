@@ -16,18 +16,18 @@
 #define AT_TX_USE_DMA 1
 #endif
 /* 核心任务任务通知唤醒 */
-#define AT_FLAG_RX (1u << 0)
-#define AT_FLAG_TX (1u << 1)
+#define AT_FLAG_RX     (1u << 0)
+#define AT_FLAG_TX     (1u << 1)
 #define AT_FLAG_TXDONE (1u << 2)
 /* AT指令超时设置 */
-#define AT_RX_RB_SIZE 1024      /* AT接收环形缓冲区大小 最好为2的幂*/
-#define AT_LEN_RB_SIZE 64       /* 长度缓冲区: 存每行的长度 (存32行足够了, 32*2byte=64) */
-#define AT_DMA_BUF_SIZE 256     /* DMA 接收缓冲区 */
-#define AT_LINE_MAX_LEN 256     /* 单行回复最大长度 */
-#define AT_CMD_TIMEOUT_DEF 5000 /* 默认超时时间 5s */
-#define AT_MAX_PENDING 16       /* 同同一个串口最大排队的命令数 */
-#define AT_CMD_MAX_LEN 128      /* 命令缓存长度  */
-#define AT_EXPECT_MAX_LEN 64    /* expect 缓存长度 */
+#define AT_RX_RB_SIZE      (16 * 1024) /* AT接收环形缓冲区大小 (16KB for 921600bps) */
+#define AT_LEN_RB_SIZE     256         /* 长度缓冲区: 存每行的长度 (128行, 128*2byte=256) */
+#define AT_DMA_BUF_SIZE    4096        /* DMA 接收缓冲区 (4KB, ~44ms @921600) */
+#define AT_LINE_MAX_LEN    1024        /* 单行/块最大长度 */
+#define AT_CMD_TIMEOUT_DEF 5000        /* 默认超时时间 5s */
+#define AT_MAX_PENDING     16          /* 同同一个串口最大排队的命令数 */
+#define AT_CMD_MAX_LEN     128         /* 命令缓存长度  */
+#define AT_EXPECT_MAX_LEN  64          /* expect 缓存长度 */
 
 /* 根据模式引入头文件 */
 #if AT_RTOS_ENABLE
@@ -36,9 +36,18 @@
 /* 向前声明 */
 typedef struct AT_Manager_t AT_Manager_t;
 
-typedef void (*AT_UrcCb)(AT_Manager_t *mgr, const char *line, void *user);
+typedef void (*AT_UrcCb)(AT_Manager_t* mgr, const char* line, void* user);
 
-typedef bool (*HW_Send)(AT_Manager_t *mgr, const uint8_t *data, uint16_t len);
+typedef bool (*HW_Send)(AT_Manager_t* mgr, const uint8_t* data, uint16_t len);
+
+/**
+ * @brief 原始数据接收钩子 (用于 OTA 或透传模式)
+ * @param mgr AT 管理器
+ * @param data 收到的原始数据缓冲区
+ * @param len 数据长度
+ * @return true: 数据已被钩子消费，核心层应跳过处理; false: 数据未被消费，核心层继续按行解析
+ */
+typedef bool (*AT_RawDataHook)(AT_Manager_t* mgr, uint8_t* data, uint16_t len);
 
 /* ================= 枚举定义 ================= */
 /* AT命令执行返回的结果 */
@@ -178,7 +187,7 @@ typedef struct AT_Manager_t {
     HW_Send hw_send;
 
     /** 串口句柄（HAL/驱动层句柄），用于 DMA 状态查询、回调映射等 */
-    UART_HandleTypeDef *uart;
+    UART_HandleTypeDef* uart;
 
     /* =========================================================
      * 3) 解析与接收相关缓存
@@ -236,7 +245,7 @@ typedef struct AT_Manager_t {
     volatile bool rx_overflow;
 
     /** URC 回调的用户上下文指针（透传给 urc_cb） */
-    void *urc_user;
+    void* urc_user;
 
     /**
      * URC 回调（异步通知处理）
@@ -244,6 +253,13 @@ typedef struct AT_Manager_t {
      * - 建议 URC 回调只做轻量解析与投递，避免阻塞核心任务
      */
     AT_UrcCb urc_cb;
+
+    /**
+     * 原始数据钩子 (OTA/透传用)
+     * - 如果设置了此钩子，核心层在从 RingBuffer 取出数据后，会优先调用此钩子。
+     * - 如果钩子返回 true，则跳过后续的行解析逻辑。
+     */
+    AT_RawDataHook raw_data_hook;
 
     /* =========================================================
      * 4) 命令会话运行时状态（单活动命令）
@@ -254,7 +270,7 @@ typedef struct AT_Manager_t {
      * - 非 NULL：表示当前正在等待该命令的终止响应
      * - NULL：表示当前无活动会话，可从命令队列取新命令发送
      */
-    AT_Command_t *curr_cmd;
+    AT_Command_t* curr_cmd;
 
     /**
      * 当前命令会话开始时刻（tick）
@@ -350,7 +366,7 @@ typedef struct AT_Manager_t {
  * @param uart 串口句柄
  * @param hw_send 硬件串口发送函数指针
  */
-void AT_Core_Init(AT_Manager_t *at_manager, UART_HandleTypeDef *uart, HW_Send hw_send);
+void AT_Core_Init(AT_Manager_t* at_manager, UART_HandleTypeDef* uart, HW_Send hw_send);
 
 /**
  * @brief 接收数据回调 (放入串口接收中断)
@@ -358,14 +374,14 @@ void AT_Core_Init(AT_Manager_t *at_manager, UART_HandleTypeDef *uart, HW_Send hw
  * @param huart      串口句柄
  * @param Size       接收的大小
  */
-void AT_Core_RxCallback(AT_Manager_t *at_manager, const UART_HandleTypeDef *huart, uint16_t Size);
+void AT_Core_RxCallback(AT_Manager_t* at_manager, const UART_HandleTypeDef* huart, uint16_t Size);
 
 /**
  * @brief 核心轮询/处理函数
  * @note  RTOS模式: 放入 AT_Task 中运行
  * @note  裸机模式: 放入 main while(1) 中运行
  */
-void AT_Core_Process(AT_Manager_t *at_manager);
+void AT_Core_Process(AT_Manager_t* at_manager);
 
 /**
  * @brief 发送 AT 指令并等待结果 (阻塞式接口)
@@ -375,7 +391,7 @@ void AT_Core_Process(AT_Manager_t *at_manager);
  * @param timeout_ms 超时时间(ms)
  * @return 执行结果
  */
-AT_Resp_t AT_SendCmd(AT_Manager_t *at_manager, const char *cmd, const char *expect,
+AT_Resp_t AT_SendCmd(AT_Manager_t* at_manager, const char* cmd, const char* expect,
                      uint32_t timeout_ms);
 
 /**
@@ -390,7 +406,7 @@ uint32_t AT_MsToTicks(uint32_t ms);
  * @param h AT设备句柄
  * @return 对象的进度状态
  */
-AT_Resp_t AT_Poll(AT_Command_t *h);
+AT_Resp_t AT_Poll(AT_Command_t* h);
 
 /**
  *
@@ -398,7 +414,7 @@ AT_Resp_t AT_Poll(AT_Command_t *h);
  * @param cb  绑定的URC回调函数
  * @param user 传递的上下文
  */
-void AT_SetUrcHandler(AT_Manager_t *mgr, AT_UrcCb cb, void *user);
+void AT_SetUrcHandler(AT_Manager_t* mgr, AT_UrcCb cb, void* user);
 
 /**
  * @brief 获取空闲对象装填参数后返回
@@ -408,7 +424,7 @@ void AT_SetUrcHandler(AT_Manager_t *mgr, AT_UrcCb cb, void *user);
  * @param timeout_ms 超时时间
  * @return 返回一个装填好的命令对象指针
  */
-AT_Command_t *AT_Submit(AT_Manager_t *mgr, const char *cmd, const char *expect,
+AT_Command_t* AT_Submit(AT_Manager_t* mgr, const char* cmd, const char* expect,
                         uint32_t timeout_ms);
 
 /**
@@ -420,7 +436,7 @@ AT_Command_t *AT_Submit(AT_Manager_t *mgr, const char *cmd, const char *expect,
  * @return 返回一个装填好的命令对象指针
  * @note  非阻塞版
  */
-AT_Command_t *AT_SendAsync(AT_Manager_t *mgr, const char *cmd, const char *expect,
+AT_Command_t* AT_SendAsync(AT_Manager_t* mgr, const char* cmd, const char* expect,
                            uint32_t timeout_ms);
 
 /**
@@ -435,7 +451,7 @@ void AT_SemDrain(osal_sem_t sem);
  * @param len 发送数据的长度
  * @return 返回发送数据需要的数据时间
  */
-uint32_t AT_TxTimeoutMs(AT_Manager_t *mgr, uint16_t len);
+uint32_t AT_TxTimeoutMs(AT_Manager_t* mgr, uint16_t len);
 
 /**
  * @brief 更改具体AT设备的发送模式
@@ -443,6 +459,21 @@ uint32_t AT_TxTimeoutMs(AT_Manager_t *mgr, uint16_t len);
  * @param mode 设定的模式
  * @note 默认根据全局宏定义现在是 开启DMA
  */
-void AT_SetTxMode(AT_Manager_t *mgr, AT_TxMode mode);
+void AT_SetTxMode(AT_Manager_t* mgr, AT_TxMode mode);
+
+/**
+ * @brief 设置原始数据钩子 (用于 OTA 下载拦截)
+ * @param mgr AT 管理器
+ * @param hook 钩子函数 (NULL 表示取消钩子)
+ */
+void AT_SetRawDataHook(AT_Manager_t* mgr, AT_RawDataHook hook);
+
+/**
+ * @brief 动态切换 ESP8266 和 STM32 的波特率 (使用 AT+UART_CUR)
+ * @param mgr AT设备句柄
+ * @param baudrate 目标波特率 (例如 921600)
+ * @return true 成功, false 失败
+ */
+bool AT_SwitchBaudrate(AT_Manager_t* mgr, uint32_t baudrate);
 
 #endif  // SMARTCLOCK_AT_H

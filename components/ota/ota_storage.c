@@ -6,7 +6,6 @@
 
 #include "stm32f4xx_hal.h"
 
-
 #define OTA_ERR_FLASH(reason) RET_MAKE_IO(RET_MOD_OTA, RET_SUB_OTA_IMAGE, reason)
 
 /* =======================================================================
@@ -85,15 +84,17 @@ ret_code_t ota_storage_erase_region(uint32_t start_addr, uint32_t size) {
     EraseInitStruct.Sector       = FirstSector;
     EraseInitStruct.NbSectors    = NbOfSectors;
 
-    /* 临界区: 禁用中断 */
-    __disable_irq();
+    /*
+     * 关键修复：移除 __disable_irq()
+     * STM32 Flash 擦除期间 CPU 会自动等待（Flash 控制器特性）
+     * 禁用中断会导致 UART DMA 接收溢出丢失数据
+     * 擦除本身是安全的，不需要临界区保护
+     */
 
     if (HAL_FLASHEx_Erase(&EraseInitStruct, &SectorError) != HAL_OK) {
-        __enable_irq();  // 恢复中断
         return OTA_ERR_FLASH(RET_R_FLASH_ERR);
     }
 
-    __enable_irq();  // 恢复中断
     return RET_OK;
 }
 
@@ -121,18 +122,52 @@ bool ota_storage_is_sector_start(uint32_t addr, uint32_t* out_sector_size) {
 }
 
 ret_code_t ota_storage_write(uint32_t addr, const uint8_t* data, uint32_t len) {
-    uint32_t i = 0;
+    // uint32_t i = 0;
 
-    /* 临界区 */
-    __disable_irq();
+    /*
+     * 关键修复：移除 __disable_irq()
+     * 允许 UART 中断在 Flash 编程间隙抢占执行，防止接收缓冲区溢出丢数据。
+     */
+    // __disable_irq();
 
-    for (i = 0; i < len; i++) {
-        if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_BYTE, addr + i, data[i]) != HAL_OK) {
-            __enable_irq();
+    /* 优化：尽量使用 4 字节写入 (Word Program) 以提高速度，减少 CPU 占用时间 */
+
+    // 1. 处理非对齐的头部字节 (Align to 4 bytes)
+    while ((addr % 4 != 0) && (len > 0)) {
+        if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_BYTE, addr, *data) != HAL_OK) {
+            // __enable_irq();
             return OTA_ERR_FLASH(RET_R_FLASH_ERR);
         }
+        addr++;
+        data++;
+        len--;
     }
 
-    __enable_irq();
+    // 2. 批量写入 4 字节 (Main Loop)
+    while (len >= 4) {
+        // 组合 4 字节 (Little Endian for STM32)
+        uint32_t word_val = data[0] | (data[1] << 8) | (data[2] << 16) | (data[3] << 24);
+
+        if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, addr, word_val) != HAL_OK) {
+            // __enable_irq();
+            return OTA_ERR_FLASH(RET_R_FLASH_ERR);
+        }
+        addr += 4;
+        data += 4;
+        len -= 4;
+    }
+
+    // 3. 处理剩余的尾部字节
+    while (len > 0) {
+        if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_BYTE, addr, *data) != HAL_OK) {
+            // __enable_irq();
+            return OTA_ERR_FLASH(RET_R_FLASH_ERR);
+        }
+        addr++;
+        data++;
+        len--;
+    }
+
+    // __enable_irq();
     return RET_OK;
 }

@@ -38,7 +38,9 @@
 #include "lcd.h"
 #include "log.h"
 #include "myfree.h"
+#include "ota_http.h"
 #include "wifi_mqtt_task.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -59,6 +61,9 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
+/* USER CODE BEGIN PV */
+volatile bool g_trigger_ota = false;
+
 void keyCallback(KEY_TypedefHandle* key, KEY_ActionType action) {
     switch (action) {
         case KEY_ACTION_SINGLE_CLICK:
@@ -68,7 +73,8 @@ void keyCallback(KEY_TypedefHandle* key, KEY_ActionType action) {
             LOG_I("key1", "双击回调函数触发");
             break;
         case KEY_ACTION_TRIPLE_CLICK:
-            LOG_I("key1", "三击回调函数触发");
+            LOG_I("key1", "三击回调函数触发 - 请求启动 OTA");
+            g_trigger_ota = true;
             break;
         case KEY_ACTION_LONG_PRESS:
             LOG_I("key1", "长按回调函数触发");

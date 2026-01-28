@@ -1,18 +1,29 @@
 #include "ESP01S.h"
 
 #include <stdio.h>
-#include "log.h"
-#include "MemoryAllocation.h"
+
 #include "AT_Core_Task.h"
+#include "MemoryAllocation.h"
+#include "log.h"
+
+ESP01S_Handle g_esp01_handle;
 
 /**
  * @brief 初始化 ESP01s，使用 UART3 DMA + 空闲中断
  */
-void esp01s_Init(UART_HandleTypeDef *huart, uint16_t rb_size) {
+void esp01s_Init(UART_HandleTypeDef* huart, uint16_t rb_size) {
+    g_esp01_handle.uart_p = huart;
+
+    /* 0. 强制复位，防止残留状态 (如 CIPSEND 等待中) */
+    // AT_SendCmd(&g_at_manager, "AT+RST\r\n", "ready", 5000);
+    // osDelay(5000);  // 等待复位完成
+
     /* 4、发送命令 */
     if (AT_SendCmd(&g_at_manager, "ATE0\r\n", "OK", 5000) == AT_RESP_OK) {
         LOG_E("ESP01S", "回显已关闭");
-    } else { LOG_E("ESP01S", "%s  响应失败\n", "ATE0"); }
+    } else {
+        LOG_E("ESP01S", "%s  响应失败\n", "ATE0");
+    }
 
     if (AT_SendCmd(&g_at_manager, "AT\r\n", "OK", 5000) == AT_RESP_OK) {
         LOG_E("ESP01S", "AT 响应成功");
@@ -21,7 +32,8 @@ void esp01s_Init(UART_HandleTypeDef *huart, uint16_t rb_size) {
     }
 
     /* 网络联通测试 */
-    while (AT_SendCmd(&g_at_manager, "AT+PING=\"www.baidu.com\"\r\n", "TIMEOUT", 5000) == AT_RESP_OK) {
+    while (AT_SendCmd(&g_at_manager, "AT+PING=\"www.baidu.com\"\r\n", "TIMEOUT", 5000) ==
+           AT_RESP_OK) {
         LOG_E("ESP01S", "网络联通检查失败 将重新进行WiFi连接");
         /* 检查是否连接了wifi */
         if (AT_SendCmd(&g_at_manager, "AT+CWSTATE?\r\n", "0", 5000) == AT_RESP_OK) {

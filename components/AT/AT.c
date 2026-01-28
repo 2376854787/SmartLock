@@ -171,8 +171,9 @@ void AT_Core_RxCallback(AT_Manager_t* at_manager, const UART_HandleTypeDef* huar
             /* 只有写入成功才统计长度，防止 Buffer 满导致逻辑错位 */                                 \
             ++(at_manager->isr_line_len);                                                            \
                                                                                                      \
-            /* 检测结束符 \n 或 > */                                                                 \
-            if ((b) == '\n' || (b) == '>') {                                                         \
+            /* 检测结束符 \n 或 >，或者长度超过阈值(用于二进制流) */                                 \
+            /* 使用 256 作为阈值，确保二进制数据能及时处理，不把 Buffer 撑爆 */                      \
+            if ((b) == '\n' || (b) == '>' || at_manager->isr_line_len >= 1024) {                     \
                 /* 将当前行的长度 (uint16_t) 存入 长度 RingBuffer */                                 \
                 uint16_t len_val         = at_manager->isr_line_len;                                 \
                 uint32_t len_size        = sizeof(uint16_t);                                         \
@@ -210,7 +211,21 @@ void AT_Core_RxCallback(AT_Manager_t* at_manager, const UART_HandleTypeDef* huar
     /* 5. 更新位置 */
     at_manager->last_pos = cur_pos;
 
-    /* 6. 通知任务 */
+    /* 6. [关键] IDLE 触发：如果有未满帧的残留数据，也作为一帧处理 */
+    /* 这对 OTA 二进制流至关重要（没有 \n 分隔符） */
+    if (at_manager->isr_line_len > 0) {
+        uint16_t len_val  = at_manager->isr_line_len;
+        uint32_t len_size = sizeof(uint16_t);
+        if (ret_is_ok(WriteRingBufferFromISR(&at_manager->msg_len_rb, (uint8_t*)&len_val, &len_size,
+                                             0))) {
+            has_line = true;
+        } else {
+            at_manager->rx_overflow = 1;
+        }
+        at_manager->isr_line_len = 0;
+    }
+
+    /* 7. 通知任务 */
     if (has_line && at_manager->core_task) {
         OSAL_thread_flags_set(at_manager->core_task, AT_FLAG_RX);
     }
@@ -260,6 +275,14 @@ void AT_Core_Process(AT_Manager_t* at_manager) {
         if (ret_is_err(rc) || (to_read != actual)) {
             LOG_E("AT", "数据帧读取失败/不同步 (need=%u got=%u rc=%d)", actual, to_read, (int)rc);
             break; /* 待实现重置策略 */
+        }
+
+        /* [Hook] 如果设置了原始数据钩子，优先处理 */
+        if (at_manager->raw_data_hook) {
+            /* 尝试交给钩子处理。如果钩子消费了（返回true），则跳过本次循环后续 */
+            if (at_manager->raw_data_hook(at_manager, at_manager->line_buf, actual)) {
+                continue;
+            }
         }
 
         /*６、判断数据帧是否完整 丢弃无法读取的*/
@@ -619,6 +642,93 @@ uint32_t AT_TxTimeoutMs(AT_Manager_t* mgr, uint16_t len) {
  */
 void AT_SetTxMode(AT_Manager_t* mgr, AT_TxMode mode) {
     mgr->tx_mode = mode;
+}
+
+/**
+ * @brief 设置原始数据钩子 (用于 OTA 下载拦截)
+ * @param mgr AT 管理器
+ * @param hook 钩子函数 (NULL 表示取消钩子)
+ */
+void AT_SetRawDataHook(AT_Manager_t* mgr, const AT_RawDataHook hook) {
+    if (mgr) {
+        mgr->raw_data_hook = hook;
+    }
+}
+
+/**
+ * @brief 动态切换 ESP8266 和 STM32 的波特率 (使用 AT+UART_CUR)
+ * @param mgr AT设备句柄
+ * @param baudrate 目标波特率 (例如 921600)
+ * @return true 成功, false 失败
+ */
+bool AT_SwitchBaudrate(AT_Manager_t* mgr, uint32_t baudrate) {
+#if AT_RTOS_ENABLE
+    if (!mgr || !mgr->uart) return false;
+
+    char cmd[64];
+    /* 1. 构造 AT 指令：AT+UART_CUR=<rate>,8,1,0,0 */
+    /* 注意：必须使用 _CUR (重启不保存)，防止配置错误导致失联 */
+    snprintf(cmd, sizeof(cmd), "AT+UART_CUR=%u,8,1,0,0\r\n", baudrate);
+
+    LOG_I("AT", "Re-Configuring Baudrate to %lu...", baudrate);
+
+    /* 2. 发送命令给 ESP8266 (此时还是旧波特率) */
+    AT_Resp_t r = AT_SendCmd(mgr, cmd, "OK", 1000);
+    if (r != AT_RESP_OK) {
+        LOG_E("AT", "Set Baudrate Cmd Failed: %d", r);
+        return false;
+    }
+
+    /* 3. 等待 ESP8266 完成切换 (给它一点时间输出 OK 的尾巴并重配硬件) */
+    /* 使用 HAL_Delay 简单阻塞，确保安全 */
+    HAL_Delay(100);
+
+    /* 4. 修改 STM32 本地 UART 波特率 */
+    UART_HandleTypeDef* huart = mgr->uart;
+
+    /* 先停止当前的 DMA/中断 */
+    HAL_UART_Abort(huart);
+    HAL_UART_Abort_IT(huart);
+
+    /* 关闭 UART 硬件 */
+    if (HAL_UART_DeInit(huart) != HAL_OK) {
+        LOG_E("AT", "UART DeInit Failed");
+        return false;
+    }
+
+    /* 修改配置参数 */
+    huart->Init.BaudRate = baudrate;
+
+    /* 重新初始化 UART 硬件 */
+    if (HAL_UART_Init(huart) != HAL_OK) {
+        LOG_E("AT", "UART Init Failed");
+        return false;
+    }
+
+    /* 5. 关键：重新挂载 DMA 接收 (因为 Init 会重置 DMA 设置) */
+    /* 复用 AT_Core_Init 中的接收逻辑 */
+    mgr->last_pos = 0; /* 重要：重置 DMA 处理游标 */
+    if (HAL_UARTEx_ReceiveToIdle_DMA(huart, mgr->dma_rx_arr, AT_DMA_BUF_SIZE) != HAL_OK) {
+        LOG_E("AT", "DMA Re-Start Failed");
+        return false;
+    }
+
+    /* 6. 验证新波特率是否通讯正常 */
+    HAL_Delay(50); /* 再等一会确保 STM32 稳定 */
+
+    /* 发个空指令或者 AT 测试，必须加 \r\n */
+    r = AT_SendCmd(mgr, "AT\r\n", "OK", 500);
+    if (r == AT_RESP_OK) {
+        LOG_I("AT", "Baudrate Switch Success! Now running at %u", baudrate);
+        return true;
+    } else {
+        LOG_E("AT", "Baudrate Switch Verification Failed (resp=%d)", r);
+        /* 此时可能通讯断了，建议用户重启或者重试 */
+        return false;
+    }
+#else
+    return false; /* 裸机模式暂未实现 */
+#endif
 }
 
 #endif

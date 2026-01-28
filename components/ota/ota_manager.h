@@ -1,10 +1,10 @@
 #ifndef SMARTCLOCK_OTA_MANAGER_H
 #define SMARTCLOCK_OTA_MANAGER_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "ret_code.h"
-
 
 /* =======================================================================
  * OTA 管理器 API
@@ -39,5 +39,20 @@ ret_code_t ota_manager_write_chunk(uint32_t offset, const uint8_t* data, uint32_
  * @return RET_OK 成功, 其它为错误码
  */
 ret_code_t ota_manager_finish(void);
+
+/**
+ * @brief 检查是否刚完成 OTA 升级（新固件首次启动）
+ *
+ * @return true 如果是升级后首次启动, false 否则
+ */
+bool ota_manager_check_if_upgraded(void);
+
+/**
+ * @brief 确认升级成功（清除升级标记）
+ *
+ * @note 在确认新固件工作正常后调用此函数。
+ *       对于 Swap 模式，这还会调用 boot_set_confirmed() 防止回滚。
+ */
+void ota_manager_confirm_upgrade(void);
 
 #endif  // SMARTCLOCK_OTA_MANAGER_H

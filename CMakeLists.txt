@@ -82,9 +82,9 @@ add_executable(${CMAKE_PROJECT_NAME}
         components/CRC/CRC16/crc16.c
         components/memory_pool/memory_pool.c
         components/ota/ota_storage.c
-        components/ota/ota_storage.c
         components/ota/ota_manager.c
         components/ota/ota_http.c
+        components/ota/ota_version.c
         Drivers/BSP/bh1750/bh1750.c
 
 
