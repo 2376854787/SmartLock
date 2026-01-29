@@ -2,9 +2,10 @@
 /* 全局配置开启宏 */
 #if defined(ENABLE_HFSM_SYSTEM)
 #include <stddef.h>
-#include <stdio.h>  // 用于 printf 调试
+#include <stdio.h>  // 鐢ㄤ簬 printf 璋冭瘯
 
 #include "HFSM.h"
+#include "blackbox_record.h"
 #include "log.h"
 
 /* 默认 TAG，可以按需改 */
@@ -89,6 +90,8 @@ void HFSM_Transition(StateMachine* fsm, const State* new_state) {
     }
 
     fsm->current_state = new_state;
+    /* 将状态机的句柄 和 当前状态存入黑盒子 */
+    BB_RecordFsm((uint32_t)(uintptr_t)fsm, (uint32_t)(uintptr_t)new_state);
     // 进入新状态以及进入的函数执行
     if (new_state->on_enter) {
         new_state->on_enter(fsm);
