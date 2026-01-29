@@ -98,6 +98,14 @@ extern "C" {
 #define CORE_STATIC_ASSERT(expr, msg) typedef char static_assert_##msg[(expr) ? 1 : -1]
 #endif
 
+#if __STDC_VERSION__ >= 201112L
+#define NORETURN _Noreturn
+#elif defined(__GNUC__) || defined(__clang__)
+#define NORETURN __attribute__((noreturn))
+#else
+#define NORETURN
+#endif
+
 #ifdef __cplusplus
 }
 #endif
