@@ -28,7 +28,7 @@ void hal_time_delay_ms(uint32_t ms);
 /**
  * @brief 微妙级阻塞延时
  * @param us 延时时长
- * @note 严禁在 ISR 调用。在裸机下为死等，在 RTOS 下应被映射为 task_delay。
+ * @note 严禁在 ISR 调用。< 1ms轮询死等 否则调用 hal_time_delay_ms()
  */
 void hal_time_delay_us(uint32_t us);
 
