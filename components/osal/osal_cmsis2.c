@@ -3,11 +3,32 @@
 #include "osal_config.h"
 
 #if OSAL_BACKEND_CMSIS_OS2
-#include "cmsis_gcc.h" /*　＿＿get_IPSR */
+#include "blackbox_record.h"
+#include "cmsis_gcc.h" /*閵嗏偓閿涘尅浼巊et_IPSR */
 #include "cmsis_os.h"
 #include "cmsis_os2.h"
+#include "hal_time.h"
+#include "log.h"
 #include "stddef.h"
+/* ==============最大关中断时间记录 =================*/
+#ifndef OSAL_CRITMON_THRESHOLD_US
+#define OSAL_CRITMON_THRESHOLD_US 50u
+#endif
 
+static uint32_t g_critmon_start_us   = 0u;
+static uint32_t g_critmon_nest       = 0u;
+static uint32_t g_critmon_enter_pc   = 0u;
+static uint32_t g_critmon_exceed_cnt = 0u;
+
+static inline uint32_t read_lr_return_addr(void) {
+#if defined(__GNUC__) || defined(__clang__)
+    return (uint32_t)(uintptr_t)__builtin_return_address(0);
+#else
+    return 0u;
+#endif
+}
+
+/* ==============最大关中断时间记录 =================*/
 /* ============ 断言 =============*/
 /* 断言系统全局配置 */
 #if defined(ENABLE_ASSERT_SYSTEM)
@@ -173,11 +194,44 @@ static uint32_t g_irq_crit_nest     = 0U;
 static uint32_t g_irq_saved_primask = 0U;
 
 /**
+ * @brief 获取进入时的时间戳 和 lr寄存器值
+ */
+static inline void OSAL_CritMon_Enter(void) {
+    if (g_critmon_nest == 0u) {
+        g_critmon_start_us = hal_get_tick_us32();
+        g_critmon_enter_pc = read_lr_return_addr();
+    }
+    g_critmon_nest++;
+}
+
+/**
+ *
+ * @param out_dur_us
+ * @param out_enter_pc
+ */
+static inline void OSAL_CritMon_Exit(uint32_t* out_dur_us, uint32_t* out_enter_pc) {
+    if (!out_dur_us || !out_enter_pc) return;
+
+    *out_dur_us   = 0u;
+    *out_enter_pc = 0u;
+
+    /* 防御：调用不成对时不炸 OSAL，自行让 OSAL_FAULT 去管 */
+    if (g_critmon_nest == 0u) return;
+
+    if (g_critmon_nest == 1u) {
+        const uint32_t now = hal_get_tick_us32();
+        *out_dur_us        = (uint32_t)(now - g_critmon_start_us);
+        *out_enter_pc      = g_critmon_enter_pc;
+    }
+
+    g_critmon_nest--;
+}
+/**
  * @note 根据宏定义的不同选择 关中断或者RTOS的临界区
  */
 void OSAL_enter_critical(void) {
     OSAL_FAULT(!OSAL_in_isr());
-
+    OSAL_CritMon_Enter();
 #if OSAL_CRITICAL_IMPL_FREERTOS
     if (OSAL_kernel_is_running()) {
         taskENTER_CRITICAL();
@@ -199,21 +253,43 @@ void OSAL_enter_critical(void) {
  */
 void OSAL_exit_critical(void) {
     OSAL_FAULT(!OSAL_in_isr());
-
+    uint32_t dur_us   = 0u;
+    uint32_t enter_pc = 0u;
 #if OSAL_CRITICAL_IMPL_FREERTOS
     if (OSAL_kernel_is_running()) {
+        OSAL_CritMon_Exit(&dur_us, &enter_pc);
         taskEXIT_CRITICAL();
+        if (dur_us != 0u) {
+            BB_UpdateMaxCriUs(dur_us);
+            if (dur_us > OSAL_CRITMON_THRESHOLD_US) {
+                g_critmon_exceed_cnt++;
+                LOG_W("CRITMON", "critical too long: %lu us, enter_pc=0x%08lX, cnt=%lu",
+                      (unsigned long)dur_us, (unsigned long)enter_pc,
+                      (unsigned long)g_critmon_exceed_cnt);
+            }
+        }
         return;
     }
 #endif
-
     /* PRIMASK 嵌套恢复 */
     OSAL_FAULT(g_irq_crit_nest > 0U);
     g_irq_crit_nest--;
     if (g_irq_crit_nest == 0U) {
+        OSAL_CritMon_Exit(&dur_us, &enter_pc);
         __DMB();
         __set_PRIMASK(g_irq_saved_primask);
+        if (dur_us != 0u) {
+            BB_UpdateMaxCriUs(dur_us);
+            if (dur_us > OSAL_CRITMON_THRESHOLD_US) {
+                g_critmon_exceed_cnt++;
+                LOG_W("CRITMON", "critical too long: %lu us, enter_pc=0x%08lX, cnt=%lu",
+                      (unsigned long)dur_us, (unsigned long)enter_pc,
+                      (unsigned long)g_critmon_exceed_cnt);
+            }
+        }
+        return;
     }
+    OSAL_CritMon_Exit(&dur_us, &enter_pc);
 }
 
 /**
@@ -222,7 +298,7 @@ void OSAL_exit_critical(void) {
  */
 void OSAL_enter_critical_ex(osal_crit_state_t* state) {
     if (!state) return;
-
+    OSAL_CritMon_Enter();
 #if OSAL_CRITICAL_IMPL_FREERTOS
     if (OSAL_in_isr()) {
         /* 调度未启动时不要走 FreeRTOS FROM_ISR，回退 PRIMASK */
@@ -245,7 +321,7 @@ void OSAL_enter_critical_ex(osal_crit_state_t* state) {
 
     /* 裸机/调度未启动：用 PRIMASK（可恢复） */
     {
-        uint32_t s = __get_PRIMASK();
+        const uint32_t s = __get_PRIMASK();
         __disable_irq();
         __DMB();
         *state = (osal_crit_state_t)((s & 0x1UL) | OSAL_CRIT_MODE_PRIMASK);
@@ -258,24 +334,51 @@ void OSAL_enter_critical_ex(osal_crit_state_t* state) {
  */
 void OSAL_exit_critical_ex(osal_crit_state_t state) {
     const uint32_t mode = ((uint32_t)state) & OSAL_CRIT_MODE_MASK;
-
+    uint32_t dur_us     = 0u;
+    uint32_t enter_pc   = 0u;
 #if OSAL_CRITICAL_IMPL_FREERTOS
     if (mode == OSAL_CRIT_MODE_RTOS_ISR) {
         const UBaseType_t s = (UBaseType_t)(((uint32_t)state) & OSAL_CRIT_PAYLOAD_MASK);
+        OSAL_CritMon_Exit(&dur_us, &enter_pc);
         taskEXIT_CRITICAL_FROM_ISR(s);
+        if (dur_us != 0u) {
+            BB_UpdateMaxCriUs(dur_us);
+            if (dur_us > OSAL_CRITMON_THRESHOLD_US) {
+                LOG_W("CRITMON", "critical too long: %lu us, enter_pc=0x%08lX",
+                      (unsigned long)dur_us, (unsigned long)enter_pc);
+            }
+        }
         return;
     }
 
     if (mode == OSAL_CRIT_MODE_RTOS_THREAD) {
+        OSAL_CritMon_Exit(&dur_us, &enter_pc);
         taskEXIT_CRITICAL();
+        if (dur_us != 0u) {
+            BB_UpdateMaxCriUs(dur_us);
+            if (dur_us > OSAL_CRITMON_THRESHOLD_US) {
+                LOG_W("CRITMON", "critical too long: %lu us, enter_pc=0x%08lX",
+                      (unsigned long)dur_us, (unsigned long)enter_pc);
+            }
+        }
         return;
     }
 #endif
 
     /* PRIMASK 模式 */
     if (mode == OSAL_CRIT_MODE_PRIMASK) {
+        OSAL_CritMon_Exit(&dur_us, &enter_pc);
         __DMB();
         __set_PRIMASK(((uint32_t)state) & 0x1UL);
+        if (dur_us != 0u) {
+            BB_UpdateMaxCriUs(dur_us);
+            if (dur_us > OSAL_CRITMON_THRESHOLD_US) {
+                g_critmon_exceed_cnt++;
+                LOG_W("CRITMON", "critical too long: %lu us, enter_pc=0x%08lX, cnt=%lu",
+                      (unsigned long)dur_us, (unsigned long)enter_pc,
+                      (unsigned long)g_critmon_exceed_cnt);
+            }
+        }
         return;
     }
     /* 断言 */
@@ -288,7 +391,7 @@ void OSAL_exit_critical_ex(osal_crit_state_t state) {
  */
 void OSAL_enter_critical_from_isr(osal_crit_state_t* state) {
     if (!state) return;
-
+    OSAL_CritMon_Enter();
 #if OSAL_CRITICAL_IMPL_FREERTOS
     if (OSAL_kernel_is_running()) {
         const UBaseType_t s = taskENTER_CRITICAL_FROM_ISR();
@@ -299,7 +402,7 @@ void OSAL_enter_critical_from_isr(osal_crit_state_t* state) {
 
     /* 调度未启动/裸机：用 PRIMASK */
     {
-        uint32_t s = __get_PRIMASK();
+        const uint32_t s = __get_PRIMASK();
         __disable_irq();
         __DMB();
         *state = (osal_crit_state_t)s;
@@ -311,15 +414,37 @@ void OSAL_enter_critical_from_isr(osal_crit_state_t* state) {
  * @param state 进入中断的变量
  */
 void OSAL_exit_critical_from_isr(osal_crit_state_t state) {
+    uint32_t dur_us   = 0u;
+    uint32_t enter_pc = 0u;
 #if OSAL_CRITICAL_IMPL_FREERTOS
     if (OSAL_kernel_is_running()) {
+        OSAL_CritMon_Exit(&dur_us, &enter_pc);
         taskEXIT_CRITICAL_FROM_ISR((UBaseType_t)state);
+        if (dur_us != 0u) {
+            BB_UpdateMaxCriUs(dur_us);
+            if (dur_us > OSAL_CRITMON_THRESHOLD_US) {
+                g_critmon_exceed_cnt++;
+                LOG_W("CRITMON", "critical too long: %lu us, enter_pc=0x%08lX, cnt=%lu",
+                      (unsigned long)dur_us, (unsigned long)enter_pc,
+                      (unsigned long)g_critmon_exceed_cnt);
+            }
+        }
         return;
     }
 #endif
 
+    OSAL_CritMon_Exit(&dur_us, &enter_pc);
     __DMB();
     __set_PRIMASK((uint32_t)state);
+    if (dur_us != 0u) {
+        BB_UpdateMaxCriUs(dur_us);
+        if (dur_us > OSAL_CRITMON_THRESHOLD_US) {
+            g_critmon_exceed_cnt++;
+            LOG_W("CRITMON", "critical too long: %lu us, enter_pc=0x%08lX, cnt=%lu",
+                  (unsigned long)dur_us, (unsigned long)enter_pc,
+                  (unsigned long)g_critmon_exceed_cnt);
+        }
+    }
 }
 
 /* ================================================== 互斥锁
