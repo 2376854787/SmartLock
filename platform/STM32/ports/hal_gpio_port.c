@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "compiler_cus.h"
 #include "board_gpio_map.h"
 #include "hal_gpio.h"
 #include "ret_code.h"
@@ -13,7 +14,7 @@
     RET_MAKE(RET_MOD_PORT, RET_SUB_PORT_STM32, RET_CODE_MAKE((clas_), (err_)))
 /* ---------------- 断言（热路径用） ---------------- */
 
-__WEAK void hal_gpio_assert_failed(const char* file, int line) {
+__WEAK NORETURN void hal_gpio_assert_failed(const char* file, int line) {
     (void)file;
     (void)line;
     __disable_irq();
@@ -95,6 +96,7 @@ static ret_code_t gpio_enable_clock(const GPIO_TypeDef* GPIOx) {
  * @return 被映射的平台上下拉枚举
  */
 static ret_code_t map_pull(hal_gpio_pull_t p, uint32_t* out) {
+    // ReSharper disable once CppDFAConstantConditions
     if (!out) return PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     switch (p) {
         case HAL_GPIO_PULL_NONE:
@@ -118,6 +120,7 @@ static ret_code_t map_pull(hal_gpio_pull_t p, uint32_t* out) {
  * @return
  */
 static ret_code_t map_speed(hal_gpio_speed_t s, uint32_t* out) {
+    // ReSharper disable once CppDFAConstantConditions
     if (!out) return PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     switch (s) {
         case HAL_GPIO_SPEED_LOW:
@@ -144,6 +147,7 @@ static ret_code_t map_speed(hal_gpio_speed_t s, uint32_t* out) {
  * @return ret_code_t
  */
 static ret_code_t map_alternate(uint32_t in_af, uint32_t* out_af) {
+    // ReSharper disable once CppDFAConstantConditions
     if (!out_af) return PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
 
 #ifdef IS_GPIO_AF
@@ -235,9 +239,9 @@ ret_code_t hal_gpio_port_config(hal_gpio_t* h, const hal_gpio_cfg_t* cfg) {
     GPIO_InitTypeDef init = {0};
 
     /* 填充引脚、上下拉、速度 */
-    init.Pin   = pin_mask(h->pin);
-    init.Pull  = pull;
-    init.Speed = speed;
+    init.Pin              = pin_mask(h->pin);
+    init.Pull             = pull;
+    init.Speed            = speed;
 
     /* mode 映射：由通用 cfg 映射到 STM32 HAL */
     if (cfg->irq != HAL_GPIO_IRQ_NONE) {
