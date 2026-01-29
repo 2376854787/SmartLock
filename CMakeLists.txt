@@ -67,7 +67,7 @@ add_executable(${CMAKE_PROJECT_NAME}
         platform/STM32/ports/hal_gpio_port.c
         platform/STM32/ports/hal_uart_port.c
         platform/STM32/ports/hal_time_port.c
-        components/core_base/assert_cus.c
+        components/core_base/assert/assert_cus.c
         components/hal/hal_gpio.c
         components/board/Src/board_gpio_map.c
         example/GPIO/ex_hal_gpio.c
@@ -82,6 +82,11 @@ add_executable(${CMAKE_PROJECT_NAME}
         components/CRC/CRC16/crc16.c
         components/memory_pool/memory_pool.c
         Drivers/BSP/bh1750/bh1750.c
+        components/core_base/stack/stack_monitor.c
+        components/core_base/blackbox/blackbox_record.c
+        platform/STM32/ports/blackbox_port_reset_reason.c
+        components/ports/arch/cortexm/fault_capture_cm.c
+        components/core_base/fault_capture/fault_capture.c
 
 
 )
@@ -125,6 +130,13 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         platform/STM32/common
         components/CRC/CRC16
         Drivers/BSP/bh1750
+        components/core_base/assert
+        components/core_base/blackbox
+        components/core_base/complier
+        components/core_base/stack
+        components/core_base/utils
+        components/core_base/fault_capture
+        components/ports/arch/cortexm
 
 )
 
