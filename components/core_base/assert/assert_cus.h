@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#include "compiler_cus.h"
+#include "../complier/compiler_cus.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -62,7 +62,7 @@ typedef struct {
     const char *func;
     uint32_t line;
 
-    /* Cortex-M 上下文（通用） */
+    /* Cortex-M 上下文（通用的部分） */
     uint32_t pc; /* pc指针 */
     uint32_t lr; /* 函数返回地址 */
     uint32_t sp;
@@ -83,7 +83,7 @@ assert_config_t Assert_GetConfig(void);
 const assert_record_t *Assert_GetLastRecord(void);
 void Assert_ClearLastRecord(void);
 
-/* 带等级的断言失败入口 显示指定不断言提高获取lr的概率*/
+/* 带等级的断言失败入口 显示指定不内联提高获取lr的概率*/
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((noinline))
 #endif
@@ -157,7 +157,7 @@ void Assert_PlatformHalt(void);
 #endif /* CORE_ASSERT_ENABLE */
 
 /* ===================== Commercial Require/Ensure ===================== */
-/* 这类宏用于“可恢复错误”，RELEASE 下不会直接 reset */
+/* 这类宏用于可恢复错误，RELEASE 下不会直接 reset */
 /* 断言失败 返回状态码 */
 #if (CORE_ASSERT_ENABLE == 1)
 #define REQUIRE_RET(expr, retcode)                                                              \

@@ -5,8 +5,9 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../complier/compiler_cus.h"
 #include "assert_cus.h"
-#include "compiler_cus.h"
+#include "blackbox/blackbox_record.h"
 
 #if defined(__ARMCC_VERSION) || defined(__GNUC__) || defined(__ICCARM__)
 #include "cmsis_compiler.h"
@@ -162,7 +163,7 @@ __WEAK void Assert_PlatformReset(void) {
 /**
  * @brief 根据编译器平台和编译模式 执行不同的断言错误程序流程
  */
-__WEAK void Assert_PlatformHalt(void) {
+__WEAK NORETURN void Assert_PlatformHalt(void) {
 #if defined(__arm__) || defined(__ARM_ARCH)
     __disable_irq();
 #endif
@@ -212,6 +213,9 @@ void Assert_OnFailEx(assert_level_t level, const char* expr, const char* file, c
     g_assert_record.lr  = approx_lr();
     g_assert_record.psr = read_psr();
 
+    /* 写入黑盒子 */
+    BB_RecordAssert(g_assert_record.pc, g_assert_record.lr, g_assert_record.sp,
+                    g_assert_record.psr);
     /* 文件层面记录 错误环境信息 */
     record_assert(expr, file, func, line);
 
@@ -234,7 +238,6 @@ void Assert_OnFailEx(assert_level_t level, const char* expr, const char* file, c
 #elif defined(DEBUG_MODE)
         /* Debug：直接停机进调试器 */
         Assert_PlatformHalt();
-        return;
 #endif
     }
 
