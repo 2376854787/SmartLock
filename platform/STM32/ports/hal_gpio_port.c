@@ -232,8 +232,7 @@ ret_code_t hal_gpio_port_config(hal_gpio_t* h, const hal_gpio_cfg_t* cfg) {
     if (rc != RET_OK) return rc;
 
     /* 默认初始化 */
-    GPIO_InitTypeDef init;
-    memset(&init, 0, sizeof(init));
+    GPIO_InitTypeDef init = {0};
 
     /* 填充引脚、上下拉、速度 */
     init.Pin   = pin_mask(h->pin);
