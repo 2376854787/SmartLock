@@ -4,29 +4,86 @@
 
 #include "blackbox_port_reset_reason.h"
 #include "compiler_cus.h"
+#include "stm32f4xx_hal.h"
 
 #ifndef CORE_BUILD_ID
 #define CORE_BUILD_ID 0u
 #endif
 
+#include "stm32f4xx_hal.h"
+
+/* 配置宏：定义此宏使用备份SRAM (0x40024000)，否则使用 .noinit 段 (SRAM1/2) */
+/* 建议在 CMakeLists.txt 或 config.h 中定义，这里默认开启以解决复位清除问题 */
+#define CONFIG_BLACKBOX_USE_BKPSRAM 0
+
+#ifndef CORE_BUILD_ID
+#define CORE_BUILD_ID 0u
+#endif
+
+#if defined(CONFIG_BLACKBOX_USE_BKPSRAM) && (CONFIG_BLACKBOX_USE_BKPSRAM == 1)
+/* =================================================================================
+ * 模式 A: STM32F4 Backup SRAM
+ * 地址：0x4002 4000 (4KB)
+ * 特性：掉电/复位不丢失
+ * ================================================================================= */
+#define BKPSRAM_BASE 0x40024000UL
+
+/* 为了方便调试器查看，定义一个具体的指针变量，在 Watch 中添加 *g_bb_debug_ptr 即可查看内容 */
+/* CORE_USED 确保编译器保留该符号，且不报 warning */
+CORE_USED volatile blackbox_record_t* const g_bb_debug_ptr =
+    (volatile blackbox_record_t*)BKPSRAM_BASE;
+
+/* 代码中使用宏展开访问，兼顾性能 */
+#define g_bb (*(volatile blackbox_record_t*)BKPSRAM_BASE)
+
+static void BB_EnableAccess(void) {
+    __HAL_RCC_PWR_CLK_ENABLE();
+    HAL_PWR_EnableBkUpAccess();
+    __HAL_RCC_BKPSRAM_CLK_ENABLE();
+    HAL_PWREx_EnableBkUpReg();
+}
+
+#else
+/* =================================================================================
+ * 模式 B: .noinit 段 (SRAM)
+ * 特性：仅在由于 NVIC_SystemReset() 等非断电/非调试器复位时保留
+ * 注意：调试器下载或复位通常会清除此区域
+ * ================================================================================= */
 CORE_SECTION(".noinit.blackbox")
-static volatile blackbox_record_t g_bb;
+static volatile blackbox_record_t g_bb_instance;
+
+/* 为了统一调试体验，也定义一个调试指针 */
+CORE_USED volatile blackbox_record_t* const g_bb_debug_ptr = &g_bb_instance;
+
+#define g_bb g_bb_instance
+
+static void BB_EnableAccess(void) {
+    /* 普通 SRAM 无需特殊时钟/电源使能 */
+}
+#endif
 
 /**
  * @brief 返回全局变量的地址
  * @return 返回全局变量的地址
  */
 const blackbox_record_t* BB_Get(void) {
+#if defined(CONFIG_BLACKBOX_USE_BKPSRAM) && (CONFIG_BLACKBOX_USE_BKPSRAM == 1)
+    if (!__HAL_RCC_BKPSRAM_IS_CLK_ENABLED()) {
+        BB_EnableAccess();
+    }
+#endif
+
     if (g_bb.magic == BLACK_BOX_MAGIC && g_bb.version == BLACK_BOX_VERSION) {
         return (const blackbox_record_t*)&g_bb;
     }
     return NULL;
-
 }
+
 /**
  * @brief 清理黑盒子全局变量
  */
 void BB_Clear(void) {
+    BB_EnableAccess();
     g_bb.magic = 0;
 }
 
@@ -34,13 +91,13 @@ void BB_Clear(void) {
  * @brief 更新 Reset原因以及 清除标志位
  */
 void BB_OnBootUpdateResetReason(void) {
-    /* 诊断：打印进入时的原始值（在 UART 初始化后才能看到，可用调试器查看） */
-    volatile uint32_t raw_magic   = g_bb.magic;
-    volatile uint32_t raw_version = g_bb.version;
-    volatile uint32_t raw_count   = g_bb.boot_count;
-    (void)raw_magic; /* 防止优化掉，调试器可查看 */
-    (void)raw_version;
-    (void)raw_count;
+    BB_EnableAccess();
+
+    /* 调试诊断变量：请在断点处查看这些值 */
+    volatile uint32_t debug_raw_magic = g_bb.magic;
+    volatile uint32_t debug_raw_csr   = RCC->CSR;
+    (void)debug_raw_magic;
+    (void)debug_raw_csr;
 
     if (g_bb.version != BLACK_BOX_VERSION || g_bb.magic != BLACK_BOX_MAGIC) {
         g_bb.magic          = BLACK_BOX_MAGIC;
