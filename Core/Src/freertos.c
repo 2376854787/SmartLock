@@ -309,7 +309,7 @@ void StartTask02(void *argument) {
         crc16_cal_default_table(MODBUS, example, 1, &res);
         HAL_GPIO_TogglePin(LED0_GPIO_Port, LED0_Pin);
         // LOG_W("CRC16_MODBUS", "{0x01} =%X", res);
-        const UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
+       // const UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
         // LOG_D("Watermask", "lcdTask high watermark = %lu\r\n", (unsigned long)watermark);
         osDelay(250);
     }
