@@ -269,13 +269,13 @@ void StartDefaultTask(void *argument) {
         KEY_Tasks();
         // UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
         //  printf("keyscanTask high watermark = %lu\r\n", (unsigned long) watermark);
-        const float lx       = BH1750_Get_LX();
-        const uint32_t prase = (uint32_t)(lx * 100);
-        LOG_D("光照度", "环境光lx：%ld.%02ld\r\n", prase / 100, prase % 100);
-        char buffer[64];
-        sprintf(buffer, "%ld", prase);
-        lcd_show_string(10, 400, 240, 32, 32, buffer, RED);
-        osDelay(500);
+        // const float lx       = BH1750_Get_LX();
+        // const uint32_t prase = (uint32_t)(lx * 100);
+        // LOG_D("光照度", "环境光lx：%ld.%02ld\r\n", prase / 100, prase % 100);
+        // char buffer[64];
+        // sprintf(buffer, "%ld", prase);
+        // lcd_show_string(10, 400, 240, 32, 32, buffer, RED);
+        osDelay(30);
     }
     /* USER CODE END StartDefaultTask */
 }
