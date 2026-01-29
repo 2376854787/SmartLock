@@ -3,10 +3,7 @@
 #if defined(USE_STM32_HAL) && defined(ENABLE_HAL_UART)
 #include <stdint.h>
 
-#include "ret_code.h"
-#include "stm32_hal.h"
 #include "stm32_uart_series.h"
-#include "utils_def.h"
 
 /* 默认 STM32H7 带 DCache：DMA 缓冲 32-byte 对齐 */
 void stm32_uart_dma_tx_clean(const void* ptr, uint32_t len) {
