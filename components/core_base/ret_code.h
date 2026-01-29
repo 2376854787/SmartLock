@@ -11,7 +11,7 @@ extern "C" {
 #endif
 
 /* =============================================================================
- * 商业级 32-bit 状态码（Layer/Module + Component/Submodule + Code）
+ *  32-bit 状态码
  *
  * 位布局：
  *   [31:24] Module (Layer)      8-bit
