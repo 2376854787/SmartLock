@@ -66,6 +66,14 @@ _estack = ORIGIN(RAM) + LENGTH(RAM);    /* end of RAM */
 _Min_Heap_Size = 0x200;      /* required amount of heap  */
 _Min_Stack_Size = 0x400; /* required amount of stack */
 
+/* Export memory range symbols for C code (MPU/stack monitor). */
+PROVIDE(__flash_start__   = ORIGIN(FLASH));
+PROVIDE(__flash_end__     = ORIGIN(FLASH) + LENGTH(FLASH));
+PROVIDE(__ram_start__     = ORIGIN(RAM));
+PROVIDE(__ram_end__       = ORIGIN(RAM) + LENGTH(RAM));
+PROVIDE(__stack_top__     = _estack);
+PROVIDE(__stack_bottom__  = _estack - _Min_Stack_Size);
+
 /* Define output sections */
 SECTIONS
 {
