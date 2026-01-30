@@ -14,7 +14,7 @@
 
 /* 配置宏：定义此宏使用备份SRAM (0x40024000)，否则使用 .noinit 段 (SRAM1/2) */
 /* 建议在 CMakeLists.txt 或 config.h 中定义，这里默认开启以解决复位清除问题 */
-#define CONFIG_BLACKBOX_USE_BKPSRAM 0
+#define CONFIG_BLACKBOX_USE_BKPSRAM 1
 
 #ifndef CORE_BUILD_ID
 #define CORE_BUILD_ID 0u

@@ -19,10 +19,9 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "FreeRTOS.h"
-
-#include "cmsis_os.h"
-#include "main.h"
 #include "task.h"
+#include "main.h"
+#include "cmsis_os.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -70,23 +69,23 @@
 /* Definitions for KeyScanTask */
 osThreadId_t KeyScanTaskHandle;
 const osThreadAttr_t KeyScanTask_attributes = {
-    .name       = "KeyScanTask",
-    .stack_size = 256 * 8,
-    .priority   = (osPriority_t)osPriorityNormal,
+  .name = "KeyScanTask",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for uartTask */
 osThreadId_t uartTaskHandle;
 const osThreadAttr_t uartTask_attributes = {
-    .name       = "uartTask",
-    .stack_size = 256 * 8,
-    .priority   = (osPriority_t)osPriorityLow,
+  .name = "uartTask",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityLow,
 };
 /* Definitions for lcdTask */
 osThreadId_t lcdTaskHandle;
 const osThreadAttr_t lcdTask_attributes = {
-    .name       = "lcdTask",
-    .stack_size = 256 * 6,
-    .priority   = (osPriority_t)osPriorityLow,
+  .name = "lcdTask",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityLow,
 };
 
 /* Private function prototypes -----------------------------------------------*/
@@ -194,42 +193,42 @@ void vApplicationMallocFailedHook(void) {
 /* USER CODE END 5 */
 
 /**
- * @brief  FreeRTOS initialization
- * @param  None
- * @retval None
- */
+  * @brief  FreeRTOS initialization
+  * @param  None
+  * @retval None
+  */
 void MX_FREERTOS_Init(void) {
-    /* USER CODE BEGIN Init */
+  /* USER CODE BEGIN Init */
 
-    /* USER CODE END Init */
+  /* USER CODE END Init */
 
-    /* USER CODE BEGIN RTOS_MUTEX */
+  /* USER CODE BEGIN RTOS_MUTEX */
     /* add mutexes, ... */
-    /* USER CODE END RTOS_MUTEX */
+  /* USER CODE END RTOS_MUTEX */
 
-    /* USER CODE BEGIN RTOS_SEMAPHORES */
+  /* USER CODE BEGIN RTOS_SEMAPHORES */
     /* add semaphores, ... */
-    /* USER CODE END RTOS_SEMAPHORES */
+  /* USER CODE END RTOS_SEMAPHORES */
 
-    /* USER CODE BEGIN RTOS_TIMERS */
+  /* USER CODE BEGIN RTOS_TIMERS */
     /* start timers, add new ones, ... */
-    /* USER CODE END RTOS_TIMERS */
+  /* USER CODE END RTOS_TIMERS */
 
-    /* USER CODE BEGIN RTOS_QUEUES */
+  /* USER CODE BEGIN RTOS_QUEUES */
     /* add queues, ... */
-    /* USER CODE END RTOS_QUEUES */
+  /* USER CODE END RTOS_QUEUES */
 
-    /* Create the thread(s) */
-    /* creation of KeyScanTask */
-    KeyScanTaskHandle       = osThreadNew(StartDefaultTask, NULL, &KeyScanTask_attributes);
+  /* Create the thread(s) */
+  /* creation of KeyScanTask */
+  KeyScanTaskHandle = osThreadNew(StartDefaultTask, NULL, &KeyScanTask_attributes);
 
-    /* creation of uartTask */
-    uartTaskHandle          = osThreadNew(StartTask02, NULL, &uartTask_attributes);
+  /* creation of uartTask */
+  uartTaskHandle = osThreadNew(StartTask02, NULL, &uartTask_attributes);
 
-    /* creation of lcdTask */
-    lcdTaskHandle           = osThreadNew(StartTask_LCD, NULL, &lcdTask_attributes);
+  /* creation of lcdTask */
+  lcdTaskHandle = osThreadNew(StartTask_LCD, NULL, &lcdTask_attributes);
 
-    /* USER CODE BEGIN RTOS_THREADS */
+  /* USER CODE BEGIN RTOS_THREADS */
     /* add threads, ... */
 
     /* 光敏传感器 */
@@ -245,12 +244,13 @@ void MX_FREERTOS_Init(void) {
     /* 串口AT解析任务 创建信号量、创建任务*/
     at_core_task_init(&g_at_manager, &huart3);
 
-    /* USER CODE END RTOS_THREADS */
+  /* USER CODE END RTOS_THREADS */
 
-    /* USER CODE BEGIN RTOS_EVENTS */
+  /* USER CODE BEGIN RTOS_EVENTS */
     /* add events, ... */
 
-    /* USER CODE END RTOS_EVENTS */
+  /* USER CODE END RTOS_EVENTS */
+
 }
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -260,8 +260,9 @@ void MX_FREERTOS_Init(void) {
  * @retval None
  */
 /* USER CODE END Header_StartDefaultTask */
-void StartDefaultTask(void *argument) {
-    /* USER CODE BEGIN StartDefaultTask */
+void StartDefaultTask(void *argument)
+{
+  /* USER CODE BEGIN StartDefaultTask */
     /* Infinite loop */
     for (;;) {
         // LED 1翻转
@@ -277,7 +278,7 @@ void StartDefaultTask(void *argument) {
         // lcd_show_string(10, 400, 240, 32, 32, buffer, RED);
         osDelay(30);
     }
-    /* USER CODE END StartDefaultTask */
+  /* USER CODE END StartDefaultTask */
 }
 
 /* USER CODE BEGIN Header_StartTask02 */
@@ -287,8 +288,9 @@ void StartDefaultTask(void *argument) {
  * @retval None
  */
 /* USER CODE END Header_StartTask02 */
-void StartTask02(void *argument) {
-    /* USER CODE BEGIN StartTask02 */
+void StartTask02(void *argument)
+{
+  /* USER CODE BEGIN StartTask02 */
     char buffer[128];
     /* Infinite loop */
     uint8_t example[] = {0x01, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99};
@@ -313,7 +315,7 @@ void StartTask02(void *argument) {
         // LOG_D("Watermask", "lcdTask high watermark = %lu\r\n", (unsigned long)watermark);
         osDelay(250);
     }
-    /* USER CODE END StartTask02 */
+  /* USER CODE END StartTask02 */
 }
 
 /* USER CODE BEGIN Header_StartTask_LCD */
@@ -323,8 +325,9 @@ void StartTask02(void *argument) {
  * @retval None
  */
 /* USER CODE END Header_StartTask_LCD */
-void StartTask_LCD(void *argument) {
-    /* USER CODE BEGIN StartTask_LCD */
+void StartTask_LCD(void *argument)
+{
+  /* USER CODE BEGIN StartTask_LCD */
     /* Infinite loop */
     char buffer[128];
     osDelay(2000);
@@ -339,7 +342,7 @@ void StartTask_LCD(void *argument) {
         // printf("lcdTask high watermark = %lu\r\n", (unsigned long) watermark);
         osDelay(20);
     }
-    /* USER CODE END StartTask_LCD */
+  /* USER CODE END StartTask_LCD */
 }
 
 /* Private application code --------------------------------------------------*/
@@ -371,3 +374,4 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
 }
 
 /* USER CODE END Application */
+
