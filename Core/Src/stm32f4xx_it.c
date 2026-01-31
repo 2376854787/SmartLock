@@ -18,8 +18,9 @@
 /* USER CODE END Header */
 
 /* Includes ------------------------------------------------------------------*/
-#include "main.h"
 #include "stm32f4xx_it.h"
+
+#include "main.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "AT_Core_Task.h"
@@ -82,25 +83,24 @@ extern TIM_HandleTypeDef htim6;
 /*           Cortex-M4 Processor Interruption and Exception Handlers          */
 /******************************************************************************/
 /**
-  * @brief This function handles Non maskable interrupt.
-  */
-void NMI_Handler(void)
-{
-  /* USER CODE BEGIN NonMaskableInt_IRQn 0 */
+ * @brief This function handles Non maskable interrupt.
+ */
+void NMI_Handler(void) {
+    /* USER CODE BEGIN NonMaskableInt_IRQn 0 */
 
-  /* USER CODE END NonMaskableInt_IRQn 0 */
-  /* USER CODE BEGIN NonMaskableInt_IRQn 1 */
+    /* USER CODE END NonMaskableInt_IRQn 0 */
+    /* USER CODE BEGIN NonMaskableInt_IRQn 1 */
     while (1) {
     }
-  /* USER CODE END NonMaskableInt_IRQn 1 */
+    /* USER CODE END NonMaskableInt_IRQn 1 */
 }
 
 /**
-  * @brief This function handles Hard fault interrupt.
-  */
-void HardFault_Handler(void)
-{
-  /* USER CODE BEGIN HardFault_IRQn 0 */
+ * @brief This function handles Hard fault interrupt.
+ * @note  使用 naked 属性避免编译器生成 prologue，确保栈指针正确
+ */
+__attribute__((naked)) CORE_WEAK void HardFault_Handler(void) {
+    /* USER CODE BEGIN HardFault_IRQn 0 */
     __asm volatile(
         "tst lr, #4        \n"
         "ite eq            \n"
@@ -108,20 +108,16 @@ void HardFault_Handler(void)
         "mrsne r0, psp     \n"
         "mov r1, %0        \n"
         "b FaultCapture_FromStack_cm \n" ::"I"(BB_CRASH_HARDFAULT));
-  /* USER CODE END HardFault_IRQn 0 */
-  while (1)
-  {
-    /* USER CODE BEGIN W1_HardFault_IRQn 0 */
-    /* USER CODE END W1_HardFault_IRQn 0 */
-  }
+    /* USER CODE END HardFault_IRQn 0 */
+    /* 不会执行到这里，naked 函数中不能有普通 C 代码 */
 }
 
 /**
-  * @brief This function handles Memory management fault.
-  */
-void MemManage_Handler(void)
-{
-  /* USER CODE BEGIN MemoryManagement_IRQn 0 */
+ * @brief This function handles Memory management fault.
+ * @note  使用 naked 属性避免编译器生成 prologue
+ */
+__attribute__((naked)) void MemManage_Handler(void) {
+    /* USER CODE BEGIN MemoryManagement_IRQn 0 */
     __asm volatile(
         "tst lr, #4        \n"
         "ite eq            \n"
@@ -129,20 +125,15 @@ void MemManage_Handler(void)
         "mrsne r0, psp     \n"
         "mov r1, %0        \n"
         "b FaultCapture_FromStack_cm \n" ::"I"(BB_CRASH_MEMMANAGE));
-  /* USER CODE END MemoryManagement_IRQn 0 */
-  while (1)
-  {
-    /* USER CODE BEGIN W1_MemoryManagement_IRQn 0 */
-    /* USER CODE END W1_MemoryManagement_IRQn 0 */
-  }
+    /* USER CODE END MemoryManagement_IRQn 0 */
 }
 
 /**
-  * @brief This function handles Pre-fetch fault, memory access fault.
-  */
-void BusFault_Handler(void)
-{
-  /* USER CODE BEGIN BusFault_IRQn 0 */
+ * @brief This function handles Pre-fetch fault, memory access fault.
+ * @note  使用 naked 属性避免编译器生成 prologue
+ */
+__attribute__((naked)) void BusFault_Handler(void) {
+    /* USER CODE BEGIN BusFault_IRQn 0 */
     __asm volatile(
         "tst lr, #4        \n"
         "ite eq            \n"
@@ -150,20 +141,15 @@ void BusFault_Handler(void)
         "mrsne r0, psp     \n"
         "mov r1, %0        \n"
         "b FaultCapture_FromStack_cm \n" ::"I"(BB_CRASH_BUSFAULT));
-  /* USER CODE END BusFault_IRQn 0 */
-  while (1)
-  {
-    /* USER CODE BEGIN W1_BusFault_IRQn 0 */
-    /* USER CODE END W1_BusFault_IRQn 0 */
-  }
+    /* USER CODE END BusFault_IRQn 0 */
 }
 
 /**
-  * @brief This function handles Undefined instruction or illegal state.
-  */
-void UsageFault_Handler(void)
-{
-  /* USER CODE BEGIN UsageFault_IRQn 0 */
+ * @brief This function handles Undefined instruction or illegal state.
+ * @note  使用 naked 属性避免编译器生成 prologue
+ */
+__attribute__((naked)) void UsageFault_Handler(void) {
+    /* USER CODE BEGIN UsageFault_IRQn 0 */
     __asm volatile(
         "tst lr, #4        \n"
         "ite eq            \n"
@@ -171,25 +157,19 @@ void UsageFault_Handler(void)
         "mrsne r0, psp     \n"
         "mov r1, %0        \n"
         "b FaultCapture_FromStack_cm \n" ::"I"(BB_CRASH_USAGEFAULT));
-  /* USER CODE END UsageFault_IRQn 0 */
-  while (1)
-  {
-    /* USER CODE BEGIN W1_UsageFault_IRQn 0 */
-    /* USER CODE END W1_UsageFault_IRQn 0 */
-  }
+    /* USER CODE END UsageFault_IRQn 0 */
 }
 
 /**
-  * @brief This function handles Debug monitor.
-  */
-void DebugMon_Handler(void)
-{
-  /* USER CODE BEGIN DebugMonitor_IRQn 0 */
+ * @brief This function handles Debug monitor.
+ */
+void DebugMon_Handler(void) {
+    /* USER CODE BEGIN DebugMonitor_IRQn 0 */
 
-  /* USER CODE END DebugMonitor_IRQn 0 */
-  /* USER CODE BEGIN DebugMonitor_IRQn 1 */
+    /* USER CODE END DebugMonitor_IRQn 0 */
+    /* USER CODE BEGIN DebugMonitor_IRQn 1 */
 
-  /* USER CODE END DebugMonitor_IRQn 1 */
+    /* USER CODE END DebugMonitor_IRQn 1 */
 }
 
 /******************************************************************************/
@@ -200,173 +180,161 @@ void DebugMon_Handler(void)
 /******************************************************************************/
 
 /**
-  * @brief This function handles DMA1 stream0 global interrupt.
-  */
-void DMA1_Stream0_IRQHandler(void)
-{
-  /* USER CODE BEGIN DMA1_Stream0_IRQn 0 */
+ * @brief This function handles DMA1 stream0 global interrupt.
+ */
+void DMA1_Stream0_IRQHandler(void) {
+    /* USER CODE BEGIN DMA1_Stream0_IRQn 0 */
 
-  /* USER CODE END DMA1_Stream0_IRQn 0 */
-  HAL_DMA_IRQHandler(&hdma_i2c1_rx);
-  /* USER CODE BEGIN DMA1_Stream0_IRQn 1 */
+    /* USER CODE END DMA1_Stream0_IRQn 0 */
+    HAL_DMA_IRQHandler(&hdma_i2c1_rx);
+    /* USER CODE BEGIN DMA1_Stream0_IRQn 1 */
 
-  /* USER CODE END DMA1_Stream0_IRQn 1 */
+    /* USER CODE END DMA1_Stream0_IRQn 1 */
 }
 
 /**
-  * @brief This function handles DMA1 stream1 global interrupt.
-  */
-void DMA1_Stream1_IRQHandler(void)
-{
-  /* USER CODE BEGIN DMA1_Stream1_IRQn 0 */
+ * @brief This function handles DMA1 stream1 global interrupt.
+ */
+void DMA1_Stream1_IRQHandler(void) {
+    /* USER CODE BEGIN DMA1_Stream1_IRQn 0 */
     /* 暂时为UART3 RX */
-  /* USER CODE END DMA1_Stream1_IRQn 0 */
-  HAL_DMA_IRQHandler(&hdma_usart3_rx);
-  /* USER CODE BEGIN DMA1_Stream1_IRQn 1 */
+    /* USER CODE END DMA1_Stream1_IRQn 0 */
+    HAL_DMA_IRQHandler(&hdma_usart3_rx);
+    /* USER CODE BEGIN DMA1_Stream1_IRQn 1 */
 
-  /* USER CODE END DMA1_Stream1_IRQn 1 */
+    /* USER CODE END DMA1_Stream1_IRQn 1 */
 }
 
 /**
-  * @brief This function handles DMA1 stream3 global interrupt.
-  */
-void DMA1_Stream3_IRQHandler(void)
-{
-  /* USER CODE BEGIN DMA1_Stream3_IRQn 0 */
+ * @brief This function handles DMA1 stream3 global interrupt.
+ */
+void DMA1_Stream3_IRQHandler(void) {
+    /* USER CODE BEGIN DMA1_Stream3_IRQn 0 */
     /* 暂时为UART3 TX */
-  /* USER CODE END DMA1_Stream3_IRQn 0 */
-  HAL_DMA_IRQHandler(&hdma_usart3_tx);
-  /* USER CODE BEGIN DMA1_Stream3_IRQn 1 */
+    /* USER CODE END DMA1_Stream3_IRQn 0 */
+    HAL_DMA_IRQHandler(&hdma_usart3_tx);
+    /* USER CODE BEGIN DMA1_Stream3_IRQn 1 */
 
-  /* USER CODE END DMA1_Stream3_IRQn 1 */
+    /* USER CODE END DMA1_Stream3_IRQn 1 */
 }
 
 /**
-  * @brief This function handles DMA1 stream6 global interrupt.
-  */
-void DMA1_Stream6_IRQHandler(void)
-{
-  /* USER CODE BEGIN DMA1_Stream6_IRQn 0 */
+ * @brief This function handles DMA1 stream6 global interrupt.
+ */
+void DMA1_Stream6_IRQHandler(void) {
+    /* USER CODE BEGIN DMA1_Stream6_IRQn 0 */
 
-  /* USER CODE END DMA1_Stream6_IRQn 0 */
-  HAL_DMA_IRQHandler(&hdma_i2c1_tx);
-  /* USER CODE BEGIN DMA1_Stream6_IRQn 1 */
+    /* USER CODE END DMA1_Stream6_IRQn 0 */
+    HAL_DMA_IRQHandler(&hdma_i2c1_tx);
+    /* USER CODE BEGIN DMA1_Stream6_IRQn 1 */
 
-  /* USER CODE END DMA1_Stream6_IRQn 1 */
+    /* USER CODE END DMA1_Stream6_IRQn 1 */
 }
 
 /**
-  * @brief This function handles ADC1, ADC2 and ADC3 global interrupts.
-  */
-void ADC_IRQHandler(void)
-{
-  /* USER CODE BEGIN ADC_IRQn 0 */
+ * @brief This function handles ADC1, ADC2 and ADC3 global interrupts.
+ */
+void ADC_IRQHandler(void) {
+    /* USER CODE BEGIN ADC_IRQn 0 */
 
-  /* USER CODE END ADC_IRQn 0 */
-  HAL_ADC_IRQHandler(&hadc1);
-  HAL_ADC_IRQHandler(&hadc3);
-  /* USER CODE BEGIN ADC_IRQn 1 */
+    /* USER CODE END ADC_IRQn 0 */
+    HAL_ADC_IRQHandler(&hadc1);
+    HAL_ADC_IRQHandler(&hadc3);
+    /* USER CODE BEGIN ADC_IRQn 1 */
 
-  /* USER CODE END ADC_IRQn 1 */
+    /* USER CODE END ADC_IRQn 1 */
 }
 
 /**
-  * @brief This function handles I2C1 event interrupt.
-  */
-void I2C1_EV_IRQHandler(void)
-{
-  /* USER CODE BEGIN I2C1_EV_IRQn 0 */
+ * @brief This function handles I2C1 event interrupt.
+ */
+void I2C1_EV_IRQHandler(void) {
+    /* USER CODE BEGIN I2C1_EV_IRQn 0 */
 
-  /* USER CODE END I2C1_EV_IRQn 0 */
-  HAL_I2C_EV_IRQHandler(&hi2c1);
-  /* USER CODE BEGIN I2C1_EV_IRQn 1 */
+    /* USER CODE END I2C1_EV_IRQn 0 */
+    HAL_I2C_EV_IRQHandler(&hi2c1);
+    /* USER CODE BEGIN I2C1_EV_IRQn 1 */
 
-  /* USER CODE END I2C1_EV_IRQn 1 */
+    /* USER CODE END I2C1_EV_IRQn 1 */
 }
 
 /**
-  * @brief This function handles I2C1 error interrupt.
-  */
-void I2C1_ER_IRQHandler(void)
-{
-  /* USER CODE BEGIN I2C1_ER_IRQn 0 */
+ * @brief This function handles I2C1 error interrupt.
+ */
+void I2C1_ER_IRQHandler(void) {
+    /* USER CODE BEGIN I2C1_ER_IRQn 0 */
 
-  /* USER CODE END I2C1_ER_IRQn 0 */
-  HAL_I2C_ER_IRQHandler(&hi2c1);
-  /* USER CODE BEGIN I2C1_ER_IRQn 1 */
+    /* USER CODE END I2C1_ER_IRQn 0 */
+    HAL_I2C_ER_IRQHandler(&hi2c1);
+    /* USER CODE BEGIN I2C1_ER_IRQn 1 */
 
-  /* USER CODE END I2C1_ER_IRQn 1 */
+    /* USER CODE END I2C1_ER_IRQn 1 */
 }
 
 /**
-  * @brief This function handles USART1 global interrupt.
-  */
-void USART1_IRQHandler(void)
-{
-  /* USER CODE BEGIN USART1_IRQn 0 */
+ * @brief This function handles USART1 global interrupt.
+ */
+void USART1_IRQHandler(void) {
+    /* USER CODE BEGIN USART1_IRQn 0 */
 
-  /* USER CODE END USART1_IRQn 0 */
-  HAL_UART_IRQHandler(&huart1);
-  /* USER CODE BEGIN USART1_IRQn 1 */
+    /* USER CODE END USART1_IRQn 0 */
+    HAL_UART_IRQHandler(&huart1);
+    /* USER CODE BEGIN USART1_IRQn 1 */
 
-  /* USER CODE END USART1_IRQn 1 */
+    /* USER CODE END USART1_IRQn 1 */
 }
 
 /**
-  * @brief This function handles USART3 global interrupt.
-  */
-void USART3_IRQHandler(void)
-{
-  /* USER CODE BEGIN USART3_IRQn 0 */
+ * @brief This function handles USART3 global interrupt.
+ */
+void USART3_IRQHandler(void) {
+    /* USER CODE BEGIN USART3_IRQn 0 */
 
-  /* USER CODE END USART3_IRQn 0 */
-  HAL_UART_IRQHandler(&huart3);
-  /* USER CODE BEGIN USART3_IRQn 1 */
+    /* USER CODE END USART3_IRQn 0 */
+    HAL_UART_IRQHandler(&huart3);
+    /* USER CODE BEGIN USART3_IRQn 1 */
 
-  /* USER CODE END USART3_IRQn 1 */
+    /* USER CODE END USART3_IRQn 1 */
 }
 
 /**
-  * @brief This function handles TIM6 global interrupt, DAC1 and DAC2 underrun error interrupts.
-  */
-void TIM6_DAC_IRQHandler(void)
-{
-  /* USER CODE BEGIN TIM6_DAC_IRQn 0 */
+ * @brief This function handles TIM6 global interrupt, DAC1 and DAC2 underrun error interrupts.
+ */
+void TIM6_DAC_IRQHandler(void) {
+    /* USER CODE BEGIN TIM6_DAC_IRQn 0 */
     /* 按键超时处理 */
     KEY_Tick_Handler();
-  /* USER CODE END TIM6_DAC_IRQn 0 */
-  HAL_TIM_IRQHandler(&htim6);
-  /* USER CODE BEGIN TIM6_DAC_IRQn 1 */
+    /* USER CODE END TIM6_DAC_IRQn 0 */
+    HAL_TIM_IRQHandler(&htim6);
+    /* USER CODE BEGIN TIM6_DAC_IRQn 1 */
 
-  /* USER CODE END TIM6_DAC_IRQn 1 */
+    /* USER CODE END TIM6_DAC_IRQn 1 */
 }
 
 /**
-  * @brief This function handles DMA2 stream2 global interrupt.
-  */
-void DMA2_Stream2_IRQHandler(void)
-{
-  /* USER CODE BEGIN DMA2_Stream2_IRQn 0 */
+ * @brief This function handles DMA2 stream2 global interrupt.
+ */
+void DMA2_Stream2_IRQHandler(void) {
+    /* USER CODE BEGIN DMA2_Stream2_IRQn 0 */
     /* 暂时为UART1 RX */
-  /* USER CODE END DMA2_Stream2_IRQn 0 */
-  HAL_DMA_IRQHandler(&hdma_usart1_rx);
-  /* USER CODE BEGIN DMA2_Stream2_IRQn 1 */
+    /* USER CODE END DMA2_Stream2_IRQn 0 */
+    HAL_DMA_IRQHandler(&hdma_usart1_rx);
+    /* USER CODE BEGIN DMA2_Stream2_IRQn 1 */
 
-  /* USER CODE END DMA2_Stream2_IRQn 1 */
+    /* USER CODE END DMA2_Stream2_IRQn 1 */
 }
 
 /**
-  * @brief This function handles DMA2 stream7 global interrupt.
-  */
-void DMA2_Stream7_IRQHandler(void)
-{
-  /* USER CODE BEGIN DMA2_Stream7_IRQn 0 */
+ * @brief This function handles DMA2 stream7 global interrupt.
+ */
+void DMA2_Stream7_IRQHandler(void) {
+    /* USER CODE BEGIN DMA2_Stream7_IRQn 0 */
     /* 暂时为UART1 TX */
-  /* USER CODE END DMA2_Stream7_IRQn 0 */
-  HAL_DMA_IRQHandler(&hdma_usart1_tx);
-  /* USER CODE BEGIN DMA2_Stream7_IRQn 1 */
+    /* USER CODE END DMA2_Stream7_IRQn 0 */
+    HAL_DMA_IRQHandler(&hdma_usart1_tx);
+    /* USER CODE BEGIN DMA2_Stream7_IRQn 1 */
 
-  /* USER CODE END DMA2_Stream7_IRQn 1 */
+    /* USER CODE END DMA2_Stream7_IRQn 1 */
 }
 
 /* USER CODE BEGIN 1 */
