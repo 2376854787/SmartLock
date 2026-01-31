@@ -18,6 +18,7 @@ set(CMAKE_C_EXTENSIONS ON)
 set(CMAKE_C_COMPILER arm-none-eabi-gcc)
 set(CMAKE_OBJCOPY arm-none-eabi-objcopy)
 
+set(CMAKE_SIZE arm-none-eabi-size)
 
 # Define the build type
 #设置默认编译类型为 Debug
@@ -137,6 +138,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         components/core_base/utils
         components/core_base/fault_capture
         components/ports/arch/cortexm
+        components/core_base/barrier
 
 )
 
@@ -158,7 +160,6 @@ list(REMOVE_ITEM CMAKE_C_IMPLICIT_LINK_LIBRARIES ob)
 # 链接库
 target_link_libraries(${CMAKE_PROJECT_NAME}
         stm32cubemx
-
         # Add user defined libraries
 )
 #链接选项
@@ -166,7 +167,6 @@ target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
         ## 启用浮点数打印
         #        -Wl,-u,_printf_float
         #        -Wl,-u,_scanf_float
-
         #禁用内存分配
         -Wl,--wrap=malloc
         -Wl,--wrap=free
@@ -181,6 +181,23 @@ add_compile_definitions(
         $<$<CONFIG:Debug>:DEBUG_MODE>
         $<$<CONFIG:Release>:RELEASE_MODE>
 )
+# 检测是否是 GCC 或 Clang 编译器
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" OR CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    # 修正：移除 .elf 后缀，确保与 add_executable 中定义的名称一致
+    target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE
+            # 1. 生成分析文件
+            -fstack-usage            # 生成 .su 文件 (Stack Usage)
+            -fdump-ipa-cgraph        # 导出调用图 (GCC 特有)
+
+            # 2. 调试稳定性
+            -fno-omit-frame-pointer  # 保留帧指针
+            -fno-optimize-sibling-calls # 禁用尾调用优化
+
+            # 3. 堵死动态栈分配 (安全红线)
+            -Wvla -Werror=vla        # 严禁变长数组
+            -Walloca -Werror=alloca  # 严禁 alloca()
+    )
+endif()
 # --- 生成 .bin 和 .hex 文件 ---
 if (CMAKE_OBJCOPY)
     message(STATUS "Found objcopy: ${CMAKE_OBJCOPY}")
@@ -198,4 +215,18 @@ if (CMAKE_OBJCOPY)
             COMMENT "Printing size information")
 else ()
     message(WARNING "CMAKE_OBJCOPY is not set. .bin and .hex files will not be generated.")
+endif ()
+
+# --- Stack/Recursion audit target ---
+find_package(Python3 COMPONENTS Interpreter)
+if (Python3_Interpreter_FOUND)
+    add_custom_target(audit-stack
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/audit_stack.py
+            --build-dir ${CMAKE_BINARY_DIR}
+            --require-entry
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            COMMENT "Auditing recursion and worst-case stack paths (.cgraph + .su)"
+    )
+else ()
+    message(WARNING "Python3 interpreter not found; audit-stack target will be unavailable.")
 endif ()
