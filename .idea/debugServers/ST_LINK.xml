@@ -6,7 +6,7 @@
     </debugger>
     <gdbserver exe="C:\ST\STM32CubeCLT_1.19.0\STLink-gdb-server\bin\ST-LINK_gdbserver.exe" programmer="C:\ST\STM32CubeCLT_1.19.0\STM32CubeProgrammer\bin" />
     <st-link />
-    <device interface="SWD" reset-before="true" reset-after="false" verify="true" download-type="UPDATED_ONLY" />
+    <device interface="SWD" reset-before="true" reset-after="false" download-type="UPDATED_ONLY" />
     <connection extended-remote="false" port="61234" warmup-ms="500" />
     <swo port="61235" />
   </stlink-debug-target>
