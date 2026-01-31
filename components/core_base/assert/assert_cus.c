@@ -151,7 +151,7 @@ void Assert_ClearLastRecord(void) {
  */
 __WEAK void Assert_PlatformLog(const char* msg) {
     (void)msg;
-    /* 空 */
+    /* 空 不能调用叶子节点模块函数防止 回环递归*/
 }
 /**
  * @brief 系统软件复位
