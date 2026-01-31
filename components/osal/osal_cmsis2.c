@@ -4,7 +4,7 @@
 
 #if OSAL_BACKEND_CMSIS_OS2
 #include "blackbox_record.h"
-#include "cmsis_gcc.h" /*閵嗏偓閿涘尅浼巊et_IPSR */
+#include "cmsis_gcc.h" /* */
 #include "cmsis_os.h"
 #include "cmsis_os2.h"
 #include "hal_time.h"
@@ -261,12 +261,7 @@ void OSAL_exit_critical(void) {
         taskEXIT_CRITICAL();
         if (dur_us != 0u) {
             BB_UpdateMaxCriUs(dur_us);
-            if (dur_us > OSAL_CRITMON_THRESHOLD_US) {
-                g_critmon_exceed_cnt++;
-                LOG_W("CRITMON", "critical too long: %lu us, enter_pc=0x%08lX, cnt=%lu",
-                      (unsigned long)dur_us, (unsigned long)enter_pc,
-                      (unsigned long)g_critmon_exceed_cnt);
-            }
+            OSAL_FAULT(dur_us > OSAL_CRITMON_THRESHOLD_US);
         }
         return;
     }
@@ -280,12 +275,7 @@ void OSAL_exit_critical(void) {
         __set_PRIMASK(g_irq_saved_primask);
         if (dur_us != 0u) {
             BB_UpdateMaxCriUs(dur_us);
-            if (dur_us > OSAL_CRITMON_THRESHOLD_US) {
-                g_critmon_exceed_cnt++;
-                LOG_W("CRITMON", "critical too long: %lu us, enter_pc=0x%08lX, cnt=%lu",
-                      (unsigned long)dur_us, (unsigned long)enter_pc,
-                      (unsigned long)g_critmon_exceed_cnt);
-            }
+            OSAL_FAULT(dur_us > OSAL_CRITMON_THRESHOLD_US);
         }
         return;
     }
@@ -343,10 +333,7 @@ void OSAL_exit_critical_ex(osal_crit_state_t state) {
         taskEXIT_CRITICAL_FROM_ISR(s);
         if (dur_us != 0u) {
             BB_UpdateMaxCriUs(dur_us);
-            if (dur_us > OSAL_CRITMON_THRESHOLD_US) {
-                LOG_W("CRITMON", "critical too long: %lu us, enter_pc=0x%08lX",
-                      (unsigned long)dur_us, (unsigned long)enter_pc);
-            }
+            OSAL_FAULT(dur_us > OSAL_CRITMON_THRESHOLD_US);
         }
         return;
     }
@@ -356,10 +343,7 @@ void OSAL_exit_critical_ex(osal_crit_state_t state) {
         taskEXIT_CRITICAL();
         if (dur_us != 0u) {
             BB_UpdateMaxCriUs(dur_us);
-            if (dur_us > OSAL_CRITMON_THRESHOLD_US) {
-                LOG_W("CRITMON", "critical too long: %lu us, enter_pc=0x%08lX",
-                      (unsigned long)dur_us, (unsigned long)enter_pc);
-            }
+            OSAL_FAULT(dur_us > OSAL_CRITMON_THRESHOLD_US);
         }
         return;
     }
@@ -372,12 +356,7 @@ void OSAL_exit_critical_ex(osal_crit_state_t state) {
         __set_PRIMASK(((uint32_t)state) & 0x1UL);
         if (dur_us != 0u) {
             BB_UpdateMaxCriUs(dur_us);
-            if (dur_us > OSAL_CRITMON_THRESHOLD_US) {
-                g_critmon_exceed_cnt++;
-                LOG_W("CRITMON", "critical too long: %lu us, enter_pc=0x%08lX, cnt=%lu",
-                      (unsigned long)dur_us, (unsigned long)enter_pc,
-                      (unsigned long)g_critmon_exceed_cnt);
-            }
+            OSAL_FAULT(dur_us > OSAL_CRITMON_THRESHOLD_US);
         }
         return;
     }
@@ -422,12 +401,7 @@ void OSAL_exit_critical_from_isr(osal_crit_state_t state) {
         taskEXIT_CRITICAL_FROM_ISR((UBaseType_t)state);
         if (dur_us != 0u) {
             BB_UpdateMaxCriUs(dur_us);
-            if (dur_us > OSAL_CRITMON_THRESHOLD_US) {
-                g_critmon_exceed_cnt++;
-                LOG_W("CRITMON", "critical too long: %lu us, enter_pc=0x%08lX, cnt=%lu",
-                      (unsigned long)dur_us, (unsigned long)enter_pc,
-                      (unsigned long)g_critmon_exceed_cnt);
-            }
+            OSAL_FAULT(dur_us > OSAL_CRITMON_THRESHOLD_US);
         }
         return;
     }
@@ -438,12 +412,7 @@ void OSAL_exit_critical_from_isr(osal_crit_state_t state) {
     __set_PRIMASK((uint32_t)state);
     if (dur_us != 0u) {
         BB_UpdateMaxCriUs(dur_us);
-        if (dur_us > OSAL_CRITMON_THRESHOLD_US) {
-            g_critmon_exceed_cnt++;
-            LOG_W("CRITMON", "critical too long: %lu us, enter_pc=0x%08lX, cnt=%lu",
-                  (unsigned long)dur_us, (unsigned long)enter_pc,
-                  (unsigned long)g_critmon_exceed_cnt);
-        }
+        OSAL_FAULT(dur_us > OSAL_CRITMON_THRESHOLD_US);
     }
 }
 

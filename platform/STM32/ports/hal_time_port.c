@@ -104,7 +104,7 @@ uint32_t hal_get_tick_us32(void) {
     if (CORE_UNLIKELY(dwt_available == false)) {
         if (!dwt_fail_logged) {
             dwt_fail_logged = true;
-            LOG_E("DWT", "DWT启动失败，降级到 HAL_GetTick()*1000");
+            // 禁止底层调用叶子节点 LOG_E("DWT", "DWT启动失败，降级到 HAL_GetTick()*1000");
         }
         return hal_get_tick_ms() * 1000U;
     }
