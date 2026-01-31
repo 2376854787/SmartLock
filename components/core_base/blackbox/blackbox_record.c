@@ -13,7 +13,6 @@
 #include "stm32f4xx_hal.h"
 
 /* 配置宏：定义此宏使用备份SRAM (0x40024000)，否则使用 .noinit 段 (SRAM1/2) */
-/* 建议在 CMakeLists.txt 或 config.h 中定义，这里默认开启以解决复位清除问题 */
 #define CONFIG_BLACKBOX_USE_BKPSRAM 1
 
 #ifndef CORE_BUILD_ID
@@ -29,7 +28,6 @@
 #define BKPSRAM_BASE 0x40024000UL
 
 /* 为了方便调试器查看，定义一个具体的指针变量，在 Watch 中添加 *g_bb_debug_ptr 即可查看内容 */
-/* CORE_USED 确保编译器保留该符号，且不报 warning */
 CORE_USED volatile blackbox_record_t* const g_bb_debug_ptr =
     (volatile blackbox_record_t*)BKPSRAM_BASE;
 
@@ -93,7 +91,7 @@ void BB_Clear(void) {
 void BB_OnBootUpdateResetReason(void) {
     BB_EnableAccess();
 
-    /* 调试诊断变量：请在断点处查看这些值 */
+    /* 调试诊断变量：在断点处查看这些值 */
     volatile uint32_t debug_raw_magic = g_bb.magic;
     volatile uint32_t debug_raw_csr   = RCC->CSR;
     (void)debug_raw_magic;

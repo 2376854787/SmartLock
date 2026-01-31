@@ -1,17 +1,12 @@
-//
-// Created by yan on 2025/12/20.
-//
-
 #ifndef SMARTLOCK_COMPILER_CUS_H
 #define SMARTLOCK_COMPILER_CUS_H
 
 #ifdef __cplusplus
 extern "C" {
-
-
+#endif
+#if defined(__arm__) || defined(__aarch64__)
 
 #endif
-
 /* ================= Compiler detection =================
  * Support: GCC/Clang, ARMCLANG, ARMCC5, IAR
  */
@@ -56,7 +51,7 @@ extern "C" {
 #define   CORE_LIKELY(x)       __builtin_expect(!!(x), 1)                           /* 更可能为真 */
 #define   CORE_UNLIKELY(x)     __builtin_expect(!!(x), 0)                           /* 更可能为假 */
 #define   CORE_BARRIER()       __asm volatile ("" ::: "memory")                     /* 空编译指令  但带“memory” 内存可能被改不能把内存读写重排穿过它 */
-
+#define   CORE_NAKED           __attribute__((naked))
 #elif defined(COMPILER_ARMCC5)
 #define __INLINE          static __inline
 #define __CORE_INLINE     __inline

@@ -17,6 +17,6 @@ void Assert_PlatformReset(void) {
  * @param msg 消息来源
  */
 void Assert_PlatformLog(const char* msg) {
-    LOG_E("Assert", msg);
+    //会造成递归等待之后修复调用RAW  LOG_E("Assert", msg);
 }
 #endif
