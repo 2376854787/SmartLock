@@ -33,7 +33,7 @@ void FaultCapture_FromStack_cm(uint32_t* sp, bb_crash_type_t type) {
     ctx.sp    = (uint32_t)(uintptr_t)sp;
     ctx.psr   = sp[STACK_FRAME_PSR];
 
-    /* SCB fault registers (Cortex-M) */
+    /* SCB 错误寄存器 */
     ctx.cfsr  = SCB->CFSR;
     ctx.hfsr  = SCB->HFSR;
     ctx.dfsr  = SCB->DFSR;

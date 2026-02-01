@@ -5,11 +5,12 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "barrier.h"
 #include "cmsis_os2.h"
 #include "log.h"
 #include "osal.h"
 #include "stm32f4xx.h"
-#include "stm32f4xx_hal.h" /* 閸欘垯浜掗弴瀛樻暭娑撳秴鎮撶化璇插灙 */
+#include "stm32f4xx_hal.h"
 #include "utils_def.h"
 /* dwt初始化标志位 */
 static bool dwt_inited      = false;
@@ -27,8 +28,8 @@ static void dwt_init_once(void) {
     BIT_SET(CoreDebug->DEMCR, 24);  // 使能DWT外设
     DWT->CYCCNT = 0;
     BIT_SET(DWT->CTRL, 0);
-    __DSB();
-    __ISB();
+    mem_barrier();
+    inst_barrier();
     cycles_per_us = SystemCoreClock / 1000000U;
 }
 
@@ -70,7 +71,7 @@ uint32_t hal_get_tick_us32(void) {
          */
         const uint32_t primask = __get_PRIMASK();
         __disable_irq();
-        __DMB();
+        mem_barrier();
         /* 没有初始化 DWT 初始化 */
         if (dwt_inited == false) {
             dwt_init_in_progress = true; /* 设置守卫：防止递归 */
@@ -95,9 +96,9 @@ uint32_t hal_get_tick_us32(void) {
 
             dwt_inited           = true;
             dwt_init_in_progress = false; /* 清除守卫 */
-            __DMB();                      /* 写入 flags 后的可见性/顺序 */
+            mem_barrier();                /* 写入 flags 后的可见性/顺序 */
         }
-        __DMB();
+        mem_barrier();
         __set_PRIMASK(primask);
     }
     /* 运行失败退化为 hal _get_tick_ms() *1000 */
