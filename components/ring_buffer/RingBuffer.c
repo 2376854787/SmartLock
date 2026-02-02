@@ -6,10 +6,9 @@
 
 #include "MemoryAllocation.h"
 #include "RingBuffer.h"
+#include "barrier.h"
 #include "rb_port.h"
-
 /* 状态错误状态码打包宏 */
-
 #define RB_RET(clas_, err_) RET_MAKE(RET_MOD_RB, RET_SUB_RB_CORE, RET_CODE_MAKE((clas_), (err_)))
 
 /* 统一参数校验宏 */
@@ -26,11 +25,11 @@
     } while (0)
 
 /**
- * @brief         将数据入队/出队后的位置更新
- * @param rb      RB句柄
+ * @brief 将数据入队/出队后的位置更新
+ * @param rb RB句柄
  * @param current 当前位置
- * @param step    想要入队或者出队的步进数
- * @return        返回新的所引位置
+ * @param step 想要入队或者出队的步进数
+ * @return 返回新的所引位置
  */
 static inline uint32_t RB_NextIndex(const RingBuffer* rb, uint32_t current, uint32_t step) {
     if (rb->isPowerOfTwo_Size) {
@@ -40,9 +39,9 @@ static inline uint32_t RB_NextIndex(const RingBuffer* rb, uint32_t current, uint
 }
 
 /**
- * @brief    内部辅助函数计算当前RB空间使用了多少字节
+ * @brief 内部辅助函数计算当前RB空间使用了多少字节
  * @param rb RB句柄
- * @return   使用的字节数
+ * @return 使用的字节数
  */
 static inline uint32_t RB_GetUsed_Core(const RingBuffer* rb) {
     if (rb->isPowerOfTwo_Size) {
@@ -52,9 +51,9 @@ static inline uint32_t RB_GetUsed_Core(const RingBuffer* rb) {
 }
 
 /**
- * @brief    计算内部可使用的字节数
+ * @brief 计算内部可使用的字节数
  * @param rb RB句柄
- * @return   内部可使用的字节数
+ * @return 内部可使用的字节数
  */
 static inline uint32_t RB_GetRemain_Core(const RingBuffer* rb) {
     return rb->size - RB_GetUsed_Core(rb) - 1;
@@ -63,12 +62,15 @@ static inline uint32_t RB_GetRemain_Core(const RingBuffer* rb) {
 /**
  * @brief 内部写
  * @param rb RB句柄
- * @param add 需要写多少字节数
- * @param size 实际上写入的字节数
+ * @param add 数据源
+ * @param size 输入： 需要写多少字节数 输出：实际上写入的字节数
  * @param isForce true 有多少空间写多少 false 必须能全部写入才写入
+ * @param isSPSC true SPSC模式 内部函数使用内存屏障保护 外部函数不能使用临界区 false 普通RB
+ * 需要外部函数加临界区
  * @return 状态码
  */
-static ret_code_t RB_Write_Logic(RingBuffer* rb, const uint8_t* add, uint32_t* size, bool isForce) {
+static ret_code_t RB_Write_Logic(RingBuffer* rb, const uint8_t* add, uint32_t* size, bool isForce,
+                                 bool isSPSC) {
     const uint32_t remain = RB_GetRemain_Core(rb);
 
     if (remain < *size) {
@@ -86,21 +88,29 @@ static ret_code_t RB_Write_Logic(RingBuffer* rb, const uint8_t* add, uint32_t* s
         memcpy(rb->buffer + rb->rear_index, add, end_size);
         memcpy(rb->buffer, add + end_size, *size - end_size);
     }
+    /* SPSC 模式 */
+    if (isSPSC) {
+        compiler_barrier();
+        mem_barrier();
+    }
     rb->rear_index = RB_NextIndex(rb, rb->rear_index, *size);
+
     return RET_OK;
 }
 
 /**
  * @brief 内部读取数据
  * @param rb RB句柄
- * @param add 想要读取的大小
- * @param size 实际上读取的大小
+ * @param add 数据存储地址
+ * @param size 输入： 需要写多少字节数 输出：实际上写入的字节数
  * @param isForce true 有多少读多少 false 在有想要的数据大小数才读取
  * @param isPeek  true 读取后但是不消耗数据 false 读取后消耗数据
+ * @param isSPSC  true SPSC模式 内部函数使用内存屏障保护 外部函数不能使用临界区 false 普通RB
+ * 需要外部函数加临界区
  * @return 状态码
  */
 static ret_code_t RB_Read_Logic(RingBuffer* rb, uint8_t* add, uint32_t* size, bool isForce,
-                                bool isPeek) {
+                                bool isPeek, bool isSPSC) {
     const uint32_t used = RB_GetUsed_Core(rb);
 
     if (used < *size) {
@@ -118,7 +128,11 @@ static ret_code_t RB_Read_Logic(RingBuffer* rb, uint8_t* add, uint32_t* size, bo
         memcpy(add, rb->buffer + rb->front_index, end_size);
         memcpy(add + end_size, rb->buffer, *size - end_size);
     }
-
+    /* SPSC 模式 */
+    if (isSPSC) {
+        compiler_barrier();
+        mem_barrier();
+    }
     if (!isPeek) {
         rb->front_index = RB_NextIndex(rb, rb->front_index, *size);
     }
@@ -126,7 +140,6 @@ static ret_code_t RB_Read_Logic(RingBuffer* rb, uint8_t* add, uint32_t* size, bo
 }
 
 /**
- *
  * @param rb RB句柄
  * @param want 想要读写的数据大小
  * @param out  输出可以读写的窗口数据结构体指针
@@ -282,8 +295,8 @@ uint32_t RingBuffer_GetRemainSizeFromISR(const RingBuffer* rb) {
 /**
  * @brief 线程版 写入数据到 RB
  * @param rb RB句柄
- * @param add 想要添加的字节数
- * @param size 实际添加的字节数
+ * @param add 数据源
+ * @param size 输入： 需要写多少字节数 输出：实际上写入的字节数
  * @param isForceWrite true 有多少空间就写多少数据 false 必须全部能够装下才能写入
  * @return 32位分段状态码
  */
@@ -291,15 +304,15 @@ ret_code_t WriteRingBuffer(RingBuffer* rb, const uint8_t* add, uint32_t* size,
                            const uint8_t isForceWrite) {
     RB_CHECK_ARGS(rb, add, size);
     RB_ENTER_CRITICAL();
-    const ret_code_t ret = RB_Write_Logic(rb, add, size, isForceWrite);
+    const ret_code_t ret = RB_Write_Logic(rb, add, size, isForceWrite, false);
     RB_EXIT_CRITICAL();
     return ret;
 }
 /**
  * @brief 中断版 写入数据到 RB
  * @param rb RB句柄
- * @param add 想要添加的字节数
- * @param size 实际添加的字节数
+ * @param add 数据源
+ * @param size 输入： 需要写多少字节数 输出：实际上写入的字节数
  * @param isForceWrite true 有多少空间就写多少数据 false 必须全部能够装下才能写入
  * @return 32位分段状态码
  */
@@ -308,7 +321,7 @@ ret_code_t WriteRingBufferFromISR(RingBuffer* rb, const uint8_t* add, uint32_t* 
     RB_CHECK_ARGS(rb, add, size);
     rb_isr_state_t saved;
     RB_ENTER_CRITICAL_FROM_ISR(saved);
-    const ret_code_t ret = RB_Write_Logic(rb, add, size, isForceWrite);
+    const ret_code_t ret = RB_Write_Logic(rb, add, size, isForceWrite, false);
     RB_EXIT_CRITICAL_FROM_ISR(saved);
     return ret;
 }
@@ -316,23 +329,23 @@ ret_code_t WriteRingBufferFromISR(RingBuffer* rb, const uint8_t* add, uint32_t* 
 /**
  * @brief 线程版 读取 RB 数据
  * @param rb RB句柄
- * @param add 想要读取的字节数
- * @param size 实际读取的字计数
+ * @param add 数据输出储存地址
+ * @param size 输入： 需要读多少字节数 输出：实际上读的字节数
  * @param isForceRead true 在数据不够时有多少读多少 false 必须有足够数据才读取
  * @return 32位分段状态码
  */
 ret_code_t ReadRingBuffer(RingBuffer* rb, uint8_t* add, uint32_t* size, const uint8_t isForceRead) {
     RB_CHECK_ARGS(rb, add, size);
     RB_ENTER_CRITICAL();
-    const ret_code_t ret = RB_Read_Logic(rb, add, size, isForceRead, false);
+    const ret_code_t ret = RB_Read_Logic(rb, add, size, isForceRead, false, false);
     RB_EXIT_CRITICAL();
     return ret;
 }
 /**
  * @brief 中断版 读取 RB 数据
  * @param rb RB句柄
- * @param add 想要读取的字节数
- * @param size 实际读取的字计数
+ * @param add 数据输出存储地址
+ * @param size 输入： 需要读多少字节数 输出：实际上读的字节数
  * @param isForceRead true 在数据不够时有多少读多少 false 必须有足够数据才读取
  * @return 32位分段状态码
  */
@@ -341,7 +354,7 @@ ret_code_t ReadRingBufferFromISR(RingBuffer* rb, uint8_t* add, uint32_t* size,
     RB_CHECK_ARGS(rb, add, size);
     rb_isr_state_t saved;
     RB_ENTER_CRITICAL_FROM_ISR(saved);
-    const ret_code_t ret = RB_Read_Logic(rb, add, size, isForceRead, false);
+    const ret_code_t ret = RB_Read_Logic(rb, add, size, isForceRead, false, false);
     RB_EXIT_CRITICAL_FROM_ISR(saved);
     return ret;
 }
@@ -349,18 +362,17 @@ ret_code_t ReadRingBufferFromISR(RingBuffer* rb, uint8_t* add, uint32_t* size,
 /**
  * @brief 线程版 窥视 RB 数据 但是不消耗数据
  * @param rb RB句柄
- * @param add 想要读取的字节数
- * @param size 实际读取的字计数
+ * @param add 数据输出存储地址
+ * @param size 输入： 需要读多少字节数 输出：实际上读的字节数
  * @param isForcePeek true 在数据不够时有多少读多少 false 必须有足够数据才读取
  * @return 32位分段状态码
  */
 ret_code_t PeekRingBuffer(const RingBuffer* rb, uint8_t* add, uint32_t* size,
                           const uint8_t isForcePeek) {
     RB_CHECK_ARGS(rb, add, size);
-    // Cast away const specifically for lock (standard practice)
     RingBuffer* rb_mut = (RingBuffer*)rb;
     RB_ENTER_CRITICAL();
-    const ret_code_t ret = RB_Read_Logic(rb_mut, add, size, isForcePeek, true);
+    const ret_code_t ret = RB_Read_Logic(rb_mut, add, size, isForcePeek, true, false);
     RB_EXIT_CRITICAL();
     return ret;
 }
@@ -478,7 +490,7 @@ ret_code_t RingBuffer_WriteCommitFromISR(RingBuffer* rb, uint32_t commit) {
  * @param rb RB句柄
  * @param want 想要申请的空间
  * @param out 保存申请空间的相关信息
- * @param granted 时机批准的大小
+ * @param granted 实际批准的大小
  * @param isCompatible true 有多少批准多少 false 必须有足够的空间才批准
  * @return 状态码
  */
@@ -496,7 +508,7 @@ ret_code_t RingBuffer_ReadReserve(RingBuffer* rb, uint32_t want, RingBufferSpan*
  * @param rb RB句柄
  * @param want 想要申请的空间
  * @param out 保存申请空间的相关信息
- * @param granted 时机批准的大小
+ * @param granted 实际批准的大小
  * @param isCompatible true 有多少批准多少 false 必须有足够的空间才批准
  * @return 状态码
  */
@@ -600,5 +612,107 @@ ret_code_t RingBuffer_DropFromISR(RingBuffer* rb, uint32_t drop, uint32_t* dropp
     RB_EXIT_CRITICAL_FROM_ISR(saved);
     return ret;
 }
+/**============================================================================================ */
+/**==================================       SPSC          ===================================== */
+/**============================================================================================ */
+/* */
+/**
+ * @brief SPSC版 写入数据到 RB
+ * @param rb RB句柄
+ * @param add 数据源
+ * @param size 输入： 需要写多少字节数 输出：实际上写入的字节数
+ * @param isForceWrite true 有多少空间就写多少数据 false 必须全部能够装下才能写入
+ * @return 32位分段状态码
+ */
+ret_code_t WriteRingBuffer_SPSC(RingBuffer* rb, const uint8_t* add, uint32_t* size,
+                                uint8_t isForceWrite) {
+    RB_CHECK_ARGS(rb, add, size);
+    return RB_Write_Logic(rb, add, size, isForceWrite, true);
+}
+/**
+ * @brief SPSC版 从RB 读取数据到 add
+ * @param rb RB句柄
+ * @param add 数据存储地址
+ * @param size 输入： 需要读多少字节数 输出：实际上读的字节数
+ * @param isForceRead  true 有多少空间就写多少数据 false 必须全部能够装下才能写入
+ * @return 32位分段状态码
+ */
+ret_code_t ReadRingBuffer_SPSC(RingBuffer* rb, uint8_t* add, uint32_t* size, uint8_t isForceRead) {
+    RB_CHECK_ARGS(rb, add, size);
+    return RB_Read_Logic(rb, add, size, isForceRead, false, true);
+}
+/**
+ * @brief SPSC版 从RB 读取数据到 add
+ * @param rb RB句柄
+ * @param add 数据存储地址
+ * @param size 输入： 需要读多少字节数 输出：实际上读的字节数
+ * @param isForcePeek  true 有多少空间就写多少数据 false 必须全部能够装下才能写入
+ * @return 32位分段状态码
+ */
+ret_code_t PeekRingBuffer_SPSC(const RingBuffer* rb, uint8_t* add, uint32_t* size,
+                               uint8_t isForcePeek) {
+    RB_CHECK_ARGS(rb, add, size);
+    return RB_Read_Logic((RingBuffer*)rb, add, size, isForcePeek, true, true);
+}
+/**
+ * @brief 获取所需空间大小的 相干信息
+ * @param rb RB句柄
+ * @param want 想要写入的数据空间大小 字节
+ * @param out  返回的空间信息
+ * @param granted 实际返回的空间大小
+ * @param isCompatible true 空间不足返回全部 false 空间不足返回 0
+ * @return 32位分段状态码
+ */
+ret_code_t RingBuffer_WriteReserve_SPSC(RingBuffer* rb, uint32_t want, RingBufferSpan* out,
+                                        uint32_t* granted, bool isCompatible) {
+    if (!rb || !out || !granted || !rb->buffer || rb->size < 2)
+        return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    return RB_Reserve_Logic(rb, want, out, granted, isCompatible, true);
+}
 
+/**
+ * @brief 将写入的字节数 索引移动
+ * @param rb RB 句柄
+ * @param commit 需要提交的字节数
+ * @return 32位状态码
+ */
+ret_code_t RingBuffer_WriteCommit_SPSC(RingBuffer* rb, uint32_t commit) {
+    compiler_barrier();
+    mem_barrier();
+    const uint32_t remain = RB_GetRemain_Core(rb);
+    if (commit > remain) return RB_RET(RET_CLASS_RESOURCE, RET_R_NO_MEM);
+    rb->rear_index = RB_NextIndex(rb, rb->rear_index, commit);
+    return RET_OK;
+}
+
+/**
+ * @brief 获取所需空间大小的 相干信息
+ * @param rb RB句柄
+ * @param want 想要读取的数据空间大小 字节
+ * @param out  返回的空间信息
+ * @param granted 实际返回的空间大小
+ * @param isCompatible true 空间不足返回全部 false 空间不足返回 0
+ * @return 32位分段状态码
+ */
+ret_code_t RingBuffer_ReadReserve_SPSC(RingBuffer* rb, uint32_t want, RingBufferSpan* out,
+                                       uint32_t* granted, bool isCompatible) {
+    if (!rb || !out || !granted || !rb->buffer || rb->size < 2)
+        return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    return RB_Reserve_Logic(rb, want, out, granted, isCompatible, false);
+}
+
+/**
+ * @brief 将读取的字节数 索引移动
+ * @param rb RB 句柄
+ * @param commit 需要提交的字节数
+ * @return 32位状态码
+ */
+ret_code_t RingBuffer_ReadCommit_SPSC(RingBuffer* rb, uint32_t commit) {
+    compiler_barrier();
+    mem_barrier();
+    const uint32_t used = RB_GetUsed_Core(rb);
+    if (commit > used) return RB_RET(RET_CLASS_DATA, RET_R_DATA_NOT_ENOUGH);
+    rb->front_index = RB_NextIndex(rb, rb->front_index, commit);
+    return RET_OK;
+}
 #endif

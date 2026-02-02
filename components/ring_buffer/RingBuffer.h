@@ -15,7 +15,7 @@ typedef struct {
     const char *name;
     volatile uint32_t rear_index;   // 表示可以添加数据的头地址
     volatile uint32_t front_index;  // 表示可以被删除的头地址
-    volatile uint32_t size;         // 缓冲区大小
+    uint32_t size;                  // 缓冲区大小
     uint8_t *buffer;                // 缓冲区头地址
     bool isPowerOfTwo_Size;
 } RingBuffer;
@@ -80,5 +80,18 @@ ret_code_t RingBuffer_Drop(RingBuffer *rb, uint32_t drop, uint32_t *dropped, boo
 
 ret_code_t RingBuffer_DropFromISR(RingBuffer *rb, uint32_t drop, uint32_t *dropped,
                                   bool isCompatible);
-
+/**============================================================================================ */
+/**==================================       SPSC          ===================================== */
+/**============================================================================================ */
+ret_code_t WriteRingBuffer_SPSC(RingBuffer *rb, const uint8_t *add, uint32_t *size,
+                                uint8_t isForceWrite);
+ret_code_t ReadRingBuffer_SPSC(RingBuffer *rb, uint8_t *add, uint32_t *size, uint8_t isForceRead);
+ret_code_t PeekRingBuffer_SPSC(const RingBuffer *rb, uint8_t *add, uint32_t *size,
+                               uint8_t isForcePeek);
+ret_code_t RingBuffer_WriteReserve_SPSC(RingBuffer *rb, uint32_t want, RingBufferSpan *out,
+                                        uint32_t *granted, bool isCompatible);
+ret_code_t RingBuffer_WriteCommit_SPSC(RingBuffer *rb, uint32_t commit);
+ret_code_t RingBuffer_ReadReserve_SPSC(RingBuffer *rb, uint32_t want, RingBufferSpan *out,
+                                       uint32_t *granted, bool isCompatible);
+ret_code_t RingBuffer_ReadCommit_SPSC(RingBuffer *rb, uint32_t commit);
 #endif  // RINGBUFFER_H
