@@ -199,7 +199,7 @@ static void assert_log_common(const char* expr, const char* file, const char* fu
 }
 
 /**
- * 新增：带等级的断言入口
+ *   带等级的断言入口
  * - RECOVER：只记录/打印然后返回（用于 REQUIRE_RET / REQUIRE_GOTO 语义）
  * - FATAL：Release 强制 reset/halt（不允许 LOG_ONLY 带病运行）
  * - NORMAL：按 g_cfg.action 执行
