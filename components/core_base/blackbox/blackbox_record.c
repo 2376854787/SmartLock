@@ -10,6 +10,9 @@
 #define CORE_BUILD_ID 0u
 #endif
 
+#include <stdio.h>
+
+#include "log.h"
 #include "stm32f4xx_hal.h"
 
 /* 配置宏：定义此宏使用备份SRAM (0x40024000)，否则使用 .noinit 段 (SRAM1/2) */
@@ -86,28 +89,51 @@ void BB_Clear(void) {
 }
 
 /**
- * @brief 更新 Reset原因以及 清除标志位
+ * @brief 仅清除崩溃信息（crash_type 和相关寄存器）
+ * @note  在 App 成功读取并上报崩溃日志后调用
+ */
+void BB_ClearCrashInfo(void) {
+    BB_EnableAccess();
+    g_bb.crash_type = BB_CRASH_NONE;
+    g_bb.pc         = 0;
+    g_bb.lr         = 0;
+    g_bb.sp         = 0;
+    g_bb.psr        = 0;
+    g_bb.cfsr       = 0;
+    g_bb.hfsr       = 0;
+    g_bb.dfsr       = 0;
+    g_bb.mmfar      = 0;
+    g_bb.bfar       = 0;
+    g_bb.afsr       = 0;
+}
+
+/**
+ * @brief 更新 Reset原因以及清除标志位
+ * @note  App 全权负责 blackbox 数据读写
  */
 void BB_OnBootUpdateResetReason(void) {
     BB_EnableAccess();
 
     /* 调试诊断变量：在断点处查看这些值 */
-    volatile uint32_t debug_raw_magic = g_bb.magic;
-    volatile uint32_t debug_raw_csr   = RCC->CSR;
+    const volatile uint32_t debug_raw_magic = g_bb.magic;
+    const volatile uint32_t debug_raw_csr   = RCC->CSR;
     (void)debug_raw_magic;
     (void)debug_raw_csr;
 
     if (g_bb.version != BLACK_BOX_VERSION || g_bb.magic != BLACK_BOX_MAGIC) {
+        /* 首次启动或数据损坏：完全初始化 */
         g_bb.magic          = BLACK_BOX_MAGIC;
         g_bb.version        = BLACK_BOX_VERSION;
         g_bb.boot_count     = 0u;
         g_bb.max_crit_us    = 0u;
         g_bb.min_stack_free = UINT32_MAX;
+        g_bb.crash_type     = BB_CRASH_NONE;
     }
-    g_bb.boot_count++;
-    g_bb.build_id     = (uint32_t)CORE_BUILD_ID;
+    /* 始终读取 reset_reason 并清除 CSR flags */
     g_bb.reset_reason = (uint32_t)BB_Port_ReadResetReasonAndClearFlags();
-    g_bb.crash_type   = BB_CRASH_NONE;
+    g_bb.boot_count++;
+    g_bb.build_id = (uint32_t)CORE_BUILD_ID;
+    /* 注意：不清除 crash_type，由上层决定何时清除 */
 }
 
 /**
@@ -153,7 +179,7 @@ void BB_RecordFault(bb_crash_type_t type, uint32_t pc, uint32_t lr, uint32_t sp,
     g_bb.mmfar        = mmfar;
     g_bb.bfar         = bfsr;
     g_bb.afsr         = afsr;
-    g_bb.reset_reason = (uint32_t)BB_CRASH_HARDFAULT;
+    g_bb.reset_reason = (uint32_t)type;
 }
 /**
  * @brief 保存当前运行的状态机的句柄地址和状态
@@ -179,4 +205,17 @@ void BB_UpdateMaxCriUs(uint32_t us) {
  */
 void BB_UpdateMinStackFree(uint32_t bytes) {
     if (bytes < g_bb.min_stack_free) g_bb.min_stack_free = bytes;
+}
+
+/**
+ * @brief 上电打印可能会有的错误信息
+ */
+void BB_Info_Printf() {
+    BB_EnableAccess(); /* 必须先使能 Backup SRAM 访问 */
+    printf(
+        "复位原因: 0x%08X,  崩溃原因: %d\r\n"
+        "PC: 0x%08X, LR: 0x%08X\r\n"
+        "SP: 0x%08X, PSR: 0x%08X\r\n",
+        (unsigned int)g_bb.reset_reason, (unsigned int)g_bb.crash_type, (unsigned int)g_bb.pc,
+        (unsigned int)g_bb.lr, (unsigned int)g_bb.sp, (unsigned int)g_bb.psr);
 }

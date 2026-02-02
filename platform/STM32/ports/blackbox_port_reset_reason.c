@@ -105,7 +105,7 @@
 #define BB_FLAG_POR_RSR (0u)
 #endif
 /* ===================== 读原因 + 清 flags ===================== */
- bb_reset_reason_t BB_Port_ReadResetReasonAndClearFlags(void) {
+bb_reset_reason_t BB_Port_ReadResetReasonAndClearFlags(void) {
     bb_reset_reason_t reason = BB_RESET_UNKNOW;
 
     /* 1) 读 flags */
@@ -113,7 +113,7 @@
     /* H7：Reset Status Register (RSR) */
     const uint32_t f = RCC->RSR;
 
-    /* 2) 选一个“主因”（flags 可能多位同时置位，按优先级归因） */
+    /* 2) 选一个"主因"（flags 可能多位同时置位，按优先级归因） */
     if ((BB_FLAG_WWDG_RSR != 0u) && (f & BB_FLAG_WWDG_RSR))
         reason = BB_RESET_WWDG;
     else if ((BB_FLAG_IWDG_RSR != 0u) && (f & BB_FLAG_IWDG_RSR))
@@ -129,7 +129,7 @@
     else if ((BB_FLAG_POR_RSR != 0u) && (f & BB_FLAG_POR_RSR))
         reason = BB_RESET_POR;
 
-    /* 3) 清 flags：写 RMVF（H7 的 RSR 也通过 RMVF 清除）:contentReference[oaicite:3]{index=3} */
+    /* 3) 清 flags：写 RMVF（H7 的 RSR 也通过 RMVF 清除）*/
     RCC->RSR |= RCC_RSR_RMVF;
 
 #else
@@ -140,21 +140,20 @@
         reason = BB_RESET_WWDG;
     } else if ((BB_FLAG_IWDG_CSR != 0u) && (f & BB_FLAG_IWDG_CSR)) {
         reason = BB_RESET_IWDG;
-    } else if ((BB_FLAG_SOFT_CSR != 0u) && (f & BB_FLAG_SOFT_CSR))
-    {  reason = BB_RESET_SOFT;}
-    else if ((BB_FLAG_LPWR_CSR != 0u) && (f & BB_FLAG_LPWR_CSR))
-      {  reason = BB_RESET_LPWR;}
-    else if ((BB_FLAG_PIN_CSR != 0u) && (f & BB_FLAG_PIN_CSR))
-       { reason = BB_RESET_PIN;}
-    else if ((BB_FLAG_BOR_CSR != 0u) && (f & BB_FLAG_BOR_CSR))
-      {  reason = BB_RESET_BOR;}
-    else if ((BB_FLAG_POR_CSR != 0u) && (f & BB_FLAG_POR_CSR))
-       { reason = BB_RESET_POR;}
-    else if ((BB_FLAG_OBL_CSR != 0u) && (f & BB_FLAG_OBL_CSR))
-       {
-        reason = BB_RESET_SOFT; }/* 也可单独加 OBL 枚举 */
-
-    /* 清 flags：推荐 |=，避免影响保留位 :contentReference[oaicite:4]{index=4} */
+    } else if ((BB_FLAG_SOFT_CSR != 0u) && (f & BB_FLAG_SOFT_CSR)) {
+        reason = BB_RESET_SOFT;
+    } else if ((BB_FLAG_LPWR_CSR != 0u) && (f & BB_FLAG_LPWR_CSR)) {
+        reason = BB_RESET_LPWR;
+    } else if ((BB_FLAG_PIN_CSR != 0u) && (f & BB_FLAG_PIN_CSR)) {
+        reason = BB_RESET_PIN;
+    } else if ((BB_FLAG_BOR_CSR != 0u) && (f & BB_FLAG_BOR_CSR)) {
+        reason = BB_RESET_BOR;
+    } else if ((BB_FLAG_POR_CSR != 0u) && (f & BB_FLAG_POR_CSR)) {
+        reason = BB_RESET_POR;
+    } else if ((BB_FLAG_OBL_CSR != 0u) && (f & BB_FLAG_OBL_CSR)) {
+        reason = BB_RESET_SOFT; /* 也可单独加 OBL 枚举 */
+    }
+    /* 清 flags：推荐 |=，避免影响保留位 */
     RCC->CSR |= RCC_CSR_RMVF;
 #endif
 

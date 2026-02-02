@@ -2,21 +2,23 @@
 #define SMARTLOCK_BLACK_BOX_RECORDE_H
 #include <stdint.h>
 
-
 #define BLACK_BOX_MAGIC   0xB10C1B00u
 #define BLACK_BOX_VERSION 0x00010001u
 /* 重启原因枚举 */
 typedef enum {
     BB_RESET_UNKNOW = 0,
-    BB_RESET_POR,  /* Power-On Reset */
-    BB_RESET_PIN,  /* Reset按钮 */
-    BB_RESET_SOFT, /* 软件复位 */
+    BB_RESET_ASSERT,     /* 断言失败 */
+    BB_RESET_HARDFAULT,  /* 硬错误 */
+    BB_RESET_MEMMANAGE,  /* 内存管理错误 MPU */
+    BB_RESET_BUSFAULT,   /* 总线错误 */
+    BB_RESET_USAGEFAULT, /* 用法错误 */
+    BB_RESET_POR,        /* Power-On Reset */
+    BB_RESET_PIN,        /* Reset按钮 */
+    BB_RESET_SOFT,       /* 软件复位 */
     BB_RESET_IWDG,
     BB_RESET_WWDG,
-    BB_RESET_BOR,       /* Brown-Out Reset 欠压复位*/
-    BB_RESET_LPWR,      /* Low Power 低功耗唤醒复位*/
-    BB_RESET_HARDFAULT, /* 硬件错误复位 */
-
+    BB_RESET_BOR,  /* Brown-Out Reset 欠压复位*/
+    BB_RESET_LPWR, /* Low Power 低功耗唤醒复位*/
 } bb_reset_reason_t;
 /* 崩溃原因枚举 */
 typedef enum {
@@ -64,17 +66,18 @@ typedef struct {
 
 const blackbox_record_t* BB_Get(void);
 void BB_Clear(void);
+void BB_ClearCrashInfo(void); /* 仅清除崩溃信息，上报日志后调用 */
 /* 启动调用 读取并清除 MCU reset flags,写入 reset_reason */
 void BB_OnBootUpdateResetReason(void);
 /* Assert/Fault 调用 写入crash 上下文 */
 void BB_RecordAssert(uint32_t pc, uint32_t lr, uint32_t sp, uint32_t psr);
 void BB_RecordFault(bb_crash_type_t type, uint32_t pc, uint32_t lr, uint32_t sp, uint32_t psr,
-                     uint32_t cfsr, uint32_t hfsr, uint32_t dfsr, uint32_t mmfar, uint32_t bfsr,
-                     uint32_t afsr);
+                    uint32_t cfsr, uint32_t hfsr, uint32_t dfsr, uint32_t mmfar, uint32_t bfsr,
+                    uint32_t afsr);
 /* HFSM 由 Transition 钩子更新 */
 void BB_RecordFsm(uint32_t fsm_ptr, uint32_t state_ptr);
 /* 中断时间/栈剩余字节数 */
 void BB_UpdateMaxCriUs(uint32_t us);
 void BB_UpdateMinStackFree(uint32_t bytes);
-
+void BB_Info_Printf();
 #endif  // SMARTLOCK_BLACK_BOX_RECORDE_H
