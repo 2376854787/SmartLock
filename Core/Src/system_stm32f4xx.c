@@ -108,7 +108,7 @@
 #endif         /* VECT_TAB_SRAM */
 #if !defined(VECT_TAB_OFFSET)
 #define VECT_TAB_OFFSET                         \
-    0x00020000U /*!< Vector Table offset field. \
+    0x00020400U /*!< Vector Table offset field. \
                      This value must be a multiple of 0x200. */
 #endif          /* VECT_TAB_OFFSET */
 #endif          /* USER_VECT_TAB_ADDRESS */
@@ -723,7 +723,7 @@ void SystemInit_ExtMemCtl(void) {
 
 #endif /* DATA_IN_ExtSRAM */
 #endif /* STM32F405xx || STM32F415xx || STM32F407xx || STM32F417xx || STM32F427xx || STM32F437xx \
-          || STM32F429xx || STM32F439xx || STM32F469xx || STM32F479xx || STM32F412Zx ||                      \
+          || STM32F429xx || STM32F439xx || STM32F469xx || STM32F479xx || STM32F412Zx ||          \
           STM32F412Vx  */
     (void)(tmp);
 }
