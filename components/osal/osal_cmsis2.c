@@ -15,10 +15,9 @@
 #define OSAL_CRITMON_THRESHOLD_US 50u
 #endif
 
-static uint32_t g_critmon_start_us   = 0u;
-static uint32_t g_critmon_nest       = 0u;
-static uint32_t g_critmon_enter_pc   = 0u;
-static uint32_t g_critmon_exceed_cnt = 0u;
+static uint32_t g_critmon_start_us = 0u;
+static uint32_t g_critmon_nest     = 0u;
+static uint32_t g_critmon_enter_pc = 0u;
 
 static inline uint32_t read_lr_return_addr(void) {
 #if defined(__GNUC__) || defined(__clang__)
@@ -261,7 +260,7 @@ void OSAL_exit_critical(void) {
         taskEXIT_CRITICAL();
         if (dur_us != 0u) {
             BB_UpdateMaxCriUs(dur_us);
-            OSAL_FAULT(dur_us > OSAL_CRITMON_THRESHOLD_US);
+            OSAL_FAULT(dur_us <= OSAL_CRITMON_THRESHOLD_US);
         }
         return;
     }
@@ -275,7 +274,7 @@ void OSAL_exit_critical(void) {
         __set_PRIMASK(g_irq_saved_primask);
         if (dur_us != 0u) {
             BB_UpdateMaxCriUs(dur_us);
-            OSAL_FAULT(dur_us > OSAL_CRITMON_THRESHOLD_US);
+            OSAL_FAULT(dur_us <= OSAL_CRITMON_THRESHOLD_US);
         }
         return;
     }
@@ -333,7 +332,7 @@ void OSAL_exit_critical_ex(osal_crit_state_t state) {
         taskEXIT_CRITICAL_FROM_ISR(s);
         if (dur_us != 0u) {
             BB_UpdateMaxCriUs(dur_us);
-            OSAL_FAULT(dur_us > OSAL_CRITMON_THRESHOLD_US);
+            OSAL_FAULT(dur_us <= OSAL_CRITMON_THRESHOLD_US);
         }
         return;
     }
@@ -343,7 +342,7 @@ void OSAL_exit_critical_ex(osal_crit_state_t state) {
         taskEXIT_CRITICAL();
         if (dur_us != 0u) {
             BB_UpdateMaxCriUs(dur_us);
-            OSAL_FAULT(dur_us > OSAL_CRITMON_THRESHOLD_US);
+            OSAL_FAULT(dur_us <= OSAL_CRITMON_THRESHOLD_US);
         }
         return;
     }
@@ -356,7 +355,7 @@ void OSAL_exit_critical_ex(osal_crit_state_t state) {
         __set_PRIMASK(((uint32_t)state) & 0x1UL);
         if (dur_us != 0u) {
             BB_UpdateMaxCriUs(dur_us);
-            OSAL_FAULT(dur_us > OSAL_CRITMON_THRESHOLD_US);
+            OSAL_FAULT(dur_us <= OSAL_CRITMON_THRESHOLD_US);
         }
         return;
     }
@@ -401,7 +400,7 @@ void OSAL_exit_critical_from_isr(osal_crit_state_t state) {
         taskEXIT_CRITICAL_FROM_ISR((UBaseType_t)state);
         if (dur_us != 0u) {
             BB_UpdateMaxCriUs(dur_us);
-            OSAL_FAULT(dur_us > OSAL_CRITMON_THRESHOLD_US);
+            OSAL_FAULT(dur_us <= OSAL_CRITMON_THRESHOLD_US);
         }
         return;
     }
@@ -412,7 +411,7 @@ void OSAL_exit_critical_from_isr(osal_crit_state_t state) {
     __set_PRIMASK((uint32_t)state);
     if (dur_us != 0u) {
         BB_UpdateMaxCriUs(dur_us);
-        OSAL_FAULT(dur_us > OSAL_CRITMON_THRESHOLD_US);
+        OSAL_FAULT(dur_us <= OSAL_CRITMON_THRESHOLD_US);
     }
 }
 
