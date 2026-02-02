@@ -16,7 +16,7 @@ static int Log_uart_send_async(const uint8_t *d, uint16_t n, void *user) {
 
     s_uart_tx_busy       = 1;
 
-    HAL_StatusTypeDef st = HAL_UART_Transmit_DMA(huart, (uint8_t *)d, n);
+    const HAL_StatusTypeDef st = HAL_UART_Transmit_DMA(huart, (uint8_t *)d, n);
     if (st == HAL_OK) {
         return RET_OK;  // 已成功启动DMA
     }
