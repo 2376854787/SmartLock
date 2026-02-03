@@ -98,6 +98,7 @@ void BB_ClearCrashInfo(void) {
     g_bb.mmfar      = 0;
     g_bb.bfar       = 0;
     g_bb.afsr       = 0;
+    g_bb.max_crit_us=0;
 }
 
 /**
