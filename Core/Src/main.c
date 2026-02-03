@@ -38,6 +38,7 @@
 #include "lcd.h"
 #include "log.h"
 #include "myfree.h"
+#include "vectortable_to_ram.h"
 #include "wifi_mqtt_task.h"
 /* USER CODE END Includes */
 
@@ -149,6 +150,7 @@ PUTCHAR_PROTOTYPE {
  */
 int main(void) {
     /* USER CODE BEGIN 1 */
+    Move_Vector_Table_To_RAM();
     __enable_irq();
     /* 清理标志位 记录复位原因 */
     // BB_OnBootUpdateResetReason(); /* 如果使用BootLoader 注释这句将复位原因交由 Bootloader完成 */
