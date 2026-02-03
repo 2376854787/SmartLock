@@ -1,7 +1,4 @@
 #include "blackbox_record.h"
-
-#include <stddef.h>
-
 #include "blackbox_port_reset_reason.h"
 #include "compiler_cus.h"
 #include "stm32f4xx_hal.h"
@@ -11,10 +8,6 @@
 #endif
 
 #include <stdio.h>
-
-#include "log.h"
-#include "stm32f4xx_hal.h"
-
 /* 配置宏：定义此宏使用备份SRAM (0x40024000)，否则使用 .noinit 段 (SRAM1/2) */
 #define CONFIG_BLACKBOX_USE_BKPSRAM 1
 

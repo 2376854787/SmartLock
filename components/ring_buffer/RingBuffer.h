@@ -8,7 +8,6 @@
 
 #include "ret_code.h"
 #include "stdint.h"
-#define RING_BUFF_DEF_SIZE 1024  // 单位字节
 #define DEFAULT_ALIGNMENT  4
 
 typedef struct {

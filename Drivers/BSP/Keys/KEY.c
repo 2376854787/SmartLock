@@ -5,16 +5,13 @@
 #include <stdio.h>  // 用于 printf 调试
 
 #include "HFSM.h"
-#include "KEY.h"
 #include "cmsis_gcc.h"
 #include "stm32f4xx_hal_gpio.h"
 
 /********************************************************************************************************************************************
  ********************************************************************************************************************************************
  ********************************************************************************************************************************************
-
-
-    ************************************************ KEY状态机相关变量定义
+ ************************************************ KEY状态机相关变量定义
  ************************************************ 使用本模块必须实现超时事件的获取
  */
 
@@ -28,7 +25,7 @@ static void Key_Timer_Start(KEY_TypedefHandle* key, uint32_t timeout_ms);
 
 static void Key_Timer_Stop(KEY_TypedefHandle* key);
 
-void IDLE_entry(StateMachine* fsm);
+void IDLE_entry( StateMachine* fsm);
 
 static bool IDLE_Eventhandle(StateMachine* fsm, const Event* event);
 
@@ -164,14 +161,13 @@ static bool KEY_Pin_Read(const KeyInfo* pin) {
  * @brief 进入空闲状态的执行函数
  * @param fsm 状态机指针
  */
-void IDLE_entry(StateMachine* fsm) {
+void IDLE_entry( StateMachine* fsm) {
     KEY_TypedefHandle* key = (KEY_TypedefHandle*)fsm->customizeHandle;
     if (!key) {
         KEY_LOGE("KEY指针为NULL！");
         return;
     }
     KEY_LOGI("按键：%s->进入空闲状态\n", key->Key_name);
-
     key->click_count = 0;  // 清零点击计数
 }
 
@@ -509,7 +505,6 @@ void KEY_Tasks(void) {
         if (current_key_state != key->last_key_state) {
             KEY_LOGD("!!! 按键 %s 电平变化: 从 %d 变为 %d !!!\r\n", key->Key_name,
                      key->last_key_state, current_key_state);
-
             if (current_key_state == key->active_level) {
                 Event press_event = {KEY_Event_Pressed, NULL};
                 HFSM_HandleEvent(fsm, &press_event);

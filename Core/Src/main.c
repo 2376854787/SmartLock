@@ -20,7 +20,6 @@
 #include "main.h"
 
 #include "adc.h"
-#include "cmsis_os.h"
 #include "dma.h"
 #include "fsmc.h"
 #include "gpio.h"
@@ -34,7 +33,6 @@
 
 #include "ESP01S.h"
 #include "KEY.h"
-#include "LightSensor.h"
 #include "bh1750.h"
 #include "blackbox_record.h"
 #include "lcd.h"

@@ -82,6 +82,7 @@ void HFSM_Transition(StateMachine* fsm, const State* new_state) {
               fsm->current_state ? fsm->current_state->state_name : "NULL", new_state->state_name);
     // 转换到新的状态、
     const State* s = fsm->current_state;
+    /* 当前状态存在 且 不等于目标状态 且 不是目标状态的父状态 */
     while (s && s != new_state && s != new_state->parent) {
         if (s->on_exit) {
             s->on_exit(fsm);
