@@ -78,9 +78,9 @@ PROVIDE(__stack_bottom__  = _estack - _Min_Stack_Size);
 SECTIONS
 {
 /* 断言记录 */
-.noinit (NOLOAD) :
+.noinit (NOLOAD) : /* (NOLOAD) 避免被当作bss 清零 */
 {
-  . = ALIGN(4);
+  . = ALIGN(4); /* 起始地址 4字节对齐 */
   *(.noinit*)
   . = ALIGN(4);
 } >RAM
@@ -109,6 +109,14 @@ SECTIONS
     . = ALIGN(4);
     _etext = .;        /* define a global symbols at end of code */
   } >FLASH
+/* 运行在 RAM，镜像在 FLASH */
+.ramfunc : AT(ADDR(.text) + SIZEOF(.text)) {
+    __ramfunc_start__ = .; /* 记录内存起始地址 */
+    *(.ramfunc*)
+    __ramfunc_end__ = .;
+} >RAM
+
+__ramfunc_load_start__ = LOADADDR(.ramfunc);
 
   /* Constant data goes into FLASH */
   .rodata :
