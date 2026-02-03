@@ -8,14 +8,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "../complier/compiler_cus.h"
+#include "compiler_cus.h"
 
 #ifdef __cplusplus
 extern "C" {
-
 #endif
 
-/* ================= Basic math macros ================= */
+/* ================= 基础数学宏 ================= */
 #ifndef MIN
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 #endif
@@ -38,11 +37,11 @@ extern "C" {
 #define SET_BITS(reg, mask) ((reg) |= (mask))
 #define CLR_BITS(reg, mask) ((reg) &= ~(mask))
 
-/* ================= 对齐辅助器================= */
+/* ================= 对齐辅助器 ================= */
 #define ALIGN_UP(x, a) (((x) + ((a) - 1U)) & ~((a) - 1U))  // & ~((a) - 1U) 清除低位
 #define ALIGN_DOWN(x, a) ((x) & ~((a) - 1U))
 
-/* ================= 容器================= */
+/* ================= 容器 ================= */
 #ifndef offsetof
 #define offsetof(type, member) __builtin_offsetof(type, member)
 #endif
