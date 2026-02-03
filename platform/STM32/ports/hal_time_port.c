@@ -157,6 +157,33 @@ void hal_time_delay_us(uint32_t us) {
         // 等待
     }
 }
+/**
+ * @brief 获取 内核周期
+ * @return 返回 DWT->CYCCNT 寄存器实时的存储值
+ * @note 使用前必须确保 DWT 初始化成功
+ */
+uint32_t hal_get_cycle32(void) {
+    return DWT->CYCCNT;
+}
+
+/**
+ * @brief 提供任意合法主频下的us周期
+ * @return 当前主频下每us 的周期数
+ * @note 使用前必须确保 DWT 初始化成功
+ */
+uint32_t hal_get_cycles_per_us(void) {
+    return cycles_per_us;
+}
+
+/**
+ * @brief 任意合法主频下将周期转换为 us
+ * @param cyc 周期数
+ * @return us 数
+ * @note 使用前必须确保 DWT 初始化成功
+ */
+uint32_t hal_cycles_to_us(uint32_t cyc) {
+    return cyc + (uint64_t)hal_get_cycles_per_us() - 1 / hal_get_cycles_per_us();
+}
 #else
 #include <stdint.h>
 
