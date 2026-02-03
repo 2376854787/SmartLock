@@ -88,6 +88,8 @@ add_executable(${CMAKE_PROJECT_NAME}
         platform/STM32/ports/blackbox_port_reset_reason.c
         components/ports/arch/cortexm/fault_capture_cm.c
         components/core_base/fault_capture/fault_capture.c
+        components/core_base/ramfunc/ramfunc.c
+        platform/STM32/ports/vectortable_to_ram.c
 
 
 )
