@@ -2,152 +2,148 @@
 #if defined(ENABLE_MEMORY_POOL)
 #include <stdbool.h>
 #include <string.h>
+#include <sys/types.h>
 
 #include "compiler_cus.h"
 #include "memory_pool.h"
-
-#define MP_ALIGN      8u
-#define MP_MAGIC_BASE 0x4D504F4Fu  // 'MPOO' 随便选一个
-
-static inline uint32_t align_up_u32(uint32_t x, uint32_t a) {
-    return (x + a - 1u) & ~(a - 1u);
+#define RET_MEM_CODE(_cla, _rea) \
+    RET_MAKE(RET_MOD_MEM, RET_SUB_MEM_POOL, RET_CODE_MAKE((_cla), (_rea)))
+/**
+ * @brief 返回指定块是否已分配
+ * @param bm 位图
+ * @param id 块id
+ * @return 返回指定块是否已分配
+ */
+CORE_INLINE bool bm_test(const uint32_t *bm, uint16_t id) {
+    return (bm[id >> 5] >> (id & 31)) & 1u;
+}
+/**
+ * @brief 将指定块标记为已分配
+ * @param bm 位图
+ * @param id 块id
+ */
+CORE_INLINE void bm_set(uint32_t *bm, uint16_t id) {
+    bm[id >> 5] |= 1u << (id & 31);
+}
+/**
+ * @brief 将指定块标记为已释放
+ * @param bm 位图
+ * @param id 块id
+ */
+CORE_INLINE void bm_clear(uint32_t *bm, uint16_t id) {
+    bm[id >> 5] &= ~(1u << (id & 31));
 }
 
 /**
- * @brief 下一块的地址与全局密钥以及自身的地址进行异或加密
- * @param mgr
- * @param hdr
- * @param next
- * @return
+ * @brief 查询指定块的基地址
+ * @param p 内存池句柄
+ * @param id 块id
+ * @return 返回该块的基地址
  */
-static inline uintptr_t enc_next(const mp_mgr_t *mgr, const mp_block_hdr_t *hdr,
-                                 const mp_block_hdr_t *next) {
-    return ((uintptr_t)next) ^ (uintptr_t)mgr->boot_key ^ (uintptr_t)hdr;
+CORE_INLINE uint8_t *blk_ptr(mp_pool_t *p, uint16_t id) {
+    return p->base + (uint32_t)id * p->blk_total_size;
 }
 /**
- * @brief 通过密钥和当前地址还原出真正的下一块空闲地址
- * @param mgr
- * @param hdr
- * @return
+ * brief 根据块基地址返回有效负载的基地址
+ * @param p 内存池句柄
+ * @param blk 块的基地址
+ * @return 返回有效负载的基地址
  */
-static inline mp_block_hdr_t *dec_next(const mp_mgr_t *mgr, const mp_block_hdr_t *hdr) {
-    return (mp_block_hdr_t *)(hdr->next_enc ^ (uintptr_t)mgr->boot_key ^ (uintptr_t)hdr);
+CORE_INLINE void *blk_payload(mp_pool_t *p, uint8_t *blk) {
+#if MP_CFG_CANARY
+    return (void *)(blk + sizeof(uint32_t));
+#else
+    return (void *)blk;
+#endif
 }
 /**
- * @brief 判断当前内存池是否还有空闲
- * @param p
- * @return
+ * @brief 根据负载基地址计算块基地址
+ * @param p 内存池句柄
+ * @param payload 负载的基地址
+ * @return 块的基地址
  */
-static inline uint8_t *pool_end(const mp_pool_t *p) {
-    return p->base + (size_t)p->stride * p->blk_count;
+CORE_INLINE uint8_t *payload_to_blk(mp_pool_t *p, void *payload) {
+#if MP_CFG_CANARY
+    return ((uint8_t *)payload) - sizeof(uint32_t);
+#else
+    return (uint8_t *)payload;
+#endif
 }
 /**
- * @brief 判断当前
- * @param p
- * @param ptr
+ * @brief 给块的头尾写入魔数字
+ * @param p 内存池句柄
+ * @param blk 块的基地址
+ */
+CORE_INLINE void write_canary(mp_pool_t *p, uint8_t *blk) {
+#if MP_CFG_CANARY
+    *(uint32_t *)(void *)(blk)                                          = p->canary_head;
+    *(uint32_t *)(void *)(blk + sizeof(uint32_t) + p->blk_payload_size) = p->canary_tail;
+#else
+    (void)p;
+    (void)blk;
+#endif
+}
+/**
+ * @brief 检查头尾区域是否被破坏
+ * @param p 内存池句柄
+ * @param blk 块基地址
+ * @return 头尾区域是否被破坏
+ */
+static inline ret_code_t check_canary(mp_pool_t *p, uint8_t *blk) {
+#if MP_CFG_CANARY
+    const uint32_t h = *(uint32_t *)(void *)(blk);
+    const uint32_t t = *(uint32_t *)(void *)(blk + sizeof(uint32_t) + p->blk_payload_size);
+    if (h != p->canary_head || t != p->canary_tail)
+        return RET_MEM_CODE(RET_CLASS_DATA, RET_R_CHECKSUM);
+#else
+    (void)p;
+    (void)blk;
+#endif
+    return RET_OK;
+}
+
+#if MP_CFG_QUARANTINE
+/**
+ * @brief 隔离队列是否满了
+ * @param p 内存池句柄
+ * @return 隔离间是否已满
+ */
+CORE_INLINE bool q_full(mp_pool_t *p) {
+    return p->q_cnt == p->q_cap;
+}
+/**
+ *
+ * @param p 内存池句柄
  * @return
  */
-static bool ptr_in_pool(const mp_pool_t *p, const void *ptr) {
-    const uint8_t *u = (const uint8_t *)ptr;
-    return (u >= p->base) && (u < pool_end(p));
+CORE_INLINE bool q_empty(mp_pool_t *p) {
+    return p->q_cnt == 0;
 }
-
-static bool ptr_aligned_to_block(const mp_pool_t *p, const void *ptr) {
-    const uintptr_t u        = (uintptr_t)ptr;
-    const uintptr_t payload0 = (uintptr_t)p->base + sizeof(mp_block_hdr_t);
-    if (u < payload0) return false;
-    return ((u - payload0) % p->stride) == 0;
-}
-
-void mp_pool_init(mp_mgr_t *mgr, mp_pool_t *p, uint8_t *mem, uint32_t payload_size,
-                  uint32_t blk_count, uint16_t class_id) {
-    p->base          = mem;
-    p->blk_size      = payload_size;
-    p->stride        = align_up_u32((uint32_t)sizeof(mp_block_hdr_t) + payload_size, MP_ALIGN);
-    p->blk_count     = blk_count;
-    p->magic         = MP_MAGIC_BASE ^ (uint32_t)class_id;
-
-    p->free_head     = NULL;
-    p->free_blocks   = blk_count;
-    p->min_free_ever = blk_count;
-    p->fail_count    = 0;
-
-    // 把所有块串成 freelist（LIFO）
-    for (uint32_t i = 0; i < blk_count; i++) {
-        uint8_t *blk        = p->base + (size_t)i * p->stride;
-        mp_block_hdr_t *hdr = (mp_block_hdr_t *)blk;
-        hdr->magic          = p->magic;
-        hdr->class_id       = class_id;
-        hdr->state          = MP_STATE_FREE;
-
-        hdr->next_enc       = enc_next(mgr, hdr, p->free_head);
-        p->free_head        = hdr;
+/**
+ * @brief 将指定块存入队隔离间
+ * @param p 内存池句柄
+ * @param id 块id
+ */
+CORE_INLINE void q_push(mp_pool_t *p, uint16_t id) {
+    if (p->q_cap == 0) {
+        p->free_stack[p->top++] = id;
+        return;
     }
-}
-
-void *mp_alloc(mp_mgr_t *mgr, mp_pool_t *p) {
-    if (!p->free_head) {
-        p->fail_count++;
-        return NULL;
+    if (q_full(p)) {
+        const uint16_t old = p->q_ring[p->q_r];
+        /* 读指针 +1 */
+        p->q_r             = (uint16_t)((p->q_r + 1) % p->q_cap);
+        p->q_cnt--;
+        /* 入栈空闲队列 */
+        p->free_stack[p->top++] = old;
     }
-
-    mp_block_hdr_t *hdr  = p->free_head;
-    mp_block_hdr_t *next = dec_next(mgr, hdr);
-
-    // 合法性校验（SOP：pop/push 校验合法性，异常冻结）
-    if (next && !ptr_in_pool(p, next)) {
-        // 这里你可以改成断言/冻结现场
-        p->fail_count++;
-        return NULL;
-    }
-
-    p->free_head = next;
-
-    // state 检查
-    if (hdr->magic != p->magic || hdr->state != MP_STATE_FREE) {
-        p->fail_count++;
-        return NULL;
-    }
-
-    hdr->state       = MP_STATE_ALLOC;
-
-    // Poison: alloc 填 0xCC（可选）
-    uint8_t *payload = (uint8_t *)hdr + sizeof(mp_block_hdr_t);
-    memset(payload, 0xCC, p->blk_size);
-
-    // 统计
-    p->free_blocks--;
-    if (p->free_blocks < p->min_free_ever) p->min_free_ever = p->free_blocks;
-
-    return payload;
+    /* 写入新的块id */
+    p->q_ring[p->q_w] = id;
+    /* 写指针更新指向下一个可写入的索引位置 */
+    p->q_w            = (uint16_t)((p->q_w + 1u) % p->q_cap);
+    /* 总量 + 1 */
+    p->q_cnt++;
 }
-
-bool mp_free(mp_mgr_t *mgr, mp_pool_t *p, void *ptr) {
-    if (!ptr) return false;
-
-    // SOP：Range Check + 对齐检查
-    if (!ptr_in_pool(p, ptr)) return false;
-    if (!ptr_aligned_to_block(p, ptr)) return false;
-
-    mp_block_hdr_t *hdr = (mp_block_hdr_t *)((uint8_t *)ptr - sizeof(mp_block_hdr_t));
-
-    // Magic 校验
-    if (hdr->magic != p->magic) return false;
-
-    // SOP：State 检查防 double free
-    if (hdr->state != MP_STATE_ALLOC) return false;
-
-    // Poison: free 填 0xA5（可选）
-    memset(ptr, 0xA5, p->blk_size);
-
-    hdr->state    = MP_STATE_FREE;
-
-    // push 回 freelist（加密 next）
-    hdr->next_enc = enc_next(mgr, hdr, p->free_head);
-    p->free_head  = hdr;
-
-    p->free_blocks++;
-    return true;
-}
+#endif
 
 #endif
