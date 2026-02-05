@@ -81,7 +81,7 @@ add_executable(${CMAKE_PROJECT_NAME}
         components/core_mpu/src/core_mpu.c
         platform/STM32/common/core_mpu_port.c
         components/CRC/CRC16/crc16.c
-        components/memory_pool/memory_pool.c
+        components/memory_pool/memory_pool1/memory_pool1.c
         Drivers/BSP/bh1750/bh1750.c
         components/core_base/stack/stack_monitor.c
         components/core_base/blackbox/blackbox_record.c
@@ -90,6 +90,7 @@ add_executable(${CMAKE_PROJECT_NAME}
         components/core_base/fault_capture/fault_capture.c
         components/core_base/ramfunc/ramfunc.c
         platform/STM32/ports/vectortable_to_ram.c
+        platform/STM32/ports/memory_pool1_port.c
 
 
 )
@@ -141,6 +142,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         components/core_base/fault_capture
         components/ports/arch/cortexm
         components/core_base/barrier
+        components/memory_pool/memory_pool1
 
 )
 
