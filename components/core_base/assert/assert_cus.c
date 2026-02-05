@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../complier/compiler_cus.h"
+#include "complier_cus.h"
 #include "assert_cus.h"
 #include "blackbox/blackbox_record.h"
 

@@ -1,6 +1,6 @@
 #ifndef SMARTLOCK_RAMFUNC_H
 #define SMARTLOCK_RAMFUNC_H
-#include "compiler_cus.h"
+#include "complier_cus.h"
 
 #define CORE_RAMFUNC    CORE_SECTION(".ramfunc") CORE_NOINLINE
 #define CORE_ITCM_TEXT  CORE_SECTION(".itcm_text") CORE_NOINLINE

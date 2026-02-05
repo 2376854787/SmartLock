@@ -297,14 +297,12 @@ void OSAL_enter_critical_ex(osal_crit_state_t* state) {
                                          OSAL_CRIT_MODE_RTOS_ISR);
             return;
         }
-        /* else fallthrough -> PRIMASK */
     } else {
         if (OSAL_kernel_is_running()) {
             taskENTER_CRITICAL();
             *state = (osal_crit_state_t)OSAL_CRIT_MODE_RTOS_THREAD;
             return;
         }
-        /* else fallthrough -> PRIMASK */
     }
 #endif
 
