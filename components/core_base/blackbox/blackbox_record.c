@@ -1,14 +1,11 @@
 #include "blackbox_record.h"
-
-#include "blackbox_port_reset_reason.h"
 #include "complier_cus.h"
-#include "stm32f4xx_hal.h"
 
 #ifndef CORE_BUILD_ID
 #define CORE_BUILD_ID 0u
 #endif
-
 #include <stdio.h>
+#include "assert_cus.h"
 /* 配置宏：定义此宏使用备份SRAM (0x40024000)，否则使用 .noinit 段 (SRAM1/2) */
 #define CONFIG_BLACKBOX_USE_BKPSRAM 1
 
@@ -16,6 +13,22 @@
 #define CORE_BUILD_ID 0u
 #endif
 
+/**
+ * @brief 默认实现 致命断言
+ * @return 备份域是否时钟已经使能
+ */
+CORE_WEAK bool BB_Clock_is_ready(void) {
+    ASSERT_FATAL(0);
+    return false;
+}
+/**
+ * @brief  默认实现 致命断言
+ * @return 复位原因
+ */
+CORE_WEAK bb_reset_reason_t BB_Port_ReadResetReasonAndClearFlags(void) {
+    ASSERT_FATAL(0);
+    return BB_RESET_ASSERT;
+}
 #if defined(CONFIG_BLACKBOX_USE_BKPSRAM) && (CONFIG_BLACKBOX_USE_BKPSRAM == 1)
 /* =================================================================================
  * 模式 A: STM32F4 Backup SRAM
@@ -30,14 +43,10 @@ CORE_USED volatile blackbox_record_t* const g_bb_debug_ptr =
 
 /* 代码中使用宏展开访问，兼顾性能 */
 #define g_bb (*(volatile blackbox_record_t*)BKPSRAM_BASE)
-
-static void BB_EnableAccess(void) {
-    __HAL_RCC_PWR_CLK_ENABLE();
-    HAL_PWR_EnableBkUpAccess();
-    __HAL_RCC_BKPSRAM_CLK_ENABLE();
-    HAL_PWREx_EnableBkUpReg();
+CORE_WEAK void BB_EnableAccess(void) {
+    /* 默认实现 没有port层实现直接致命断言*/
+    ASSERT_FATAL(0);
 }
-
 #else
 /* =================================================================================
  * 模式 B: .noinit 段 (SRAM)
@@ -63,7 +72,7 @@ static void BB_EnableAccess(void) {
  */
 const blackbox_record_t* BB_Get(void) {
 #if defined(CONFIG_BLACKBOX_USE_BKPSRAM) && (CONFIG_BLACKBOX_USE_BKPSRAM == 1)
-    if (!__HAL_RCC_BKPSRAM_IS_CLK_ENABLED()) {
+    if (!BB_Clock_is_ready()) {
         BB_EnableAccess();
     }
 #endif
@@ -88,18 +97,18 @@ void BB_Clear(void) {
  */
 void BB_ClearCrashInfo(void) {
     BB_EnableAccess();
-    g_bb.crash_type = BB_CRASH_NONE;
-    g_bb.pc         = 0;
-    g_bb.lr         = 0;
-    g_bb.sp         = 0;
-    g_bb.psr        = 0;
-    g_bb.cfsr       = 0;
-    g_bb.hfsr       = 0;
-    g_bb.dfsr       = 0;
-    g_bb.mmfar      = 0;
-    g_bb.bfar       = 0;
-    g_bb.afsr       = 0;
-    g_bb.max_crit_us=0;
+    g_bb.crash_type  = BB_CRASH_NONE;
+    g_bb.pc          = 0;
+    g_bb.lr          = 0;
+    g_bb.sp          = 0;
+    g_bb.psr         = 0;
+    g_bb.cfsr        = 0;
+    g_bb.hfsr        = 0;
+    g_bb.dfsr        = 0;
+    g_bb.mmfar       = 0;
+    g_bb.bfar        = 0;
+    g_bb.afsr        = 0;
+    g_bb.max_crit_us = 0;
 }
 
 /**
@@ -108,12 +117,6 @@ void BB_ClearCrashInfo(void) {
  */
 void BB_OnBootUpdateResetReason(void) {
     BB_EnableAccess();
-
-    /* 调试诊断变量：在断点处查看这些值 */
-    const volatile uint32_t debug_raw_magic = g_bb.magic;
-    const volatile uint32_t debug_raw_csr   = RCC->CSR;
-    (void)debug_raw_magic;
-    (void)debug_raw_csr;
 
     if (g_bb.version != BLACK_BOX_VERSION || g_bb.magic != BLACK_BOX_MAGIC) {
         /* 首次启动或数据损坏：完全初始化 */

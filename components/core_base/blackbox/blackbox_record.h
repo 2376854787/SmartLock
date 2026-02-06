@@ -1,7 +1,7 @@
 #ifndef SMARTLOCK_BLACK_BOX_RECORDE_H
 #define SMARTLOCK_BLACK_BOX_RECORDE_H
 #include <stdint.h>
-
+#include <stdbool.h>
 #define BLACK_BOX_MAGIC   0xB10C1B00u
 #define BLACK_BOX_VERSION 0x00010001u
 /* 重启原因枚举 */
@@ -80,4 +80,10 @@ void BB_RecordFsm(uint32_t fsm_ptr, uint32_t state_ptr);
 void BB_UpdateMaxCriUs(uint32_t us);
 void BB_UpdateMinStackFree(uint32_t bytes);
 void BB_Info_Printf();
+
+
+/* =================== 适配层声明 ======================== */
+void BB_EnableAccess(void);
+bool BB_Clock_is_ready(void);
+bb_reset_reason_t BB_Port_ReadResetReasonAndClearFlags(void);
 #endif  // SMARTLOCK_BLACK_BOX_RECORDE_H

@@ -1,4 +1,26 @@
-#include "blackbox_port_reset_reason.h"
+#include <stdbool.h>
+
+#include "stm32_hal.h"
+#include "blackbox_record.h"
+/**
+ * @brief 黑盒子的 使能平台实现
+ */
+void BB_EnableAccess(void) {
+    __HAL_RCC_PWR_CLK_ENABLE();
+    HAL_PWR_EnableBkUpAccess();
+    __HAL_RCC_BKPSRAM_CLK_ENABLE();
+    HAL_PWREx_EnableBkUpReg();
+}
+
+/**
+ * @brief 黑盒子的抽象层实现
+ * @return 备份域时钟是否已使能
+ */
+bool BB_Clock_is_ready(void) {
+    return __HAL_RCC_BKPSRAM_IS_CLK_ENABLED();
+}
+
+
 
 /* ---------- 兼容不同芯片宏：IWDG / WWDG / SOFT / ... ---------- */
 #if defined(RCC_CSR_WDGRSTF)
