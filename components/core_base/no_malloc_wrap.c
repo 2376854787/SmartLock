@@ -5,7 +5,7 @@
  *
  * @param n
  * @return
- * @note 必须CMAKELists.txt 定义 -wl,--warp=malloc
+ * @note 必须CMAKELists.txt 定义 -Wl,--wrap=malloc
  */
 // NOLINTNEXTLINE(bugprone-reserved-identifier)
 void* __wrap_malloc(size_t n) {

@@ -14,9 +14,9 @@ extern const uint32_t g_pfnVectors[];
 #include <string.h>  // for memcpy
 
 void Move_Vector_Table_To_RAM(void) {
-    /*１.关闭中断　*／
+    /*１.关闭中断　*/
     __disable_irq();
-    /*  2. 拷贝数据  */
+    /*2. 拷贝数据  */
     for (int i = 0; i < VECTOR_TABLE_SIZE; i++) {
         g_ram_vector_table[i] = g_pfnVectors[i];
     }

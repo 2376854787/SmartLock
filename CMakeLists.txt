@@ -85,12 +85,13 @@ add_executable(${CMAKE_PROJECT_NAME}
         Drivers/BSP/bh1750/bh1750.c
         components/core_base/stack/stack_monitor.c
         components/core_base/blackbox/blackbox_record.c
-        platform/STM32/ports/blackbox_port_reset_reason.c
         components/ports/arch/cortexm/fault_capture_cm.c
         components/core_base/fault_capture/fault_capture.c
         components/core_base/ramfunc/ramfunc.c
         platform/STM32/ports/vectortable_to_ram.c
         platform/STM32/ports/memory_pool1_port.c
+        components/perf/perf.c
+        platform/STM32/ports/blackbox_port.c
 
 
 )
@@ -143,6 +144,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         components/ports/arch/cortexm
         components/core_base/barrier
         components/memory_pool/memory_pool1
+        components/perf
 
 )
 
