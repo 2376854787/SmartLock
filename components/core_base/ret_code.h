@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "complier_cus.h"
+#include "compiler_cus.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -36,20 +36,21 @@ typedef uint32_t ret_code_t;
  * =============================================================================
  */
 typedef enum {
-    RET_MOD_NONE  = 0x00u, /* 保留 */
-    RET_MOD_CORE  = 0x01u, /* core_base / 通用核心 */
-    RET_MOD_OSAL  = 0x02u, /* OS 抽象层 */
-    RET_MOD_HAL   = 0x03u, /* HAL 抽象层 */
-    RET_MOD_RB    = 0x04u, /* RingBuffer */
-    RET_MOD_MEM   = 0x05u, /* MemPool / MemoryAllocation */
-    RET_MOD_LOG   = 0x06u, /* 日志 */
-    RET_MOD_AT    = 0x07u, /* AT/协议栈 */
-    RET_MOD_PORT  = 0x08u, /* 平台端口层 platform/ports */
-    RET_MOD_APP   = 0x09u, /* 业务应用层（SmartLock app） */
-    RET_MOD_SEC   = 0x0Au, /* 安全/加密/证书 */
-    RET_MOD_STOR  = 0x0Bu, /* 存储（Flash KV/FS/参数区） */
-    RET_MOD_OTA   = 0x0Cu, /* OTA/Boot/升级 */
-    RET_MOD_TOOLS = 0x0Du, /* 通用工具类 */
+    RET_MOD_NONE     = 0x00u, /* 保留 */
+    RET_MOD_CORE     = 0x01u, /* core_base / 通用核心 */
+    RET_MOD_OSAL     = 0x02u, /* OS 抽象层 */
+    RET_MOD_HAL      = 0x03u, /* HAL 抽象层 */
+    RET_MOD_RB       = 0x04u, /* RingBuffer */
+    RET_MOD_MEM      = 0x05u, /* MemPool / MemoryAllocation */
+    RET_MOD_LOG      = 0x06u, /* 日志 */
+    RET_MOD_AT       = 0x07u, /* AT/协议栈 */
+    RET_MOD_PORT     = 0x08u, /* 平台端口层 platform/ports */
+    RET_MOD_APP      = 0x09u, /* 业务应用层（SmartLock app） */
+    RET_MOD_SEC      = 0x0Au, /* 安全/加密/证书 */
+    RET_MOD_STOR     = 0x0Bu, /* 存储（Flash KV/FS/参数区） */
+    RET_MOD_OTA      = 0x0Cu, /* OTA/Boot/升级 */
+    RET_MOD_TOOLS    = 0x0Du, /* 通用工具类 */
+    RET_MOD_EVENTBUS = 0x0Eu, /* 事件总线 */
 } ret_module_id_t;
 
 /* =============================================================================
@@ -182,6 +183,10 @@ typedef enum {
     RET_SUB_TOOLS_NONE = 0x00u,
     RET_SUB_TOOLS_CRC  = 0x01u,
 } ret_sub_tools_t;
+typedef enum {
+    RET_SUB_EVENTBUS_NONE   = 0x00u,
+    RET_SUB_EVENTBUS_SYSTEM = 0x01u,
+} ret_sub_eventbus_t;
 /* =============================================================================
  * 3) Code(16-bit) = Class(4-bit) + Reason(12-bit)
  * =============================================================================

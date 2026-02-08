@@ -1,6 +1,6 @@
-#include "APP_config.h"
 #include "crc16.h"
 #include <stdint.h>
+#include "APP_config.h"
 #include "ret_code.h"
 #if defined(ENABLE_CRC16)
 #define RET_MOD_UTIL(clas_, err_) \
@@ -146,11 +146,9 @@ static ret_code_t crc16_cal_table_impl(const crc16_config_t* cfg, const uint8_t*
     uint16_t crc = cfg->init;
 
     if (cfg->isMsbFirst) {
-        /* MSB-first：常用 poly=0x1021（CCITT/XMODEM 类）
-         * 查表法：idx = (crc>>8) ^ data[i]；crc = (crc<<8) ^ table[idx]
-         */
+        /* 查表法：idx = (crc>>8) ^ data[i]；crc = (crc<<8) ^ table[idx]*/
         if (cfg->poly != 0x1021u) {
-            /* 防止用错表：你也可以改成 RET_E_INVALID_STATE 或直接不检查 */
+            /* 防止用错表*/
             return RET_MOD_UTIL(RET_CLASS_PARAM, RET_R_INVALID_ARG);
         }
 
@@ -160,8 +158,7 @@ static ret_code_t crc16_cal_table_impl(const crc16_config_t* cfg, const uint8_t*
             crc               = (uint16_t)((crc << 8) ^ crc16_table_1021[idx]);
         }
     } else {
-        /* LSB-first：常用 poly=0xA001（MODBUS/USB/MAXIM 类）
-         * 查表法：idx = (crc ^ data[i]) & 0xFF；crc = (crc>>8) ^ table[idx]
+        /* LSB-first 查表法：idx = (crc ^ data[i]) & 0xFF；crc = (crc>>8) ^ table[idx]
          */
         if (cfg->poly != 0xA001u) {
             return RET_MOD_UTIL(RET_CLASS_PARAM, RET_R_INVALID_ARG);
@@ -208,6 +205,5 @@ ret_code_t crc16_cal_default_table(crc16_config_default name, const uint8_t* dat
     }
     return crc16_cal_table_impl(&g_crc16_config[name], data, length, out);
 }
-
 
 #endif
