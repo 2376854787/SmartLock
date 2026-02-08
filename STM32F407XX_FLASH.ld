@@ -126,6 +126,47 @@ __ramfunc_load_start__ = LOADADDR(.ramfunc);
     *(.rodata*)        /* .rodata* sections (constants, strings, etc.) */
     . = ALIGN(4);
   } >FLASH
+/* =================== AutoInit Linker-Set ===================
+ * Collect all auto init items (const structs) in FLASH.
+ * Provide start/end symbols for each (level,bucket).
+ * KEEP is mandatory when --gc-sections is enabled.
+ * =========================================================== */
+.auto_init :
+{
+    . = ALIGN(4);
+
+    /* -------- EARLY b0..b7 -------- */
+    __auto_init_early_b0_start = .;  KEEP(*(.auto_init.early.b0))  __auto_init_early_b0_end = .;
+    __auto_init_early_b1_start = .;  KEEP(*(.auto_init.early.b1))  __auto_init_early_b1_end = .;
+    __auto_init_early_b2_start = .;  KEEP(*(.auto_init.early.b2))  __auto_init_early_b2_end = .;
+    __auto_init_early_b3_start = .;  KEEP(*(.auto_init.early.b3))  __auto_init_early_b3_end = .;
+    __auto_init_early_b4_start = .;  KEEP(*(.auto_init.early.b4))  __auto_init_early_b4_end = .;
+    __auto_init_early_b5_start = .;  KEEP(*(.auto_init.early.b5))  __auto_init_early_b5_end = .;
+    __auto_init_early_b6_start = .;  KEEP(*(.auto_init.early.b6))  __auto_init_early_b6_end = .;
+    __auto_init_early_b7_start = .;  KEEP(*(.auto_init.early.b7))  __auto_init_early_b7_end = .;
+
+    /* -------- INIT b0..b7 -------- */
+    __auto_init_init_b0_start  = .;  KEEP(*(.auto_init.init.b0))   __auto_init_init_b0_end  = .;
+    __auto_init_init_b1_start  = .;  KEEP(*(.auto_init.init.b1))   __auto_init_init_b1_end  = .;
+    __auto_init_init_b2_start  = .;  KEEP(*(.auto_init.init.b2))   __auto_init_init_b2_end  = .;
+    __auto_init_init_b3_start  = .;  KEEP(*(.auto_init.init.b3))   __auto_init_init_b3_end  = .;
+    __auto_init_init_b4_start  = .;  KEEP(*(.auto_init.init.b4))   __auto_init_init_b4_end  = .;
+    __auto_init_init_b5_start  = .;  KEEP(*(.auto_init.init.b5))   __auto_init_init_b5_end  = .;
+    __auto_init_init_b6_start  = .;  KEEP(*(.auto_init.init.b6))   __auto_init_init_b6_end  = .;
+    __auto_init_init_b7_start  = .;  KEEP(*(.auto_init.init.b7))   __auto_init_init_b7_end  = .;
+
+    /* -------- LATE b0..b7 -------- */
+    __auto_init_late_b0_start  = .;  KEEP(*(.auto_init.late.b0))   __auto_init_late_b0_end  = .;
+    __auto_init_late_b1_start  = .;  KEEP(*(.auto_init.late.b1))   __auto_init_late_b1_end  = .;
+    __auto_init_late_b2_start  = .;  KEEP(*(.auto_init.late.b2))   __auto_init_late_b2_end  = .;
+    __auto_init_late_b3_start  = .;  KEEP(*(.auto_init.late.b3))   __auto_init_late_b3_end  = .;
+    __auto_init_late_b4_start  = .;  KEEP(*(.auto_init.late.b4))   __auto_init_late_b4_end  = .;
+    __auto_init_late_b5_start  = .;  KEEP(*(.auto_init.late.b5))   __auto_init_late_b5_end  = .;
+    __auto_init_late_b6_start  = .;  KEEP(*(.auto_init.late.b6))   __auto_init_late_b6_end  = .;
+    __auto_init_late_b7_start  = .;  KEEP(*(.auto_init.late.b7))   __auto_init_late_b7_end  = .;
+
+    . = ALIGN(4);
+} >FLASH
 
   .ARM.extab (READONLY) : /* The "READONLY" keyword is only supported in GCC11 and later, remove it if using GCC10 or earlier. */
   {
