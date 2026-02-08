@@ -64,7 +64,7 @@ add_executable(${CMAKE_PROJECT_NAME}
         components/log/log_port.c
         components/osal/osal_cmsis2.c
         components/soft_timer/src/soft_timer.c
-        components/auto_init/src/auto_init.c
+        components/auto_init/auto_init.c
         platform/STM32/ports/hal_gpio_port.c
         platform/STM32/ports/hal_uart_port.c
         platform/STM32/ports/hal_time_port.c
@@ -92,6 +92,19 @@ add_executable(${CMAKE_PROJECT_NAME}
         platform/STM32/ports/memory_pool1_port.c
         components/perf/perf.c
         platform/STM32/ports/blackbox_port.c
+        components/eventbus/include/eb_module_id.h
+        components/eventbus/include/eb_event_id.h
+        components/eventbus/include/eb_config.h
+        components/eventbus/include/eb_types.h
+        components/eventbus/include/eb_api.h
+        components/eventbus/include/eb_port.h
+        components/eventbus/src/eb_core.c
+        components/eventbus/include/eb_sub.h
+        components/eventbus/src/eb_sub.c
+        components/eventbus/src/eb_dispatch.c
+        platform/STM32/ports/event_port.c
+        components/eventbus/include/eb_eventdef.h
+        components/eventbus/src/eb_eventdef.c
 
 
 )
@@ -137,7 +150,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         Drivers/BSP/bh1750
         components/core_base/assert
         components/core_base/blackbox
-        components/core_base/complier
+        components/core_base/compiler
         components/core_base/stack
         components/core_base/utils
         components/core_base/fault_capture
@@ -145,6 +158,8 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         components/core_base/barrier
         components/memory_pool/memory_pool1
         components/perf
+        components/auto_init
+        components/eventbus/include
 
 )
 

@@ -33,6 +33,7 @@
 
 #include "ESP01S.h"
 #include "KEY.h"
+#include "auto_init.h"
 #include "bh1750.h"
 #include "blackbox_record.h"
 #include "lcd.h"
@@ -184,31 +185,34 @@ int main(void) {
     MX_I2C1_Init();
     /* USER CODE BEGIN 2 */
     /* 直接寄存器发送测试（不依赖HAL超时） */
-    BB_Info_Printf(); /* 打印复位/崩溃信息 */
-    lcd_init();
+    // BB_Info_Printf(); /* 打印复位/崩溃信息 */
+    AUTO_INIT_REG(AUTO_INIT_EARLY, AUTO_BUCKET_0, 0, BB_Info_Printf);
+    AUTO_INIT_REG(AUTO_INIT_EARLY, AUTO_BUCKET_0, 0, lcd_init);
+    auto_init_run_all();
+    // lcd_init();
     BH1750_Init();
     BH1750_PowerOn();
     BH1750_Set_CONT_HIRES_MODE();
     LOG_E("cu", "ssss");
-     // bsp_esp8266_Init();
+    // bsp_esp8266_Init();
 
-     lcd_show_string(10, 40, 240, 32, 32, "STM32", RED);
+    lcd_show_string(10, 40, 240, 32, 32, "STM32", RED);
 
-     lcd_show_string(10, 80, 240, 24, 24, "TFTLCD TEST", MAGENTA);
+    lcd_show_string(10, 80, 240, 24, 24, "TFTLCD TEST", MAGENTA);
 
-     lcd_show_string(10, 110, 240, 16, 16, "ATOM@ALIENTEK", CYAN);
-     MyUart_Init();
-     KEY_Init(&key0, &key0_config);
-     KEY_Init(&key1, &key1_config);
-     KEY_Init(&key2, &key2_config);
-     /* USER CODE END 2 */
+    lcd_show_string(10, 110, 240, 16, 16, "ATOM@ALIENTEK", CYAN);
+    MyUart_Init();
+    KEY_Init(&key0, &key0_config);
+    KEY_Init(&key1, &key1_config);
+    KEY_Init(&key2, &key2_config);
+    /* USER CODE END 2 */
 
-     /* Init scheduler */
-     osKernelInitialize(); /* Call init function for freertos objects (in cmsis_os2.c) */
-     MX_FREERTOS_Init();
+    /* Init scheduler */
+    osKernelInitialize(); /* Call init function for freertos objects (in cmsis_os2.c) */
+    MX_FREERTOS_Init();
 
-     /* Start scheduler */
-     osKernelStart();
+    /* Start scheduler */
+    osKernelStart();
 
     /* We should never get here as control is now taken by the scheduler */
 
