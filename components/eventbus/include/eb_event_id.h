@@ -2,8 +2,9 @@
 #define SMARTLOCK_EB_EVENT_ID_H
 #include "eb_module_id.h"
 /* SYS */
-#define EB_EVT_SYS_BOOT      EB_EID(EB_MOD_SYS, 0x0001)  // Control, L, Edge
-#define EB_EVT_SYS_TICK_1MS  EB_EID(EB_MOD_SYS, 0x0002)  // Data or Control? 先在表里定
+#define EB_EVT_SYS_BOOT EB_EID(EB_MOD_SYS, 0x0001)  // Control, L, Edge
+#define EB_EVT_SYS_TICK_1MS \
+    EB_EID(EB_MOD_SYS, 0x0002)  // Data Plane：1kHz 高频，禁止走 EventBus，走 SPSC/RB 直连
 #define EB_EVT_SYS_HARDFAULT EB_EID(EB_MOD_SYS, 0x0003)  // Control, H, Edge
 
 /* BH1750 */

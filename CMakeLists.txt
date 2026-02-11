@@ -92,19 +92,18 @@ add_executable(${CMAKE_PROJECT_NAME}
         platform/STM32/ports/memory_pool1_port.c
         components/perf/perf.c
         platform/STM32/ports/blackbox_port.c
-        components/eventbus/include/eb_module_id.h
-        components/eventbus/include/eb_event_id.h
-        components/eventbus/include/eb_config.h
-        components/eventbus/include/eb_types.h
-        components/eventbus/include/eb_api.h
-        components/eventbus/include/eb_port.h
         components/eventbus/src/eb_core.c
-        components/eventbus/include/eb_sub.h
         components/eventbus/src/eb_sub.c
         components/eventbus/src/eb_dispatch.c
         platform/STM32/ports/event_port.c
-        components/eventbus/include/eb_eventdef.h
         components/eventbus/src/eb_eventdef.c
+        components/eventbus/src/eb_freeze.c
+        components/eventbus/src/eb_budget.c
+        components/eventbus/src/eb_port_weak.c
+        components/eventbus/src/eb_trace.c
+        components/eventbus/src/eb_storm.c
+        components/eventbus/src/eb_tap.c
+        components/eventbus/src/eb_eventmap.c
 
 
 )

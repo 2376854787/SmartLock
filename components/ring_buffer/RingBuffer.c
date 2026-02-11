@@ -922,7 +922,6 @@ uint32_t RingBuffer_GetContigWrite(const RingBuffer* rb) {
  * @return
  */
 RingBufferStatus RingBuffer_GetStatus(const RingBuffer* rb) {
-    // 可以在此处加锁获取一致性快照，或者由调用者保证
     RB_ENTER_CRITICAL();
     const RingBufferStatus status = {
         .used                = RingBuffer_GetUsedSize(rb),
@@ -940,5 +939,59 @@ RingBufferStatus RingBuffer_GetStatus(const RingBuffer* rb) {
     };
     RB_EXIT_CRITICAL();
     return status;
+}
+static inline uint32_t rb_mod(uint32_t x, uint32_t m) {
+    return (m == 0u) ? 0u : (x % m);
+}
+
+bool RingBuffer_SPSC_OverwriteIfExists(RingBuffer* rb, const uint8_t* item, uint32_t item_size,
+                                       uint32_t event_id_off, uint32_t key_off) {
+    if (!rb || !item || item_size == 0u) return false;
+    if (event_id_off + 4u > item_size) return false;
+    if (key_off + 4u > item_size) return false;
+
+    uint32_t target_event_id, target_key;
+    memcpy(&target_event_id, item + event_id_off, 4u);
+    memcpy(&target_key, item + key_off, 4u);
+
+    uint32_t pm;
+    OSAL_enter_critical_ex(&pm);
+
+    const uint32_t used = RingBuffer_GetUsedSize(rb);
+    const uint32_t cnt  = used / item_size;
+    if (cnt == 0u) {
+        OSAL_exit_critical_ex(pm);
+        return false;
+    }
+
+    for (uint32_t i = 0; i < cnt; i++) {
+        const uint32_t pos = rb_mod(rb->front_index + i * item_size, rb->size);
+
+        uint8_t tmp[8];
+        for (uint32_t k = 0; k < 4u; k++) {
+            tmp[k] = rb->buffer[rb_mod(pos + event_id_off + k, rb->size)];
+        }
+        for (uint32_t k = 0; k < 4u; k++) {
+            tmp[4u + k] = rb->buffer[rb_mod(pos + key_off + k, rb->size)];
+        }
+
+        uint32_t cur_event_id, cur_key;
+        memcpy(&cur_event_id, tmp, 4u);
+        memcpy(&cur_key, tmp + 4u, 4u);
+
+        if (cur_event_id == target_event_id && cur_key == target_key) {
+            const uint32_t tail  = rb->size - pos;
+            const uint32_t first = (item_size <= tail) ? item_size : tail;
+            memcpy(rb->buffer + pos, item, first);
+            if (first < item_size) {
+                memcpy(rb->buffer, item + first, item_size - first);
+            }
+            OSAL_exit_critical_ex(pm);
+            return true;
+        }
+    }
+
+    OSAL_exit_critical_ex(pm);
+    return false;
 }
 #endif

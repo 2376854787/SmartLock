@@ -419,8 +419,8 @@ void OSAL_exit_critical_from_isr(osal_crit_state_t state) {
  * @brief 创建一个互斥锁
  * @param out 返回锁对象
  * @param name 锁名称
- * @param recursive
- * @param prio_inherit
+ * @param recursive 优先级反转
+ * @param prio_inherit 优先级继承
  * @return 锁是否创建成功
  */
 ret_code_t OSAL_mutex_create(osal_mutex_t* out, const char* name, bool recursive,

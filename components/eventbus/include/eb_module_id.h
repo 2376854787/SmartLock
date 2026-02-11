@@ -15,4 +15,4 @@ typedef enum {
 #define EB_EID(mod, local) (((uint32_t)(mod) << 16) | ((uint32_t)(local) & 0xFFFFu))
 
 
-#endif  // SMARTLOCK_EB_MODULE_ID_H
+#endif
