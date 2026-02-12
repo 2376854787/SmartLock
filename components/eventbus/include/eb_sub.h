@@ -2,10 +2,6 @@
 #define SMARTLOCK_EB_SUB_H
 #include "eb_types.h"
 
-/* 最大订阅数 */
-#ifndef EB_MAX_SUBS
-#define EB_MAX_SUBS 64u
-#endif
 
 void eb_sub_init(void);
 

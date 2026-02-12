@@ -22,12 +22,22 @@
 #define EB_TAP_DROP_MB_FULL   (2u)
 #define EB_TAP_DROP_STORM     (3u)
 #define EB_TAP_DROP_TYPE      (4u)
-
+/**
+ * @brief 判断当前的订阅信息是否通过筛选
+ * @param ev 事件
+ * @param s 订阅信息
+ * @return 是否通过筛选
+ */
 static inline bool eb_filter_hit(const eb_event_t* ev, const eb_sub_t* s) {
     if (s->key_mask == 0u) return true;
     return ((ev->key & s->key_mask) == s->key_value);
 }
-
+/**
+ * @brief 判断事件和订阅的负载类型是不是一样的
+ * @param ev 事件
+ * @param s 订阅信息
+ * @return 判断携带类型和期待的类型是否一致
+ */
 static inline bool eb_type_ok(const eb_event_t* ev, const eb_sub_t* s) {
 #if (EB_CFG_ENABLE_TYPECHECK == 1)
     if (s->expected_type_tag == 0u) return true;
@@ -38,7 +48,12 @@ static inline bool eb_type_ok(const eb_event_t* ev, const eb_sub_t* s) {
     return true;
 #endif
 }
-
+/**
+ * @brief 分发事件到订阅信息指定的回调或者邮箱
+ * @param ev 事件
+ * @param s 订阅信息
+ * @return 32位状态码
+ */
 static eb_ret_t dispatch_one(const eb_event_t* ev, const eb_sub_t* s) {
     if (s->delivery == EB_DELIVERY_CALLBACK) {
 #if (EB_CFG_ENABLE_CALLBACK == 0)
@@ -54,7 +69,7 @@ static eb_ret_t dispatch_one(const eb_event_t* ev, const eb_sub_t* s) {
 
     /* MAILBOX */
     if (!s->mailbox) return EB_ERR_BADARG;
-
+    /* 投递到邮箱 */
     if (eb_port_mailbox_push(s->mailbox, ev)) {
         eb_state_update(MB_OK);
 #if (EB_CFG_ENABLE_TRACE == 1)
@@ -63,7 +78,7 @@ static eb_ret_t dispatch_one(const eb_event_t* ev, const eb_sub_t* s) {
         return EB_OK;
     }
 
-    /* push 失败：尝试 overwrite（仅 Snapshot + OVERWRITE/COALESCE） */
+    /* push 失败尝试覆盖  */
     const eb_eventdef_t* def = eb_eventdef_get(ev->event_id);
     if (def && def->semantic == EB_SEM_SNAPSHOT &&
         (def->drop_policy == EB_OVERWRITE || def->drop_policy == EB_COALESCE_LATEST) &&
@@ -74,7 +89,7 @@ static eb_ret_t dispatch_one(const eb_event_t* ev, const eb_sub_t* s) {
 #endif
         return EB_OK;
     }
-
+    /* 投递失败 满且丢弃*/
     eb_state_update(MB_FULL_DROP);
 #if (EB_CFG_ENABLE_TRACE == 1)
     eb_trace_record(EB_TRACE_MB_DROP, ev, (eb_drop_reason_t)EB_TAP_DROP_MB_FULL);
@@ -84,7 +99,10 @@ static eb_ret_t dispatch_one(const eb_event_t* ev, const eb_sub_t* s) {
 #endif
     return EB_ERR_FULL;
 }
-
+/**
+ * @brief 从订阅表中获取部分进行筛选后分发
+ * @param ev 事件
+ */
 void eb_dispatch(const eb_event_t* ev) {
 #if (EB_CFG_ENABLE_TRACE == 1)
     eb_trace_record(EB_TRACE_DISPATCH, ev, (eb_drop_reason_t)EB_TAP_DROP_NONE);
@@ -95,17 +113,19 @@ void eb_dispatch(const eb_event_t* ev) {
 
     eb_sub_t list[EB_MAX_MATCH];
     const uint32_t n = eb_sub_find(ev->event_id, list, EB_MAX_MATCH);
-
+    /* 没有订阅信息 */
     if (n == 0u) {
         eb_state_update(NO_SUB);
         return;
     }
-
+    /* 筛选后进行分发 */
     for (uint32_t i = 0; i < n; i++) {
+        /* 筛选 */
         if (!eb_filter_hit(ev, &list[i])) {
             eb_state_update(FILT_DROP);
             continue;
         }
+        /* 类型检查 */
         if (!eb_type_ok(ev, &list[i])) {
             eb_state_update(TYPE_MISMATCH);
 #if (EB_CFG_ENABLE_TRACE == 1)
@@ -116,6 +136,7 @@ void eb_dispatch(const eb_event_t* ev) {
 #endif
             continue;
         }
+        /* 分发 */
         (void)dispatch_one(ev, &list[i]);
     }
 }

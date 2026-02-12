@@ -10,7 +10,7 @@
 
 #if (EB_CFG_ENABLE_TRACE == 1)
 
-/* Trace phase：用于复盘链路（publish/enq/deq/dispatch/mailbox/drop） */
+/* 链路追踪 */
 typedef enum {
     EB_TRACE_PUB           = 0,
     EB_TRACE_ENQ           = 1,
@@ -24,7 +24,7 @@ typedef enum {
     EB_TRACE_STORM_DROP    = 9,
 } eb_trace_phase_t;
 
-/* Drop reason：用于统计/故障定位（注意：不要使用 printf/IO） */
+/* 丢弃原因 */
 typedef enum {
     EB_DROP_REASON_NONE      = 0,
     EB_DROP_REASON_BUSQ_FULL = 1,
@@ -33,42 +33,34 @@ typedef enum {
     EB_DROP_REASON_TYPE      = 4,
 } eb_drop_reason_t;
 
-/* header：放在 noinit，用于跨 reset 保留 */
+/* 日志头 */
 typedef struct {
-    uint32_t magic;        /* 'EBTR' */
-    uint16_t version;      /* 0x0001 */
-    uint16_t reset_reason; /* eb_reset_reason_t */
-    uint32_t depth;        /* EB_TRACE_DEPTH */
+    uint32_t magic;        /* 魔数 */
+    uint16_t version;      /* 版本 */
+    uint16_t reset_reason; /* 复位原因 */
+    uint32_t depth;        /* 深度 */
     uint32_t write_idx;    /* 单调递增 */
     uint32_t wrap_cnt;     /* 回卷次数 */
 } eb_trace_header_t;
-
+/* 日志条目 */
 typedef struct {
-    uint32_t ts_us;
-    uint32_t event_id;
-    uint32_t key;
-    uint32_t payload_u32;
-    uint16_t source_id;
-    uint16_t type_tag;
+    uint32_t ts_us;       /* 时间戳 */
+    uint32_t event_id;    /* 时间id */
+    uint32_t key;         /* 过滤key */
+    uint32_t payload_u32; /* 负载 */
+    uint16_t source_id;   /* 发布源id */
+    uint16_t type_tag;    /* 类型 */
 
-    uint8_t prio;
-    uint8_t phase;
-    uint8_t drop_reason;
+    uint8_t prio;        /* 优先级 */
+    uint8_t phase;       /* 阶段 */
+    uint8_t drop_reason; /* 丢弃原因 */
     uint8_t reserved;
 
-    /* --- Top-tier hardening fields (multi-producer safe) ---
-     * seq:    monotonic sequence number (== header.write_idx at reservation time)
-     * commit: set to EB_TRACE_COMMIT_MAGIC after all fields are written
-     *
-     * Reader rule (post-mortem tooling):
-     *   - Ignore entries with commit != EB_TRACE_COMMIT_MAGIC
-     *   - Optionally verify seq continuity for corruption detection
-     */
-    uint32_t seq;
-    uint32_t commit;
+    uint32_t seq;    /* 序列号 */
+    uint32_t commit; /* 提交标记 */
 } eb_trace_entry_t;
 
-/* Entry commit marker */
+/* 提交标记 */
 #ifndef EB_TRACE_COMMIT_MAGIC
 #define EB_TRACE_COMMIT_MAGIC (0xC0DEC17Au)
 #endif

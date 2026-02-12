@@ -1,3 +1,5 @@
+#include <stddef.h>
+
 #include "assert_cus.h"
 #include "eb_api.h"
 #include "eb_config.h"
@@ -26,7 +28,7 @@
     } while (0)
 #endif
 
-/* TAP drop reason codes：与 eb_trace 的 reason 编码保持一致（即使关闭 Trace 也稳定） */
+/* 丢弃原因与 eb_trace 的 reason 编码保持一致（即使关闭 Trace 也稳定） */
 #define EB_TAP_DROP_NONE      (0u)
 #define EB_TAP_DROP_BUSQ_FULL (1u)
 #define EB_TAP_DROP_MB_FULL   (2u)
@@ -38,21 +40,24 @@ static inline void eb_stats_inc(volatile uint32_t* p) {
 }
 
 typedef struct {
-    eb_event_t* buf;
-    uint16_t cap;
-    uint16_t head; /* write */
-    uint16_t tail; /* read  */
-    uint16_t len;
+    eb_event_t* buf; /* 存储地址 */
+    uint16_t cap;    /* 容量 */
+    uint16_t head;   /* 写指针 */
+    uint16_t tail;   /* 读指针  */
+    uint16_t len;    /* 当前长度 */
 } eb_queue_t;
 
-/* 静态存储：不动态分配 */
+/* 静态存储 */
 static eb_event_t qh_buf[EB_QDEPTH_H];
 static eb_event_t qm_buf[EB_QDEPTH_M];
 static eb_event_t ql_buf[EB_QDEPTH_L];
 
 static eb_queue_t qh, qm, ql;
 static eb_stats_t g_stats;
-
+/**
+ * @brief 触发事件就将某个变量原子增加
+ * @param ev 事件状态
+ */
 void eb_state_update(eb_stats_event_t ev) {
     switch (ev) {
         case PUB_TOTAL:
@@ -116,7 +121,12 @@ void eb_state_update(eb_stats_event_t ev) {
             break;
     }
 }
-
+/**
+ * @brief 初始化队列
+ * @param q 队列
+ * @param buf 缓冲区
+ * @param cap 容量
+ */
 static void q_init(eb_queue_t* q, eb_event_t* buf, uint16_t cap) {
     q->buf  = buf;
     q->cap  = cap;
@@ -124,7 +134,12 @@ static void q_init(eb_queue_t* q, eb_event_t* buf, uint16_t cap) {
     q->tail = 0u;
     q->len  = 0u;
 }
-
+/**
+ * @brief 将事件存储到队列
+ * @param q 队列
+ * @param ev 事件
+ * @return 是否入队成功
+ */
 static bool q_push(eb_queue_t* q, const eb_event_t* ev) {
     if (q->len >= q->cap) return false;
     q->buf[q->head] = *ev;
@@ -132,7 +147,12 @@ static bool q_push(eb_queue_t* q, const eb_event_t* ev) {
     q->len++;
     return true;
 }
-
+/**
+ * @brief 将队列出队一个事件
+ * @param q 队列
+ * @param out 事件接受地址
+ * @return 是否出队成功
+ */
 static bool q_pop(eb_queue_t* q, eb_event_t* out) {
     if (q->len == 0u) return false;
     *out    = q->buf[q->tail];
@@ -141,68 +161,101 @@ static bool q_pop(eb_queue_t* q, eb_event_t* out) {
     return true;
 }
 
-/* 队列满时 O(1) 覆盖最旧（丢 oldest，保 latest） */
+/**
+ * @brief 队列满的时候将最老的丢弃入队新的事件
+ * @param q 队列
+ * @param ev 事件
+ * @return
+ */
 static bool q_overwrite_drop_oldest(eb_queue_t* q, const eb_event_t* ev) {
     if (q->cap == 0u) return false;
-
+    /* 正常入队 */
     if (q->len < q->cap) {
         return q_push(q, ev);
     }
 
-    /* full: head==tail（len 记录使该关系恒成立）
-     * 覆盖 tail 所指 oldest，然后 head++，tail=head（丢弃最旧一条）。 */
+    /* 覆盖head 位置 */
     q->buf[q->head] = *ev;
+    /* +1 */
     q->head         = (uint16_t)((q->head + 1u) % q->cap);
     q->tail         = q->head;
     q->len          = q->cap;
     return true;
 }
-
+/**
+ * @brief 返回对应优先级队列的地址
+ * @param p 优先级
+ * @return 返回对应优先级队列的地址
+ */
 static eb_queue_t* pick_q(eb_prio_t p) {
     switch (p) {
         case EB_PRIO_H:
             return &qh;
         case EB_PRIO_M:
             return &qm;
-        default:
+        case EB_PRIO_L:
             return &ql;
+        default:
+            /* 未定义优先级 */
+            EB_ASSERT(-1);
     }
+    return NULL;
 }
-
+/**
+ * @brief 初始化事件总线、队列、监察状态、哈希表
+ */
 void eb_init(void) {
+    /* 初始化队列 */
     q_init(&qh, qh_buf, (uint16_t)EB_QDEPTH_H);
     q_init(&qm, qm_buf, (uint16_t)EB_QDEPTH_M);
     q_init(&ql, ql_buf, (uint16_t)EB_QDEPTH_L);
     g_stats = (eb_stats_t){0};
-
-    eb_eventdef_init(); /* 构建 eventmap O(1) 查找表 */
+    /* 构建哈希查找表 */
+    eb_eventdef_init();
     eb_sub_init();
 
 #if (EB_CFG_ENABLE_STORM == 1)
+    /* 启用风暴防护 限制投递频率 */
     eb_storm_init();
 #endif
 #if (EB_CFG_ENABLE_TRACE == 1)
+    /* 启用追踪 */
     eb_trace_init();
 #endif
 #if (EB_CFG_ENABLE_BUDGET == 1)
+    // TODO 添加注释
     eb_budget_init();
 #endif
 }
 
-/* 发布入口：多生产者；允许 ISR 调用。
- * 注：为保证 correctness，这里先用“短临界区”保护队列操作。 */
+/**
+ * @brief 多生产者发布事件
+ * @param ev_in 事件变量地址
+ * @return 32位状态码
+ */
 eb_ret_t eb_publish(const eb_event_t* ev_in) {
-    if (!ev_in) return EB_ERR_BADARG;
-
+    if (!ev_in) {
+        EB_ASSERT(ev_in != 0);
+        return EB_ERR_BADARG;
+    }
+    /* 获取事件策略 */
     const eb_eventdef_t* def = eb_eventdef_get(ev_in->event_id);
-    if (!def) return EB_ERR_BADARG;                        /* 未定义事件：拒绝 */
-    if (def->plane == EB_PLANE_DATA) return EB_ERR_BADARG; /* Data 禁止进总线 */
+    if (!def) {
+        EB_ASSERT(def != 0);
+        return EB_ERR_BADARG; /* 未定义事件：拒绝 */
+    }
+    if (def->plane == EB_PLANE_DATA) {
+        return EB_ERR_BADARG; /* Data 禁止进总线 */
+    }
 
     eb_event_t ev = *ev_in;
-    ev.prio       = def->prio; /* 强制使用策略表定义的优先级 */
-    ev.ts         = eb_port_timestamp();
+    /* 在策略表优先级生效时强制使用策略表的优先级 */
+    if (def->prio >= 0) {
+        ev.prio = def->prio;
+    }
+    ev.ts = eb_port_timestamp();
 
-    /* 允许 eventdef 赋默认 type_tag（调用方未填时） */
+    /* 允许 eventdef 在没有填充类型时 赋默认 type_tag */
     if (ev.type_tag == 0u && def->type_tag != 0u) {
         ev.type_tag = def->type_tag;
     }
@@ -212,15 +265,17 @@ eb_ret_t eb_publish(const eb_event_t* ev_in) {
 #endif
 
 #if (EB_CFG_ENABLE_STORM == 1)
+    /* 检查投递频率 */
     if (!eb_storm_allow(def, ev.source_id, ev.ts)) {
         eb_state_update(STORM_DROP);
 #if (EB_CFG_ENABLE_TRACE == 1)
+        /* 记录 */
         eb_trace_record(EB_TRACE_STORM_DROP, &ev, (eb_drop_reason_t)EB_TAP_DROP_STORM);
 #endif
 #if (EB_CFG_ENABLE_TAP == 1)
         eb_tap_on_drop(&ev, (uint8_t)EB_TAP_DROP_STORM);
 #endif
-        return EB_OK; /* 限频丢弃视为成功：不施加背压 */
+        return EB_OK; /* 限频丢弃视为成功 */
     }
 #endif
 
@@ -228,8 +283,10 @@ eb_ret_t eb_publish(const eb_event_t* ev_in) {
     eb_trace_record(EB_TRACE_PUB, &ev, (eb_drop_reason_t)EB_TAP_DROP_NONE);
 #endif
 
+    /* 获取到指定的队列 */
     eb_queue_t* q = pick_q(ev.prio);
 
+    /* 对应优先级事件尝试入队 +1 */
     if (ev.prio == EB_PRIO_H)
         eb_state_update(ENQ_H);
     else if (ev.prio == EB_PRIO_M)
@@ -239,7 +296,7 @@ eb_ret_t eb_publish(const eb_event_t* ev_in) {
 
     uint32_t pm;
     eb_port_enter_critical(&pm);
-
+    /* 入队 */
     bool ok = q_push(q, &ev);
     if (!ok) {
         /* 只有 Snapshot 才允许覆盖/合并 */
@@ -255,8 +312,8 @@ eb_ret_t eb_publish(const eb_event_t* ev_in) {
                 return EB_OK;
             }
         }
-
         eb_port_exit_critical(pm);
+        /* 队列满丢弃事件 */
         if (ev.prio == EB_PRIO_H)
             eb_state_update(DROP_Q_H);
         else if (ev.prio == EB_PRIO_M)
@@ -281,11 +338,16 @@ eb_ret_t eb_publish(const eb_event_t* ev_in) {
 #endif
     return EB_OK;
 }
-
+/**
+ * @brief 获取全局状态
+ * @return 获取全局状态
+ */
 const eb_stats_t* eb_get_stats(void) {
     return &g_stats;
 }
-
+/**
+ * @brief 处理队列里面的事件
+ */
 void eb_pump_once(void) {
 #if (EB_CFG_ENABLE_BUDGET == 1)
     const uint32_t round_t0 = eb_port_timestamp_us();
@@ -293,6 +355,7 @@ void eb_pump_once(void) {
 
     eb_event_t ev;
 
+    /* 高级队列 */
     while (1) {
         uint32_t pm;
         eb_port_enter_critical(&pm);
@@ -300,21 +363,24 @@ void eb_pump_once(void) {
         eb_port_exit_critical(pm);
         if (!ok) break;
 
+        /* 分发出列事件 +1 */
         eb_state_update(DEQ_H);
 #if (EB_CFG_ENABLE_TRACE == 1)
         eb_trace_record(EB_TRACE_DEQ, &ev, (eb_drop_reason_t)EB_TAP_DROP_NONE);
 #endif
 
 #if (EB_CFG_ENABLE_BUDGET == 1)
+        /* 记录分发事件 */
         const uint32_t t0 = eb_port_timestamp_us();
 #endif
+        /* 分发事件 */
         eb_dispatch(&ev);
 #if (EB_CFG_ENABLE_BUDGET == 1)
         const uint32_t t1 = eb_port_timestamp_us();
         eb_budget_record_event(ev.prio, (uint32_t)(t1 - t0));
 #endif
     }
-
+    /* 中级队列 */
     while (1) {
         uint32_t pm;
         eb_port_enter_critical(&pm);
@@ -337,6 +403,7 @@ void eb_pump_once(void) {
 #endif
     }
 
+    /* 低优先级队列 */
     for (uint32_t i = 0; i < EB_L_QUOTA_PER_ROUND; i++) {
         uint32_t pm;
         eb_port_enter_critical(&pm);

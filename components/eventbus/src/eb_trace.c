@@ -18,60 +18,65 @@
 
 static EB_NOINIT eb_trace_header_t g_hdr;
 static EB_NOINIT eb_trace_entry_t g_entries[EB_TRACE_DEPTH];
-
+/**
+ * @brief 初始化日志头 以及日志条目存储空间非首次初始化
+ */
 static inline void hdr_sanitize(void) {
-    if (g_hdr.magic != EB_TRACE_MAGIC || g_hdr.depth != EB_TRACE_DEPTH || g_hdr.version != 0x0001u) {
+    if (g_hdr.magic != EB_TRACE_MAGIC || g_hdr.depth != EB_TRACE_DEPTH ||
+        g_hdr.version != 0x0001u) {
         /* 首次或内存不可信：初始化 */
         memset(&g_hdr, 0, sizeof(g_hdr));
-        g_hdr.magic   = EB_TRACE_MAGIC;
-        g_hdr.version = 0x0001u;
-        g_hdr.depth   = EB_TRACE_DEPTH;
+        g_hdr.magic     = EB_TRACE_MAGIC;
+        g_hdr.version   = 0x0001u;
+        g_hdr.depth     = EB_TRACE_DEPTH;
         g_hdr.write_idx = 0u;
         g_hdr.wrap_cnt  = 0u;
-        /* entries 不强制清零（noinit）——但我们初始化时清零一次避免脏数据 */
+        /* entries 不强制清零 */
         memset(g_entries, 0, sizeof(g_entries));
     }
 }
-
+/**
+ * @brief 初始化日志头 以及复位原因
+ */
 void eb_trace_init(void) {
     hdr_sanitize();
     g_hdr.reset_reason = (uint16_t)eb_port_read_reset_reason_and_clear();
 }
-
+/**
+ * @brief 清理事件总线的追踪信息
+ */
 void eb_trace_clear(void) {
     memset(&g_hdr, 0, sizeof(g_hdr));
-    g_hdr.magic   = EB_TRACE_MAGIC;
-    g_hdr.version = 0x0001u;
-    g_hdr.depth   = EB_TRACE_DEPTH;
+    g_hdr.magic        = EB_TRACE_MAGIC;
+    g_hdr.version      = 0x0001u;
+    g_hdr.depth        = EB_TRACE_DEPTH;
     g_hdr.reset_reason = (uint16_t)eb_port_read_reset_reason_and_clear();
     memset(g_entries, 0, sizeof(g_entries));
 }
-
+/**
+ * @brief 将当前阶段信息存储到黑匣子
+ * @param phase 阶段
+ * @param ev 事件
+ * @param reason 丢弃原因
+ */
 void eb_trace_record(eb_trace_phase_t phase, const eb_event_t* ev, eb_drop_reason_t reason) {
     if (!ev) return;
-
-    /* Fast-path: require eb_trace_init() to have run before interrupts/tasks.
-     * If header looks invalid, skip recording (best-effort). */
-    if (g_hdr.magic != EB_TRACE_MAGIC || g_hdr.depth != EB_TRACE_DEPTH || g_hdr.version != 0x0001u) {
+    /* 验证header有效性 没有初始化或者被破坏 */
+    if (g_hdr.magic != EB_TRACE_MAGIC || g_hdr.depth != EB_TRACE_DEPTH ||
+        g_hdr.version != 0x0001u) {
         return;
     }
     if (EB_TRACE_DEPTH == 0u) {
         return;
     }
 
-    /* Multi-producer reservation: each caller gets a unique sequence number. */
-    const uint32_t w = __atomic_fetch_add(&g_hdr.write_idx, 1u, __ATOMIC_RELAXED);
-    const uint32_t idx = w % (uint32_t)EB_TRACE_DEPTH;
+    /* 多生产者 预定 */
+    const uint32_t w    = __atomic_fetch_add(&g_hdr.write_idx, 1u, __ATOMIC_RELAXED);
+    const uint32_t idx  = w % (uint32_t)EB_TRACE_DEPTH;
     eb_trace_entry_t* e = &g_entries[idx];
-
-    /* Two-phase commit to avoid torn entries after crash/reset:
-     * 1) clear commit marker
-     * 2) write fields
-     * 3) release fence
-     * 4) publish seq + commit marker
-     */
+    /* 标记该信息还没提交 */
     __atomic_store_n(&e->commit, 0u, __ATOMIC_RELAXED);
-
+    /* 写入数据 */
     e->ts_us       = eb_port_timestamp_us();
     e->event_id    = ev->event_id;
     e->key         = ev->key;
@@ -82,12 +87,13 @@ void eb_trace_record(eb_trace_phase_t phase, const eb_event_t* ev, eb_drop_reaso
     e->phase       = (uint8_t)phase;
     e->drop_reason = (uint8_t)reason;
     e->reserved    = 0u;
-
+    /* 确保前面的代码执行完再进行下一步 */
     __atomic_thread_fence(__ATOMIC_RELEASE);
+    /* 记录序列号 */
     e->seq = w;
     __atomic_store_n(&e->commit, (uint32_t)EB_TRACE_COMMIT_MAGIC, __ATOMIC_RELEASE);
 
-    /* wrap_cnt is informational; keep it approximately correct under concurrency */
+    /* 判断是否写满了 */
     if (((w + 1u) % (uint32_t)EB_TRACE_DEPTH) == 0u) {
         (void)__atomic_fetch_add(&g_hdr.wrap_cnt, 1u, __ATOMIC_RELAXED);
     }

@@ -8,15 +8,12 @@
 #include "eb_freeze.h"
 #include "eb_port.h"
 #include "osal.h"
-#ifndef EB_MAX_EVENTS
-#define EB_MAX_EVENTS 128u
-#endif
 
 /* =====================================================================================
  * 订阅表实现：
- * - 当 EB_CFG_STATIC_FREEZE==1：运行期只读（推荐），用单表 + （可选）短临界区。
- *   优点：无原子依赖、无双表拷贝、最小 RAM/复杂度；符合 SOP “Freeze 后只读”。
- * - 当 EB_CFG_STATIC_FREEZE==0：支持运行期动态订阅（不推荐用于 Top-Tier），用 COW 双表。
+ * - 当 EB_CFG_STATIC_FREEZE==1：运行期只读，用单表 + 短临界区。
+ *   无原子依赖、无双表拷贝、最小 RAM/复杂度。
+ * - 当 EB_CFG_STATIC_FREEZE==0：支持运行期动态订阅，用 COW 双表。
  */
 
 #if (EB_CFG_STATIC_FREEZE == 1)

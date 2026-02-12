@@ -27,7 +27,7 @@ typedef enum {
     EB_STORM_TOKEN_BUCKET = 2, /* 令牌桶：容量/补充周期 */
 } eb_storm_policy_t;
 
-/* 事件定义（可作为“合同”与“策略表”） */
+/* 事件定义策略 */
 typedef struct {
     uint32_t event_id;
 
@@ -41,12 +41,11 @@ typedef struct {
 
     /* Storm Policy：按 (event_id, source_id) 限频。source_id 在 eb_event_t 内携带 */
     eb_storm_policy_t storm_policy;
-    uint16_t storm_min_interval_ms; /* MIN_INTERVAL 使用 */
+    uint16_t storm_min_interval_ms; /* 最小间隔  */
 
-    /* TOKEN_BUCKET 使用：容量 / 每 storm_refill_ms 补充 storm_refill_tokens */
-    uint16_t storm_tb_capacity;
-    uint16_t storm_refill_ms;
-    uint16_t storm_refill_tokens;
+    uint16_t storm_tb_capacity;   /* 令牌剩余容量 */
+    uint16_t storm_refill_ms;     /* 令牌补充事件间隔 */
+    uint16_t storm_refill_tokens; /* 每次补充的数量 */
 } eb_eventdef_t;
 
 /* 初始化：构建 eventmap（需在 eb_init 中调用） */
