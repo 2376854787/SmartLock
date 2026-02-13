@@ -15,7 +15,7 @@ extern "C" {
  * - RELEASE 构建定义 RELEASE_MODE
  */
 
-/* 是否启用断言系统（建议 RELEASE 也启用 fatal 层） */
+/* 是否启用断言系统 */
 #ifndef CORE_ASSERT_ENABLE
 #define CORE_ASSERT_ENABLE 1
 #endif
