@@ -18,6 +18,8 @@
 #define ENABLE_HAL_GPIO
 #define ENABLE_HAL_UART
 #define ENABLE_HAL_TIME
+#define ENABLE_SOFT_I2C /* 软件 I2C (bit-banging) */
+#define ENABLE_GT911    /* GT911 电容触控驱动 */
 
 /* 协议标准配置宏  取消注释即开启整个项目的RTOS执行标准*/
 /* 启动CMSIS v2 标准 */
