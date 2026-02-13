@@ -15,9 +15,10 @@
 #define OSAL_CRITMON_THRESHOLD_US 50u
 #endif
 
-static uint32_t g_critmon_start_us = 0u;
-static uint32_t g_critmon_nest     = 0u;
-static uint32_t g_critmon_enter_pc = 0u;
+static uint32_t g_critmon_start_cyc     = 0u;
+static uint32_t g_critmon_cycles_per_us = 0u;
+static uint32_t g_critmon_nest          = 0u;
+static uint32_t g_critmon_enter_pc      = 0u;
 
 static inline uint32_t read_lr_return_addr(void) {
 #if defined(__GNUC__) || defined(__clang__)
@@ -195,10 +196,16 @@ static uint32_t g_irq_saved_primask = 0U;
 /**
  * @brief 获取进入时的时间戳 和 lr寄存器值
  */
-static inline void OSAL_CritMon_Enter(void) {
+static inline void OSAL_CritMon_Enter(uint32_t enter_pc) {
     if (g_critmon_nest == 0u) {
-        g_critmon_start_us = hal_get_tick_us32();
-        g_critmon_enter_pc = read_lr_return_addr();
+        /* 首次获取一下每 us的周期 */
+        if (g_critmon_cycles_per_us == 0u) {
+            g_critmon_cycles_per_us = hal_get_cycles_per_us(); /* 0 表示 DWT 未就绪 */
+        }
+        /* 1、记录开始时的周期数 */
+        g_critmon_start_cyc = hal_get_cycle32();
+        /* 记录pc */
+        g_critmon_enter_pc  = enter_pc; /* 记录 OSAL_enter_critical 的调用点 */
     }
     g_critmon_nest++;
 }
@@ -210,41 +217,52 @@ static inline void OSAL_CritMon_Enter(void) {
  */
 static inline void OSAL_CritMon_Exit(uint32_t* out_dur_us, uint32_t* out_enter_pc) {
     if (!out_dur_us || !out_enter_pc) return;
-
+    /* 初始化为0防止垃圾信息 */
     *out_dur_us   = 0u;
     *out_enter_pc = 0u;
 
     /* 防御：调用不成对时不炸 OSAL，自行让 OSAL_FAULT 去管 */
     if (g_critmon_nest == 0u) return;
-
+    /* 直到嵌套的循环完成 */
     if (g_critmon_nest == 1u) {
-        const uint32_t now = hal_get_tick_us32();
-        *out_dur_us        = (uint32_t)(now - g_critmon_start_us);
-        *out_enter_pc      = g_critmon_enter_pc;
+        *out_enter_pc = g_critmon_enter_pc;
+
+        /* DWT 未初始化/不可用：不计时（避免 ms*1000 的 1000us 假峰值） */
+        if (g_critmon_cycles_per_us != 0u) {
+            const uint32_t now_cyc   = hal_get_cycle32();
+            const uint32_t delta_cyc = (uint32_t)(now_cyc - g_critmon_start_cyc); /* wrap-safe */
+            *out_dur_us              = (uint32_t)(delta_cyc / g_critmon_cycles_per_us);
+        } else {
+            *out_dur_us = 0u;
+        }
     }
 
     g_critmon_nest--;
 }
+
 /**
  * @note 根据宏定义的不同选择 关中断或者RTOS的临界区
  */
 void OSAL_enter_critical(void) {
     OSAL_FAULT(!OSAL_in_isr());
-    OSAL_CritMon_Enter();
+    /* 先取调用点 PC（此时还没关中断，取 return address 才是调用者） */
+    const uint32_t enter_pc = read_lr_return_addr();
 #if OSAL_CRITICAL_IMPL_FREERTOS
     if (OSAL_kernel_is_running()) {
-        taskENTER_CRITICAL();
+        taskENTER_CRITICAL();         /* 先真正屏蔽 */
+        OSAL_CritMon_Enter(enter_pc); /* 再开始计时：避免被 SysTick 抢占导致 ~1000us 假峰值 */
         return;
     }
 #endif
-
-    /* 调度未启动/裸机：用 PRIMASK（可恢复嵌套） */
+    /* 调度未启动/裸机：PRIMASK 嵌套 */
     if (g_irq_crit_nest == 0U) {
         g_irq_saved_primask = __get_PRIMASK();
         __disable_irq();
         __DMB();
     }
     g_irq_crit_nest++;
+
+    OSAL_CritMon_Enter(enter_pc);
 }
 
 /**
@@ -287,32 +305,33 @@ void OSAL_exit_critical(void) {
  */
 void OSAL_enter_critical_ex(osal_crit_state_t* state) {
     if (!state) return;
-    OSAL_CritMon_Enter();
+    const uint32_t enter_pc = read_lr_return_addr();
 #if OSAL_CRITICAL_IMPL_FREERTOS
     if (OSAL_in_isr()) {
-        /* 调度未启动时不要走 FreeRTOS FROM_ISR，回退 PRIMASK */
         if (OSAL_kernel_is_running()) {
             const UBaseType_t s = taskENTER_CRITICAL_FROM_ISR();
             *state              = (osal_crit_state_t)((((uint32_t)s) & OSAL_CRIT_PAYLOAD_MASK) |
                                          OSAL_CRIT_MODE_RTOS_ISR);
+            OSAL_CritMon_Enter(enter_pc);
             return;
         }
     } else {
         if (OSAL_kernel_is_running()) {
             taskENTER_CRITICAL();
             *state = (osal_crit_state_t)OSAL_CRIT_MODE_RTOS_THREAD;
+            OSAL_CritMon_Enter(enter_pc);
             return;
         }
     }
 #endif
-
-    /* 裸机/调度未启动：用 PRIMASK（可恢复） */
+    /* PRIMASK */
     {
         const uint32_t s = __get_PRIMASK();
         __disable_irq();
         __DMB();
         *state = (osal_crit_state_t)((s & 0x1UL) | OSAL_CRIT_MODE_PRIMASK);
     }
+    OSAL_CritMon_Enter(enter_pc);
 }
 
 /**
@@ -367,22 +386,23 @@ void OSAL_exit_critical_ex(osal_crit_state_t state) {
  */
 void OSAL_enter_critical_from_isr(osal_crit_state_t* state) {
     if (!state) return;
-    OSAL_CritMon_Enter();
+    const uint32_t enter_pc = read_lr_return_addr();
 #if OSAL_CRITICAL_IMPL_FREERTOS
     if (OSAL_kernel_is_running()) {
         const UBaseType_t s = taskENTER_CRITICAL_FROM_ISR();
         *state              = (osal_crit_state_t)s;
+        OSAL_CritMon_Enter(enter_pc);
         return;
     }
 #endif
 
-    /* 调度未启动/裸机：用 PRIMASK */
     {
         const uint32_t s = __get_PRIMASK();
         __disable_irq();
         __DMB();
         *state = (osal_crit_state_t)s;
     }
+    OSAL_CritMon_Enter(enter_pc);
 }
 
 /**

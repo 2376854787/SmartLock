@@ -36,6 +36,7 @@
 #include "auto_init.h"
 #include "bh1750.h"
 #include "blackbox_record.h"
+#include "hal_time.h"
 #include "lcd.h"
 #include "log.h"
 #include "myfree.h"
@@ -155,6 +156,7 @@ int main(void)
   /* USER CODE BEGIN 1 */
     Move_Vector_Table_To_RAM();
     __enable_irq();
+
     /* 清理标志位 记录复位原因 */
     // BB_OnBootUpdateResetReason(); /* 如果使用BootLoader 注释这句将复位原因交由 Bootloader完成 */
   /* USER CODE END 1 */
@@ -172,7 +174,7 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
+    dwt_init_once();
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */

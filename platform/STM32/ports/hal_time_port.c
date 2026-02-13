@@ -23,7 +23,7 @@ static uint32_t cycles_per_us;
 /**
  * 初始化 DWT寄存器
  */
-static void dwt_init_once(void) {
+void dwt_init_once(void) {
     // DWT初始化
     BIT_SET(CoreDebug->DEMCR, 24);  // 使能DWT外设
     DWT->CYCCNT = 0;

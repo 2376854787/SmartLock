@@ -53,5 +53,8 @@ uint32_t hal_get_cycles_per_us(void);
  * @note 使用前必须确保 DWT 初始化成功
  */
 uint32_t hal_cycles_to_us(uint32_t cyc);
-
+/**
+ * @brief 初始化DWT用作高精度时钟
+ */
+void dwt_init_once(void);
 #endif  // HAL_TIME_H
