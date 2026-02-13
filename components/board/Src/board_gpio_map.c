@@ -19,6 +19,11 @@ typedef struct {
 static const board_gpio_map_entry_t s_map[] = {
     {.id = HAL_GPIO_ID_LED1, .hw = {.port = GPIOC, .pin = 13}},
     {.id = HAL_GPIO_ID_BTN1, .hw = {.port = GPIOA, .pin = 0}},
+    /* GT911 触控引脚 (Explorer V3.4) */
+    {.id = HAL_GPIO_ID_CT_SCL, .hw = {.port = GPIOB, .pin = 0}},  /* T_SCK  → PB0  */
+    {.id = HAL_GPIO_ID_CT_SDA, .hw = {.port = GPIOF, .pin = 11}}, /* T_MOSI → PF11 */
+    {.id = HAL_GPIO_ID_CT_RST, .hw = {.port = GPIOC, .pin = 13}}, /* T_CS   → PC13 */
+    {.id = HAL_GPIO_ID_CT_INT, .hw = {.port = GPIOB, .pin = 1}},  /* T_PEN  → PB1  */
 };
 
 ret_code_t board_gpio_lookup(uint32_t id, board_gpio_hw_t* out) {
