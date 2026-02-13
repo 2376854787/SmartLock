@@ -15,7 +15,6 @@
 #include "hal_gpio.h"
 #include "log.h"
 
-
 #define TAG "TOUCH"
 
 /* GT911 设备实例 */
@@ -54,17 +53,16 @@ void StartTouchTestTask(void* argument) {
     }
 
     /* ---- 初始化 GT911 ---- */
-    const gt911_cfg_t cfg = {
-        .gpio_id_scl = HAL_GPIO_ID_CT_SCL,
-        .gpio_id_sda = HAL_GPIO_ID_CT_SDA,
-        .gpio_id_rst = HAL_GPIO_ID_CT_RST,
-        .gpio_id_int = HAL_GPIO_ID_CT_INT,
-        .i2c_addr    = GT911_ADDR_HIGH,
-        .max_x       = 480,
-        .max_y       = 800,
-    };
+    const gt911_cfg_t cfg = {.gpio_id_scl  = HAL_GPIO_ID_CT_SCL,
+                             .gpio_id_sda  = HAL_GPIO_ID_CT_SDA,
+                             .gpio_id_rst  = HAL_GPIO_ID_CT_RST,
+                             .gpio_id_int  = HAL_GPIO_ID_CT_INT,
+                             .i2c_addr     = GT911_ADDR_HIGH,
+                             .max_x        = 480,
+                             .max_y        = 800,
+                             .refresh_rate = 100};
 
-    ret_code_t rc = gt911_init(&s_touch, &cfg);
+    ret_code_t rc         = gt911_init(&s_touch, &cfg);
     if (rc != RET_OK) {
         LOG_E(TAG, "GT911 初始化失败! rc=0x%08lX", (unsigned long)rc);
         osThreadSuspend(osThreadGetId());

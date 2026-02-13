@@ -183,10 +183,10 @@ ret_code_t gt911_init(gt911_dev_t* dev, const gt911_cfg_t* cfg) {
     if (rc != RET_OK) return rc;
 
     /* 初始化 Soft I2C 总线 */
-    soft_i2c_cfg_t i2c_cfg = {
+    const soft_i2c_cfg_t i2c_cfg = {
         .gpio_id_scl = cfg->gpio_id_scl,
         .gpio_id_sda = cfg->gpio_id_sda,
-        .delay_us    = 2, /* ~250kHz，GT911 支持最高 400kHz */
+        .delay_us    = 1, /* ~400kHz，GT911 支持最高 400kHz */
     };
     rc = soft_i2c_init(&dev->i2c, &i2c_cfg);
     if (rc != RET_OK) return rc;
