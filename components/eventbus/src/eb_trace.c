@@ -4,10 +4,8 @@
 
 #include <string.h>
 
-/* GCC/Clang builtins are used to avoid requiring <stdatomic.h> on bare-metal */
-
 #ifndef EB_TRACE_MAGIC
-#define EB_TRACE_MAGIC (0x45525442u) /* 'EBTR' little-endian */
+#define EB_TRACE_MAGIC (0x45525442u)
 #endif
 
 #if (EB_CFG_TRACE_NOINIT == 1)
@@ -24,7 +22,7 @@ static EB_NOINIT eb_trace_entry_t g_entries[EB_TRACE_DEPTH];
 static inline void hdr_sanitize(void) {
     if (g_hdr.magic != EB_TRACE_MAGIC || g_hdr.depth != EB_TRACE_DEPTH ||
         g_hdr.version != 0x0001u) {
-        /* 首次或内存不可信：初始化 */
+        /* 首次或内存不可信 初始化 */
         memset(&g_hdr, 0, sizeof(g_hdr));
         g_hdr.magic     = EB_TRACE_MAGIC;
         g_hdr.version   = 0x0001u;
