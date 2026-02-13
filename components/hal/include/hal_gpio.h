@@ -100,6 +100,33 @@ void hal_gpio_toggle(hal_gpio_t* h);
 /* 可选：断言失败钩子（弱符号由 port 层提供默认实现，上层可覆盖） */
 void hal_gpio_assert_failed(const char* file, int line);
 
+/* ---------------- 中断回调注册 ---------------- */
+
+/**
+ * @brief  GPIO 中断回调函数原型
+ * @param  user_data  注册时传入的用户数据
+ */
+typedef void (*hal_gpio_irq_cb_t)(void* user_data);
+
+/**
+ * @brief  注册 GPIO 中断回调
+ * @param  h          GPIO 句柄
+ * @param  cb         回调函数
+ * @param  user_data  用户数据
+ * @return RET_OK 或错误码
+ * @note   调用前需通过 hal_gpio_config 配置为中断模式 (RISING/FALLING/BOTH)
+ *         会自动使能 NVIC
+ */
+ret_code_t hal_gpio_register_irq(hal_gpio_t* h, hal_gpio_irq_cb_t cb, void* user_data);
+
+/**
+ * @brief  注销 GPIO 中断回调
+ * @param  h  GPIO 句柄
+ * @return RET_OK 或错误码
+ * @note   会自动禁用 NVIC (如果该中断线上无其他引脚使用)
+ */
+ret_code_t hal_gpio_unregister_irq(hal_gpio_t* h);
+
 #ifdef __cplusplus
 }
 #endif

@@ -5,7 +5,7 @@
 #if defined(ENABLE_HAL_GPIO)
 
 /**
- * 平台接口（仅在 .c 内声明）
+ * 平台接口
  * 由 platform/stm32/ports/hal_gpio_port.c 实现
  */
 ret_code_t hal_gpio_port_open(hal_gpio_t** out, uint32_t id);
@@ -19,6 +19,10 @@ void hal_gpio_port_write(const hal_gpio_t* h, hal_gpio_level_t level);
 hal_gpio_level_t hal_gpio_port_read(const hal_gpio_t* h);
 
 void hal_gpio_port_toggle(const hal_gpio_t* h);
+
+ret_code_t hal_gpio_port_register_irq(hal_gpio_t* h, hal_gpio_irq_cb_t cb, void* user_data);
+
+ret_code_t hal_gpio_port_unregister_irq(hal_gpio_t* h);
 
 /**
  * @brief 从port实现函数返回映射的指定GPIO port与PIN结构体
@@ -74,6 +78,20 @@ hal_gpio_level_t hal_gpio_read(hal_gpio_t* h) {
 void hal_gpio_toggle(hal_gpio_t* h) {
     hal_gpio_port_toggle(h);
 }
+
+/**
+ * @brief  注册 GPIO 中断回调
+ */
+ret_code_t hal_gpio_register_irq(hal_gpio_t* h, hal_gpio_irq_cb_t cb, void* user_data) {
+    return hal_gpio_port_register_irq(h, cb, user_data);
+}
+
+/**
+ * @brief  注销 GPIO 中断回调
+ */
+ret_code_t hal_gpio_unregister_irq(hal_gpio_t* h) {
+    return hal_gpio_port_unregister_irq(h);
+}
 #else
 ret_code_t hal_gpio_open(hal_gpio_t** out, uint32_t id) {
     (void)out;
@@ -104,5 +122,17 @@ hal_gpio_level_t hal_gpio_read(hal_gpio_t* h) {
 
 void hal_gpio_toggle(hal_gpio_t* h) {
     (void)h;
+}
+
+ret_code_t hal_gpio_register_irq(hal_gpio_t* h, hal_gpio_irq_cb_t cb, void* user_data) {
+    (void)h;
+    (void)cb;
+    (void)user_data;
+    return RET_E_UNSUPPORTED;
+}
+
+ret_code_t hal_gpio_unregister_irq(hal_gpio_t* h) {
+    (void)h;
+    return RET_E_UNSUPPORTED;
 }
 #endif
