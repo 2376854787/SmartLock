@@ -1,5 +1,8 @@
+#include <stm32f4xx_hal.h> /* 确保包含完整 HAL 定义 (IRQn_Type 等) */
+
 #include "APP_config.h"
 #include "stm32_hal_config.h"
+
 /* hal抽象选择宏 */
 #if defined(USE_STM32_HAL) && defined(ENABLE_HAL_GPIO)
 #include <stdint.h>
@@ -329,6 +332,134 @@ void hal_gpio_port_toggle(const hal_gpio_t* h) {
     HAL_GPIO_ASSERT(h->pin < 16u);
 
     HAL_GPIO_TogglePin(h->port, pin_mask(h->pin));
+}
+
+/**============================================================================================ */
+/**==================================       中断回调       ===================================== */
+/**============================================================================================ */
+
+typedef struct {
+    hal_gpio_irq_cb_t cb;
+    void* user_data;
+} gpio_irq_entry_t;
+
+/* EXTI0..15 对应 16 个引脚号 */
+static gpio_irq_entry_t s_gpio_irq_cbs[16];
+
+/**
+ * @brief  获取引脚对应的 IRQn
+ */
+static IRQn_Type get_pin_irqn(uint16_t pin) {
+    if (pin == 0) return EXTI0_IRQn;
+    if (pin == 1) return EXTI1_IRQn;
+    if (pin == 2) return EXTI2_IRQn;
+    if (pin == 3) return EXTI3_IRQn;
+    if (pin == 4) return EXTI4_IRQn;
+    if (pin >= 5 && pin <= 9) return EXTI9_5_IRQn;
+    if (pin >= 10 && pin <= 15) return EXTI15_10_IRQn;
+    return NonMaskableInt_IRQn; /* Should not happen */
+}
+
+/**
+ * @brief 传入配置信息注册回调函数
+ * @param h GPIO信息
+ * @param cb 回调函数
+ * @param user_data 上下文信息
+ * @return
+ */
+ret_code_t hal_gpio_port_register_irq(hal_gpio_t* h, hal_gpio_irq_cb_t cb, void* user_data) {
+    if (!h || !cb) return PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    if (h->pin >= 16u) return PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+
+    /* 1. 存入回调表 */
+    s_gpio_irq_cbs[h->pin].cb        = cb;
+    s_gpio_irq_cbs[h->pin].user_data = user_data;
+
+    /* 2. 使能 NVIC */
+    IRQn_Type irqn                   = get_pin_irqn(h->pin);
+    /* 设置优先级 (默认给个中等优先级，用户若需调整可自行调用 NVIC API，但此处必须 Enable) */
+    HAL_NVIC_SetPriority(irqn, 6, 0);
+    HAL_NVIC_EnableIRQ(irqn);
+
+    return RET_OK;
+}
+
+/**
+ * @brief 注销指定GPIO的中断
+ * @param h GPIO信息
+ * @return 32位状态码
+ * @note  暂未实现 Disable IRQ
+ */
+ret_code_t hal_gpio_port_unregister_irq(hal_gpio_t* h) {
+    if (!h) return PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    if (h->pin >= 16u) return PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+
+    s_gpio_irq_cbs[h->pin].cb        = NULL;
+    s_gpio_irq_cbs[h->pin].user_data = NULL;
+
+    /* 简单起见，暂不 Disable IRQ，因为 5-9 和 10-15 是共享的，需要引用计数才能安全关闭 */
+    return RET_OK;
+}
+
+/**
+ * @brief  STM32 HAL GPIO EXTI 回调
+ *         所有 EXTI 中断最终都会调到这里
+ */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+    /* GPIO_Pin 是 bit mask (e.g. 0x0001, 0x0002...) */
+    for (uint16_t i = 0; i < 16; ++i) {
+        if (GPIO_Pin & (1u << i)) {
+            if (s_gpio_irq_cbs[i].cb) {
+                s_gpio_irq_cbs[i].cb(s_gpio_irq_cbs[i].user_data);
+            }
+        }
+    }
+}
+
+/* ---------------- EXTI 中断服务程序 ---------------- */
+/*
+ * 必须实现所有潜在的 EXTI Handler，否则链接时可能找不到，
+ * 或者如果 startup 文件定义了 weak symbol，则不会进入我们的逻辑。
+ * 此处显式实现以确保 HAL_GPIO_EXTI_IRQHandler 被调用。
+ */
+
+void EXTI0_IRQHandler(void) {
+    HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_0);
+}
+
+void EXTI1_IRQHandler(void) {
+    HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_1);
+}
+
+void EXTI2_IRQHandler(void) {
+    HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_2);
+}
+
+void EXTI3_IRQHandler(void) {
+    HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_3);
+}
+
+void EXTI4_IRQHandler(void) {
+    HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_4);
+}
+
+void EXTI9_5_IRQHandler(void) {
+    /* 5..9 */
+    if (__HAL_GPIO_EXTI_GET_IT(GPIO_PIN_5)) HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_5);
+    if (__HAL_GPIO_EXTI_GET_IT(GPIO_PIN_6)) HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_6);
+    if (__HAL_GPIO_EXTI_GET_IT(GPIO_PIN_7)) HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_7);
+    if (__HAL_GPIO_EXTI_GET_IT(GPIO_PIN_8)) HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_8);
+    if (__HAL_GPIO_EXTI_GET_IT(GPIO_PIN_9)) HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_9);
+}
+
+void EXTI15_10_IRQHandler(void) {
+    /* 10..15 */
+    if (__HAL_GPIO_EXTI_GET_IT(GPIO_PIN_10)) HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_10);
+    if (__HAL_GPIO_EXTI_GET_IT(GPIO_PIN_11)) HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_11);
+    if (__HAL_GPIO_EXTI_GET_IT(GPIO_PIN_12)) HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_12);
+    if (__HAL_GPIO_EXTI_GET_IT(GPIO_PIN_13)) HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_13);
+    if (__HAL_GPIO_EXTI_GET_IT(GPIO_PIN_14)) HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_14);
+    if (__HAL_GPIO_EXTI_GET_IT(GPIO_PIN_15)) HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_15);
 }
 
 #endif
