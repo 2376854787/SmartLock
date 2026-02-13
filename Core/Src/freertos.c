@@ -42,9 +42,11 @@
 #include "log_port.h"
 #include "mqtt_at_task.h"
 #include "tim.h"
+#include "touch_test_task.h"
 #include "usart.h"
 #include "water_adc.h"
 #include "wifi_mqtt_task.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -113,6 +115,14 @@ const osThreadAttr_t Water_Sensor_attributes = {
     .stack_size = 256 * 4,
     .priority   = (osPriority_t)osPriorityNormal,
 };
+
+/* GT911 触摸测试任务 */
+osThreadId_t TouchTest_TaskHandle;
+const osThreadAttr_t TouchTest_Task_attributes = {
+    .name       = "TouchTestTask",
+    .stack_size = 512 * 3,
+    .priority   = (osPriority_t)osPriorityNormal,
+};
 /* USER CODE END FunctionPrototypes */
 
 void StartDefaultTask(void *argument);
@@ -167,7 +177,7 @@ void vApplicationTickHook(void) {
 /* USER CODE END 3 */
 
 /* USER CODE BEGIN 4 */
-void vApplicationStackOverflowHook(xTaskHandle xTask, signed char *pcTaskName) {
+void vApplicationStackOverflowHook(xTaskHandle xTask, signed char* pcTaskName) {
     printf("Stack overflow in task: %s\r\n", pcTaskName);
     taskDISABLE_INTERRUPTS();
     for (;;) {
@@ -238,6 +248,10 @@ void MX_FREERTOS_Init(void) {
 
     /* 水滴传感器 任务*/
     Water_Sensor_TaskHandle = osThreadNew(waterSensor_task, NULL, &Water_Sensor_attributes);
+
+    /* GT911 触摸测试任务 */
+    TouchTest_TaskHandle    = osThreadNew(StartTouchTestTask, NULL, &TouchTest_Task_attributes);
+
     /* 日志任务 创建信号量、创建任务 */
     Log_PortInit();
     Log_Init();
@@ -298,7 +312,7 @@ void StartTask02(void *argument)
         uint32_t read_size = RingBuffer_GetUsedSize(&g_rb_uart1);
         if (read_size > 0) {
             if (read_size > 127) read_size = 127;
-            if (ReadRingBuffer(&g_rb_uart1, (uint8_t *)buffer, &read_size, 0)) {
+            if (ReadRingBuffer(&g_rb_uart1, (uint8_t*)buffer, &read_size, 0)) {
                 buffer[read_size] = '\0';
                 // printf("%s\n", buffer);
                 // HAL_UART_Transmit(&huart3, (const uint8_t *) buffer, strlen((char *) buffer),
@@ -311,7 +325,7 @@ void StartTask02(void *argument)
         crc16_cal_default_table(MODBUS, example, 1, &res);
         HAL_GPIO_TogglePin(LED0_GPIO_Port, LED0_Pin);
         // LOG_W("CRC16_MODBUS", "{0x01} =%X", res);
-       // const UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
+        // const UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
         // LOG_D("Watermask", "lcdTask high watermark = %lu\r\n", (unsigned long)watermark);
         osDelay(250);
     }
@@ -348,7 +362,7 @@ void StartTask_LCD(void *argument)
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
 
-void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef* huart, uint16_t Size) {
     if (huart->Instance == USART1) {
         // 串口1任务 维护一个指针在IDLE 以及半满全满中断中处理
         process_dma_data();
@@ -360,7 +374,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
     }
 }
 
-void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
+void HAL_UART_ErrorCallback(UART_HandleTypeDef* huart) {
     if (huart->Instance == USART1) {
         // uint32_t error = HAL_UART_GetError(huart);
         //  处理错误，如 ORE/FE

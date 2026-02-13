@@ -56,6 +56,7 @@ add_executable(${CMAKE_PROJECT_NAME}
         Application/Src/Light_Sensor_task.c
         Drivers/System/Src/My_delay.c
         Application/Src/water_adc.c
+        Application/Src/touch_test_task.c
         Application/Src/Usart1_manage.c
         components/log/log.c
         components/AT/AT.c
@@ -104,6 +105,8 @@ add_executable(${CMAKE_PROJECT_NAME}
         components/eventbus/src/eb_storm.c
         components/eventbus/src/eb_tap.c
         components/eventbus/src/eb_eventmap.c
+        components/soft_i2c/soft_i2c.c
+        Drivers/BSP/GT911/gt911.c
 
 
 )
@@ -159,6 +162,8 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         components/perf
         components/auto_init
         components/eventbus/include
+        components/soft_i2c/include
+        Drivers/BSP/GT911
 
 )
 
