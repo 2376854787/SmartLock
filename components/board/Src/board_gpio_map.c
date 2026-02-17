@@ -17,8 +17,6 @@ typedef struct {
 
 /* 稀疏映射表：ID 不连续时避免浪费空间 */
 static const board_gpio_map_entry_t s_map[] = {
-    {.id = HAL_GPIO_ID_LED1, .hw = {.port = GPIOC, .pin = 13}},
-    {.id = HAL_GPIO_ID_BTN1, .hw = {.port = GPIOA, .pin = 0}},
     /* GT911 触控引脚 (Explorer V3.4) */
     {.id = HAL_GPIO_ID_CT_SCL, .hw = {.port = GPIOB, .pin = 0}},  /* T_SCK  → PB0  */
     {.id = HAL_GPIO_ID_CT_SDA, .hw = {.port = GPIOF, .pin = 11}}, /* T_MOSI → PF11 */

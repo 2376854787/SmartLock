@@ -13,7 +13,7 @@ void app_init(void) {
                                 .alternate     = HAL_GPIO_AF_NONE,  // 表示“不启用 AF”
                                 .default_level = HAL_GPIO_LEVEL_LOW};
 
-    hal_gpio_open(&led, HAL_GPIO_ID_LED1);
+   // hal_gpio_open(&led, HAL_GPIO_ID_LED1);
     hal_gpio_config(led, &cfg);
 }
 
