@@ -63,6 +63,8 @@ void Error_Handler(void);
 #define KEY1_GPIO_Port GPIOE
 #define KEY0_Pin GPIO_PIN_4
 #define KEY0_GPIO_Port GPIOE
+#define LCD_RST_Pin GPIO_PIN_13
+#define LCD_RST_GPIO_Port GPIOC
 #define Light_Sensor_Pin GPIO_PIN_7
 #define Light_Sensor_GPIO_Port GPIOF
 #define BEEP_Pin GPIO_PIN_8
