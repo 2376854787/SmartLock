@@ -135,11 +135,11 @@ static ret_code_t gt911_update_refresh_rate(gt911_dev_t* dev, uint8_t rate) {
         soft_i2c_read_reg16(&dev->i2c, dev->addr, GT911_REG_CONFIG, cfg, GT911_CFG_SIZE);
     if (rc != RET_OK) return rc;
 
-    /* 2. 修改刷新率 (偏移 = 0x804C - 0x8047 = 5) */
+    /* 2. 修改刷新率 (偏移 = 0x804C - 0x8047 = 15) */
     /* 检查是否需变更，避免无效写 */
-    if (cfg[5] == rate) return RET_OK;
+    if (cfg[15] == rate) return RET_OK;
 
-    cfg[5]           = rate;
+    cfg[15]           = rate;
 
     /* 3. 重新计算校验和 */
     /* Checksum = (~(sum(0x8047...0x80FE)) + 1) & 0xFF */
@@ -263,8 +263,9 @@ ret_code_t gt911_read_touch(gt911_dev_t* dev, gt911_touch_data_t* out) {
 clear_flag:
     /* 清除 buffer_ready 标志: 向 0x814E 写入 0x00 */
     {
-        uint8_t zero   = 0x00u;
-        ret_code_t rc2 = soft_i2c_write_reg16(&dev->i2c, dev->addr, GT911_REG_STATUS, &zero, 1);
+        const uint8_t zero = 0x00u;
+        const ret_code_t rc2 =
+            soft_i2c_write_reg16(&dev->i2c, dev->addr, GT911_REG_STATUS, &zero, 1);
         /* 如果前面读取成功但清标志失败，优先返回清标志的错误 */
         if (rc == RET_OK && rc2 != RET_OK) {
             rc = rc2;
