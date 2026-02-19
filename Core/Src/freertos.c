@@ -40,6 +40,9 @@
 #include "lcd.h"
 #include "log.h"
 #include "log_port.h"
+#include "lv_port_disp.h"
+#include "lv_port_indev.h"
+#include "lvgl.h"
 #include "mqtt_at_task.h"
 #include "tim.h"
 #include "touch_test_task.h"
@@ -86,7 +89,7 @@ const osThreadAttr_t uartTask_attributes = {
 osThreadId_t lcdTaskHandle;
 const osThreadAttr_t lcdTask_attributes = {
   .name = "lcdTask",
-  .stack_size = 512 * 4,
+  .stack_size = 800 * 4,
   .priority = (osPriority_t) osPriorityLow,
 };
 
@@ -188,16 +191,10 @@ void vApplicationStackOverflowHook(xTaskHandle xTask, signed char* pcTaskName) {
 
 /* USER CODE BEGIN 5 */
 void vApplicationMallocFailedHook(void) {
-    /* vApplicationMallocFailedHook() will only be called if
-    configUSE_MALLOC_FAILED_HOOK is set to 1 in FreeRTOSConfig.h. It is a hook
-    function that will get called if a call to pvPortMalloc() fails.
-    pvPortMalloc() is called internally by the kernel whenever a task, queue,
-    timer or semaphore is created. It is also called by various parts of the
-    demo application. If heap_1.c or heap_2.c are used, then the size of the
-    heap available to pvPortMalloc() is defined by configTOTAL_HEAP_SIZE in
-    FreeRTOSConfig.h, and the xPortGetFreeHeapSize() API function can be used
-    to query the size of free heap space that remains (although it does not
-    provide information on how the remaining heap might be fragmented). */
+    printf("FreeRTOS malloc failed! Free heap: %u\r\n", (unsigned)xPortGetFreeHeapSize());
+    taskDISABLE_INTERRUPTS();
+    for (;;) {
+    }
 }
 
 /* USER CODE END 5 */
@@ -250,7 +247,7 @@ void MX_FREERTOS_Init(void) {
     Water_Sensor_TaskHandle = osThreadNew(waterSensor_task, NULL, &Water_Sensor_attributes);
 
     /* GT911 触摸测试任务 */
-    TouchTest_TaskHandle    = osThreadNew(StartTouchTestTask, NULL, &TouchTest_Task_attributes);
+    // TouchTest_TaskHandle    = osThreadNew(StartTouchTestTask, NULL, &TouchTest_Task_attributes);
 
     /* 日志任务 创建信号量、创建任务 */
     Log_PortInit();
@@ -307,7 +304,7 @@ void StartTask02(void *argument)
   /* USER CODE BEGIN StartTask02 */
     char buffer[128];
     /* Infinite loop */
-    uint8_t example[] = {0x01, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99};
+    const uint8_t example[] = {0x01, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99};
     for (;;) {
         uint32_t read_size = RingBuffer_GetUsedSize(&g_rb_uart1);
         if (read_size > 0) {
@@ -343,18 +340,41 @@ void StartTask_LCD(void *argument)
 {
   /* USER CODE BEGIN StartTask_LCD */
     /* Infinite loop */
-    char buffer[128];
-    osDelay(2000);
-    esp01s_Init(&huart3, 1024);
-    LOG_I("StartTask_LCD", "启动完成");
-    LOG_I("111", "启动完成");
-    for (;;) {
-        sniprintf(buffer, 128, "Time:%lu", HAL_GetTick());
-        lcd_show_string(50, 300, 240, 32, 32, buffer, BLACK);
+    lv_init();
+    lv_tick_set_cb(HAL_GetTick);
+    lv_port_disp_init();
+    // lv_port_indev_init(); /* Temporarily disable touch during display bring-up. */
 
-        // UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
-        // printf("lcdTask high watermark = %lu\r\n", (unsigned long) watermark);
-        osDelay(20);
+    /* Build a minimal visible screen to verify LVGL rendering. */
+    lv_obj_t* scr = lv_screen_active();
+    lv_obj_set_style_bg_color(scr, lv_color_hex(0x10243A), 0);
+    lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
+
+    lv_obj_t* label = lv_label_create(scr);
+    lv_label_set_text(label, "LVGL OK");
+    lv_obj_set_style_text_color(label, lv_color_white(), 0);
+    lv_obj_center(label);
+
+    LOG_I("StartTask_LCD", "LVGL init done");
+    uint32_t last_report_tick = HAL_GetTick();
+    uint8_t esp_init_done     = 0;
+
+    for (;;) {
+        lv_timer_handler();
+        if (!esp_init_done && lv_port_disp_get_flush_count() > 20) {
+            esp01s_Init(&huart3, 1024);
+            esp_init_done = 1;
+            LOG_I("StartTask_LCD", "ESP init done");
+        }
+
+        if ((HAL_GetTick() - last_report_tick) >= 1000U) {
+            const UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
+            LOG_I("LVGL", "flush=%lu, stack_wm=%lu", (unsigned long)lv_port_disp_get_flush_count(),
+                  (unsigned long)watermark);
+            last_report_tick = HAL_GetTick();
+        }
+
+        osDelay(5);
     }
   /* USER CODE END StartTask_LCD */
 }

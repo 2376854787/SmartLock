@@ -52,9 +52,9 @@ void waterSensor_task(void *argument) {
         raw = read_adc_single(ADC_CHANNEL_1, ADC_SAMPLETIME_56CYCLES);
         uint32_t sensor_mv = (uint32_t) ((raw * vdda_mv) / ADC_FULL_SCALE);
 
-        lcd_show_num(10, 200, raw, 4, 32, GREEN); // 原始值
-        lcd_show_num(10, 240, sensor_mv, 4, 32, GREEN); // 换算电压(mV)
-        lcd_show_num(10, 280, vdda_mv, 4, 32, GREEN); // 参考电压
+        // lcd_show_num(10, 200, raw, 4, 32, GREEN); // 原始值
+        // lcd_show_num(10, 240, sensor_mv, 4, 32, GREEN); // 换算电压(mV)
+        // lcd_show_num(10, 280, vdda_mv, 4, 32, GREEN); // 参考电压
         osDelay(200);
     }
 }

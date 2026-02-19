@@ -57,7 +57,7 @@ void StartTouchTestTask(void* argument) {
                              .gpio_id_sda  = HAL_GPIO_ID_CT_SDA,
                              .gpio_id_rst  = HAL_GPIO_ID_CT_RST,
                              .gpio_id_int  = HAL_GPIO_ID_CT_INT,
-                             .i2c_addr     = GT911_ADDR_HIGH,
+                             .i2c_addr     = GT911_ADDR_LOW,
                              .max_x        = 480,
                              .max_y        = 800,
                              .refresh_rate = 100};

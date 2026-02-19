@@ -39,9 +39,13 @@
 #include "hal_time.h"
 #include "lcd.h"
 #include "log.h"
+#include "lv_port_disp.h"
+#include "lv_port_indev.h"
+#include "lvgl.h"
 #include "myfree.h"
 #include "vectortable_to_ram.h"
 #include "wifi_mqtt_task.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -191,7 +195,6 @@ int main(void)
     /* 直接寄存器发送测试（不依赖HAL超时） */
     // BB_Info_Printf(); /* 打印复位/崩溃信息 */
     AUTO_INIT_REG(AUTO_INIT_EARLY, AUTO_BUCKET_0, 0, BB_Info_Printf);
-    AUTO_INIT_REG(AUTO_INIT_EARLY, AUTO_BUCKET_0, 0, lcd_init);
     auto_init_run_all();
     // lcd_init();
     BH1750_Init();
@@ -199,12 +202,11 @@ int main(void)
     BH1750_Set_CONT_HIRES_MODE();
     LOG_E("cu", "ssss");
     // bsp_esp8266_Init();
-
-    lcd_show_string(10, 40, 240, 32, 32, "STM32", RED);
-
-    lcd_show_string(10, 80, 240, 24, 24, "TFTLCD TEST", MAGENTA);
-
-    lcd_show_string(10, 110, 240, 16, 16, "ATOM@ALIENTEK", CYAN);
+    // lcd_show_string(10, 40, 240, 32, 32, "STM32", RED);
+    //
+    // lcd_show_string(10, 80, 240, 24, 24, "TFTLCD TEST", MAGENTA);
+    //
+    // lcd_show_string(10, 110, 240, 16, 16, "ATOM@ALIENTEK", CYAN);
     MyUart_Init();
     KEY_Init(&key0, &key0_config);
     KEY_Init(&key1, &key1_config);

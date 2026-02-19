@@ -40,73 +40,30 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 #包含 C 代码 和 汇编代码
 enable_language(C ASM)
 
+# 1. 自动搜索 BSP 目录下所有的 .c 文件
+file(GLOB_RECURSE BSP_SRCS CONFIGURE_DEPENDS "Drivers/BSP/*.c")
+list(REMOVE_ITEM BSP_SRCS
+        "${CMAKE_CURRENT_SOURCE_DIR}/Drivers/BSP/lcd/lcd_ex.c"
+)
+# 2. 自动搜索 components 目录下所有的 .c 文件
+file(GLOB_RECURSE COMPONENT_SRCS CONFIGURE_DEPENDS "components/*.c")
+
+# 3. 自动搜索 Application 目录下所有的 .c 文件
+file(GLOB_RECURSE APP_SRCS CONFIGURE_DEPENDS "Application/*.c")
+
+# 4. 自动搜索 platform 目录下所有的 .c 文件
+file(GLOB_RECURSE PLATFORM_SRCS CONFIGURE_DEPENDS "platform/*.c")
+
+# 5. 自动搜索 Middlewares_cus 目录下所有的 .c 文件
+file(GLOB_RECURSE MIDDLEWARES_SRCS CONFIGURE_DEPENDS "Middlewares_cus/*.c")
 # Create an executable object type
 # 定义最终生成的二进制文件对象
 add_executable(${CMAKE_PROJECT_NAME}
-        components/ring_buffer/RingBuffer.c
-        components/memory_allocation/MemoryAllocation.c
-        components/hfsm/HFSM.c
-        Drivers/BSP/Keys/KEY.c
-        Drivers/BSP/lcd/lcd.c
-        Drivers/BSP/ESP01s/ESP01S.c
-        Application/Src/wifi_mqtt_task.c
-        Application/Src/mqtt_at_task.c
-        Drivers/BSP/Beep/Beep.c
-        Drivers/BSP/Light_Sensor/LightSeneor.c
-        Application/Src/Light_Sensor_task.c
-        Drivers/System/Src/My_delay.c
-        Application/Src/water_adc.c
-        Application/Src/touch_test_task.c
-        Application/Src/Usart1_manage.c
-        components/log/log.c
-        components/AT/AT.c
-        components/AT/AT_Core_Task.c
-        components/AT/AT_UartMap.c
-        components/log/log_port.c
-        components/osal/osal_cmsis2.c
-        components/soft_timer/src/soft_timer.c
-        components/auto_init/auto_init.c
-        platform/STM32/ports/hal_gpio_port.c
-        platform/STM32/ports/hal_uart_port.c
-        platform/STM32/ports/hal_time_port.c
-        components/core_base/assert/assert_cus.c
-        components/hal/hal_gpio.c
-        components/board/Src/board_gpio_map.c
-        example/GPIO/ex_hal_gpio.c
-        components/core_base/no_malloc_wrap.c
-        components/hal/hal_uart.c
-        platform/STM32/series/h7/stm32_uart_series_h7.c
-        components/board/explorer/board_uart_map.c
-        components/printf/printf.c
-        platform/STM32/ports/bsp_assert_port.c
-        components/core_mpu/src/core_mpu.c
-        platform/STM32/common/core_mpu_port.c
-        components/CRC/CRC16/crc16.c
-        components/memory_pool/memory_pool1/memory_pool1.c
-        Drivers/BSP/bh1750/bh1750.c
-        components/core_base/stack/stack_monitor.c
-        components/core_base/blackbox/blackbox_record.c
-        components/ports/arch/cortexm/fault_capture_cm.c
-        components/core_base/fault_capture/fault_capture.c
-        components/core_base/ramfunc/ramfunc.c
-        platform/STM32/ports/vectortable_to_ram.c
-        platform/STM32/ports/memory_pool1_port.c
-        components/perf/perf.c
-        platform/STM32/ports/blackbox_port.c
-        components/eventbus/src/eb_core.c
-        components/eventbus/src/eb_sub.c
-        components/eventbus/src/eb_dispatch.c
-        platform/STM32/ports/event_port.c
-        components/eventbus/src/eb_eventdef.c
-        components/eventbus/src/eb_freeze.c
-        components/eventbus/src/eb_budget.c
-        components/eventbus/src/eb_port_weak.c
-        components/eventbus/src/eb_trace.c
-        components/eventbus/src/eb_storm.c
-        components/eventbus/src/eb_tap.c
-        components/eventbus/src/eb_eventmap.c
-        components/soft_i2c/soft_i2c.c
-        Drivers/BSP/GT911/gt911.c
+        ${BSP_SRCS}
+        ${COMPONENT_SRCS}
+        ${APP_SRCS}
+        ${PLATFORM_SRCS}
+        ${MIDDLEWARES_SRCS}
 
 
 )
@@ -164,6 +121,26 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         components/eventbus/include
         components/soft_i2c/include
         Drivers/BSP/GT911
+        #LVGL 移植
+        Middlewares_cus/LVGL/src/core
+        Middlewares_cus/LVGL/src/display
+        Middlewares_cus/LVGL/src/draw
+        Middlewares_cus/LVGL/src/drivers
+        Middlewares_cus/LVGL/src/font
+        Middlewares_cus/LVGL/src/indev
+        Middlewares_cus/LVGL/src/layouts
+        Middlewares_cus/LVGL/src/libs
+        Middlewares_cus/LVGL/src/misc
+        Middlewares_cus/LVGL/src/osal
+        Middlewares_cus/LVGL/src/others
+        Middlewares_cus/LVGL/src/stdlib
+        Middlewares_cus/LVGL/src/themes
+        Middlewares_cus/LVGL/src/tick
+        Middlewares_cus/LVGL/src/widgets
+        Middlewares_cus/LVGL/src
+        Middlewares_cus/LVGL/include
+        Middlewares_cus/LVGL
+        Middlewares_cus/LVGL/port
 
 )
 
@@ -211,8 +188,8 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" OR CMAKE_C_COMPILER_ID MATCHES "GN
     # 修正：移除 .elf 后缀，确保与 add_executable 中定义的名称一致
     target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE
             # 1. 生成分析文件
-            -fstack-usage            # 生成 .su 文件 (Stack Usage)
-            -fdump-ipa-cgraph        # 导出调用图 (GCC 特有)
+            -fstack-usage            # 生成 .su 文件
+            -fdump-ipa-cgraph        # 导出调用图 GCC
 
             # 2. 调试稳定性
             -fno-omit-frame-pointer  # 保留帧指针
@@ -227,12 +204,11 @@ endif()
 if (CMAKE_OBJCOPY)
     message(STATUS "Found objcopy: ${CMAKE_OBJCOPY}")
     add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD
-            # 使用 ${CMAKE_PROJECT_NAME} 作为目标名
-            COMMAND ${CMAKE_OBJCOPY} -O binary $<TARGET_FILE:${CMAKE_PROJECT_NAME}> $<TARGET_FILE_DIR:${CMAKE_PROJECT_NAME}>.bin
+            COMMAND ${CMAKE_OBJCOPY} -O binary $<TARGET_FILE:${CMAKE_PROJECT_NAME}> ${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}.bin
             COMMENT "Generating .bin file")
 
     add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD
-            COMMAND ${CMAKE_OBJCOPY} -O ihex $<TARGET_FILE:${CMAKE_PROJECT_NAME}> $<TARGET_FILE_DIR:${CMAKE_PROJECT_NAME}>.hex
+            COMMAND ${CMAKE_OBJCOPY} -O ihex $<TARGET_FILE:${CMAKE_PROJECT_NAME}> ${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}.hex
             COMMENT "Generating .hex file")
 
     add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD
