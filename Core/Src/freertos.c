@@ -43,13 +43,12 @@
 #include "lv_port_disp.h"
 #include "lv_port_indev.h"
 #include "lvgl.h"
-#include "mqtt_at_task.h"
 #include "tim.h"
 #include "touch_test_task.h"
 #include "usart.h"
 #include "water_adc.h"
 #include "wifi_mqtt_task.h"
-
+#include "heap_check.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -83,48 +82,40 @@ osThreadId_t uartTaskHandle;
 const osThreadAttr_t uartTask_attributes = {
   .name = "uartTask",
   .stack_size = 512 * 4,
-  .priority = (osPriority_t) osPriorityLow,
+  .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for lcdTask */
 osThreadId_t lcdTaskHandle;
 const osThreadAttr_t lcdTask_attributes = {
   .name = "lcdTask",
   .stack_size = 800 * 4,
-  .priority = (osPriority_t) osPriorityLow,
+  .priority = (osPriority_t) osPriorityNormal,
 };
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
 
-/* ESP01s MQTT 任务 */
-osThreadId_t MqttTaskHandle;
-const osThreadAttr_t MqttTask_attributes = {
-    .name       = "MqttTask",
-    .stack_size = 1024 * 4,  // MQTT任务需要更大的栈
-    .priority   = (osPriority_t)osPriorityNormal,
-};
 osThreadId_t LightSensor_TaskHandle;
 /* 光敏传感器任务 */
 const osThreadAttr_t LightSensor_Task_attributes = {
     .name       = "LightSensor_Task",
-    .stack_size = 256 * 6,
-    .priority   = (osPriority_t)osPriorityNormal,
-};
-
-/* 水滴传感器ADC采集 逻辑处理任务 */
-osThreadId_t Water_Sensor_TaskHandle;
-const osThreadAttr_t Water_Sensor_attributes = {
-    .name       = "Water_Sensor_Task",
     .stack_size = 256 * 4,
     .priority   = (osPriority_t)osPriorityNormal,
 };
 
 /* GT911 触摸测试任务 */
-osThreadId_t TouchTest_TaskHandle;
-const osThreadAttr_t TouchTest_Task_attributes = {
-    .name       = "TouchTestTask",
-    .stack_size = 512 * 3,
-    .priority   = (osPriority_t)osPriorityNormal,
+// osThreadId_t TouchTest_TaskHandle;
+// const osThreadAttr_t TouchTest_Task_attributes = {
+//     .name       = "TouchTestTask",
+//     .stack_size = 512 * 3,
+//     .priority   = (osPriority_t)osPriorityNormal,
+// };
+
+osThreadId_t heap_check_task_handle;
+const osThreadAttr_t heap_check_task_attributes = {
+    .name="heap_check_task",
+    .stack_size = 128 *8,
+    .priority = (osPriority_t)osPriorityLow,
 };
 /* USER CODE END FunctionPrototypes */
 
@@ -240,15 +231,13 @@ void MX_FREERTOS_Init(void) {
 
     /* 光敏传感器 */
     LightSensor_TaskHandle  = osThreadNew(StartLightSensorTask, NULL, &LightSensor_Task_attributes);
-    /* ESP01s */
-    // MqttTaskHandle = osThreadNew(StartMqttAtTask, NULL, &MqttTask_attributes);
 
-    /* 水滴传感器 任务*/
-    Water_Sensor_TaskHandle = osThreadNew(waterSensor_task, NULL, &Water_Sensor_attributes);
+
 
     /* GT911 触摸测试任务 */
     // TouchTest_TaskHandle    = osThreadNew(StartTouchTestTask, NULL, &TouchTest_Task_attributes);
-
+    /* 栈 堆大小水位监测 */
+    heap_check_task_handle = osThreadNew(vHEAP_check_task, NULL, &heap_check_task_attributes);
     /* 日志任务 创建信号量、创建任务 */
     Log_PortInit();
     Log_Init();
@@ -279,8 +268,7 @@ void StartDefaultTask(void *argument)
         // LED 1翻转
         HAL_GPIO_TogglePin(LED1_GPIO_Port, LED1_Pin);
         KEY_Tasks();
-        // UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
-        //  printf("keyscanTask high watermark = %lu\r\n", (unsigned long) watermark);
+
         // const float lx       = BH1750_Get_LX();
         // const uint32_t prase = (uint32_t)(lx * 100);
         // LOG_D("光照度", "环境光lx：%ld.%02ld\r\n", prase / 100, prase % 100);
@@ -302,28 +290,9 @@ void StartDefaultTask(void *argument)
 void StartTask02(void *argument)
 {
   /* USER CODE BEGIN StartTask02 */
-    char buffer[128];
     /* Infinite loop */
-    const uint8_t example[] = {0x01, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99};
     for (;;) {
-        uint32_t read_size = RingBuffer_GetUsedSize(&g_rb_uart1);
-        if (read_size > 0) {
-            if (read_size > 127) read_size = 127;
-            if (ReadRingBuffer(&g_rb_uart1, (uint8_t*)buffer, &read_size, 0)) {
-                buffer[read_size] = '\0';
-                // printf("%s\n", buffer);
-                // HAL_UART_Transmit(&huart3, (const uint8_t *) buffer, strlen((char *) buffer),
-                // HAL_MAX_DELAY);
-            } else {
-                printf("读取失败\n");
-            }
-        }
-        uint16_t res = 0x00;
-        crc16_cal_default_table(MODBUS, example, 1, &res);
         HAL_GPIO_TogglePin(LED0_GPIO_Port, LED0_Pin);
-        // LOG_W("CRC16_MODBUS", "{0x01} =%X", res);
-        // const UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
-        // LOG_D("Watermask", "lcdTask high watermark = %lu\r\n", (unsigned long)watermark);
         osDelay(250);
     }
   /* USER CODE END StartTask02 */
@@ -343,7 +312,7 @@ void StartTask_LCD(void *argument)
     lv_init();
     lv_tick_set_cb(HAL_GetTick);
     lv_port_disp_init();
-    // lv_port_indev_init(); /* Temporarily disable touch during display bring-up. */
+    lv_port_indev_init();
 
     /* Build a minimal visible screen to verify LVGL rendering. */
     lv_obj_t* scr = lv_screen_active();
@@ -355,12 +324,49 @@ void StartTask_LCD(void *argument)
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
     lv_obj_center(label);
 
+    /* --- 触控追踪指示器 --- */
+    /* 红色圆点: 跟随触摸位置 */
+    lv_obj_t* cursor = lv_obj_create(scr);
+    lv_obj_set_size(cursor, 20, 20);
+    lv_obj_set_style_radius(cursor, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(cursor, lv_color_hex(0xFF0000), 0);
+    lv_obj_set_style_bg_opa(cursor, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(cursor, 0, 0);
+    lv_obj_add_flag(cursor, LV_OBJ_FLAG_HIDDEN); /* 初始隐藏 */
+
+    /* 坐标文本: 左上角显示 */
+    lv_obj_t* coord_label = lv_label_create(scr);
+    lv_label_set_text(coord_label, "Touch: ---");
+    lv_obj_set_style_text_color(coord_label, lv_color_hex(0x00FF00), 0);
+    lv_obj_set_style_text_font(coord_label, &lv_font_montserrat_14, 0);
+    lv_obj_align(coord_label, LV_ALIGN_TOP_LEFT, 10, 10);
+
     LOG_I("StartTask_LCD", "LVGL init done");
     uint32_t last_report_tick = HAL_GetTick();
     uint8_t esp_init_done     = 0;
 
     for (;;) {
         lv_timer_handler();
+
+        /* --- 触控追踪更新 --- */
+        const lv_indev_t* indev = lv_indev_get_next(NULL);
+        if (indev) {
+            lv_point_t p;
+            lv_indev_get_point(indev, &p);
+            const lv_indev_state_t state = lv_indev_get_state(indev);
+
+            if (state == LV_INDEV_STATE_PRESSED) {
+                lv_obj_set_pos(cursor, p.x - 10, p.y - 10);
+                lv_obj_clear_flag(cursor, LV_OBJ_FLAG_HIDDEN);
+
+                char buf[32];
+                lv_snprintf(buf, sizeof(buf), "Touch: %d, %d", p.x, p.y);
+                lv_label_set_text(coord_label, buf);
+            } else {
+                lv_obj_add_flag(cursor, LV_OBJ_FLAG_HIDDEN);
+            }
+        }
+
         if (!esp_init_done && lv_port_disp_get_flush_count() > 20) {
             esp01s_Init(&huart3, 1024);
             esp_init_done = 1;
