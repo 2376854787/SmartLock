@@ -40,15 +40,15 @@ void process_dma_data(void) {
 
     // 3、搬运数据到环形缓冲区  //当前数据没有回返
     if (curpos > last_pos) {
-        if (ret_is_err(WriteRingBuffer(&g_rb_uart1, &DmaBuffer[last_pos], &write_size, 0)))
+        if (ret_is_err(WriteRingBufferFromISR(&g_rb_uart1, &DmaBuffer[last_pos], &write_size, 0)))
             printf("写入失败\n");
     } else {
         // 数据回返
-        if (ret_is_err(WriteRingBuffer(&g_rb_uart1, &DmaBuffer[last_pos], &write_size2, 0))) {
+        if (ret_is_err(WriteRingBufferFromISR(&g_rb_uart1, &DmaBuffer[last_pos], &write_size2, 0))) {
             printf("Write Error of RingBuffer\n");
         }
 
-        WriteRingBuffer(&g_rb_uart1, &DmaBuffer[0], &curpos, 0);
+        WriteRingBufferFromISR(&g_rb_uart1, &DmaBuffer[0], &curpos, 0);
     }
 
     // 4、更新位置

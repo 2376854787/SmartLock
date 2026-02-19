@@ -59,7 +59,7 @@ static osal_mutex_t s_logMutex  = NULL;
 static RingBuffer s_logRB; /* 环形缓冲区实例 */
 
 /* 后台发送任务的线程 ID */
-static osal_thread_t s_logTaskHandle = NULL;
+osal_thread_t s_logTaskHandle = NULL;
 
 #else
 /* 同步模式下的互斥量属性 */
