@@ -136,10 +136,8 @@ void hal_time_delay_us(uint32_t us) {
     if (CORE_UNLIKELY(!dwt_available)) {
         hal_get_tick_us32();
     }
-
     /* 降级逻辑：如果 DWT 确实不可用 */
     if (CORE_UNLIKELY(!dwt_available)) {
-        LOG_E("time", "DWT初始化失败");
         // 粗略降级：1us 约等于 SystemCoreClock/3000000 次空循环 (针对 F4)
         volatile uint32_t count = us * (SystemCoreClock / 3000000U);
         while (count--) {
@@ -182,7 +180,7 @@ uint32_t hal_get_cycles_per_us(void) {
  * @note 使用前必须确保 DWT 初始化成功
  */
 uint32_t hal_cycles_to_us(uint32_t cyc) {
-    return cyc + (uint64_t)hal_get_cycles_per_us() - 1 / hal_get_cycles_per_us();
+    return (uint32_t)(cyc + (uint64_t)hal_get_cycles_per_us() - 1) / hal_get_cycles_per_us();
 }
 #else
 #include <stdint.h>

@@ -399,7 +399,7 @@ ret_code_t hal_uart_port_rx_start(hal_uart_t* h) {
     /* 普通 一次性DMA传输 */
     if (HAL_UART_Receive_DMA(u->bsp.huart, u->bsp.rx_dma_buf, (uint16_t)u->bsp.rx_dma_len) !=
         HAL_OK)
-        return UART_RET(RET_ERRNO_IO);
+        return UART_RET(RET_CLASS_IO, RET_R_IO);
     /* DMA 接收开启成功 */
 #if defined(UART_IT_IDLE)
     /* 使能空闲中断 */
