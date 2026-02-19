@@ -46,7 +46,6 @@
 #include "tim.h"
 #include "touch_test_task.h"
 #include "usart.h"
-#include "water_adc.h"
 #include "wifi_mqtt_task.h"
 #include "heap_check.h"
 /* USER CODE END Includes */

@@ -152,8 +152,8 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
         CORE_MPU_ASSUME_PRESENT=1
 )
 target_compile_definitions(stm32cubemx INTERFACE
-         USER_VECT_TAB_ADDRESS
-         VECT_TAB_OFFSET=0x20400
+        USER_VECT_TAB_ADDRESS
+        VECT_TAB_OFFSET=0x20400
 )
 # Remove wrong libob.a library dependency when using cpp files
 list(REMOVE_ITEM CMAKE_C_IMPLICIT_LINK_LIBRARIES ob)
@@ -183,13 +183,18 @@ add_compile_definitions(
         $<$<CONFIG:Debug>:DEBUG_MODE>
         $<$<CONFIG:Release>:RELEASE_MODE>
 )
+if ("$ENV{ENABLE_ANALYZE}" STREQUAL "1")
+    message(STATUS "已开启堆栈和调用图生成！")
+    target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE
+            # 1. 生成分析文件
+            $<$<CONFIG:Debug_Analyze>:-fstack-usage>     # 生成 .su 文件
+            $<$<CONFIG:Debug_Analyze>:-fdump-ipa-cgraph> # 导出调用图
+    )
+endif ()
 # 检测是否是 GCC 或 Clang 编译器
 if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" OR CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     # 修正：移除 .elf 后缀，确保与 add_executable 中定义的名称一致
     target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE
-            # 1. 生成分析文件
-            -fstack-usage            # 生成 .su 文件
-            -fdump-ipa-cgraph        # 导出调用图 GCC
 
             # 2. 调试稳定性
             -fno-omit-frame-pointer  # 保留帧指针
@@ -199,7 +204,7 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" OR CMAKE_C_COMPILER_ID MATCHES "GN
             -Wvla -Werror=vla        # 严禁变长数组
             -Walloca -Werror=alloca  # 严禁 alloca()
     )
-endif()
+endif ()
 # --- 生成 .bin 和 .hex 文件 ---
 if (CMAKE_OBJCOPY)
     message(STATUS "Found objcopy: ${CMAKE_OBJCOPY}")
