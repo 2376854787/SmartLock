@@ -81,66 +81,36 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
         # Add user sources here
 )
+file(GLOB_RECURSE AUTO_HEADER_FILES CONFIGURE_DEPENDS
+        "Drivers/BSP/*.h"
+        "components/*.h"
+        "Application/*.h"
+        "platform/*.h"
+        "Middlewares_cus/LVGL/port/*.h"
+)
+# 2. 准备一个空的小篮子，用来装目录
+set(AUTO_INCLUDE_DIRS "")
+# 3. 遍历找到的每一个 .h 文件，把它们所在的文件夹扒出来放进篮子里
+foreach(HEADER_FILE ${AUTO_HEADER_FILES})
+    get_filename_component(HEADER_DIR ${HEADER_FILE} DIRECTORY)
+    list(APPEND AUTO_INCLUDE_DIRS ${HEADER_DIR})
+endforeach()
 
+# 4. 去重并执行黑名单过滤
+if(AUTO_INCLUDE_DIRS)
+    list(REMOVE_DUPLICATES AUTO_INCLUDE_DIRS)
+
+    set(BLACKLIST_KEYWORDS "tests?|docs?|simulator|nuttx|windows|wayland|sdl|x11|qnx|uefi|micropython")
+
+    # 清剿
+    list(FILTER AUTO_INCLUDE_DIRS EXCLUDE REGEX "${BLACKLIST_KEYWORDS}")
+endif()
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         # Add user defined include paths
-        components/hfsm
-        components/memory_allocation
-        components/ring_buffer
-        Drivers/BSP/Keys
-        Drivers/BSP/lcd
-        Drivers/BSP/ESP01s
-        Application/Inc
-        Drivers/BSP/Beep
-        Drivers/BSP/Light_Sensor
-        Drivers/System/Inc
-        components/log
-        components/AT
-        components/core_base
-        components/osal
-        components/hal/include
-        components/board/Include
-        platform/STM32/include
-        components/printf
-        components/core_mpu/include
-        platform/STM32/common
-        components/CRC/CRC16
-        Drivers/BSP/bh1750
-        components/core_base/assert
-        components/core_base/blackbox
-        components/core_base/compiler
-        components/core_base/stack
-        components/core_base/utils
-        components/core_base/fault_capture
-        components/ports/arch/cortexm
-        components/core_base/barrier
-        components/memory_pool/memory_pool1
-        components/perf
-        components/auto_init
-        components/eventbus/include
-        components/soft_i2c/include
-        Drivers/BSP/GT911
-        #LVGL 移植
-        Middlewares_cus/LVGL/src/core
-        Middlewares_cus/LVGL/src/display
-        Middlewares_cus/LVGL/src/draw
-        Middlewares_cus/LVGL/src/drivers
-        Middlewares_cus/LVGL/src/font
-        Middlewares_cus/LVGL/src/indev
-        Middlewares_cus/LVGL/src/layouts
-        Middlewares_cus/LVGL/src/libs
-        Middlewares_cus/LVGL/src/misc
-        Middlewares_cus/LVGL/src/osal
-        Middlewares_cus/LVGL/src/others
-        Middlewares_cus/LVGL/src/stdlib
-        Middlewares_cus/LVGL/src/themes
-        Middlewares_cus/LVGL/src/tick
-        Middlewares_cus/LVGL/src/widgets
-        Middlewares_cus/LVGL/src
-        Middlewares_cus/LVGL/include
+        ${AUTO_INCLUDE_DIRS}
         Middlewares_cus/LVGL
-        Middlewares_cus/LVGL/port
+
 
 )
 
@@ -183,56 +153,58 @@ add_compile_definitions(
         $<$<CONFIG:Debug>:DEBUG_MODE>
         $<$<CONFIG:Release>:RELEASE_MODE>
 )
-if ("$ENV{ENABLE_ANALYZE}" STREQUAL "1")
-    message(STATUS "已开启堆栈和调用图生成！")
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" OR CMAKE_C_COMPILER_ID MATCHES "GNU|Clang"
+        AND "$ENV{ENABLE_ANALYZE}" STREQUAL "1")
+    message(STATUS "当前为 GCC || Clang 环境, 已开启堆栈和调用图生成！")
     target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE
             # 1. 生成分析文件
-            $<$<CONFIG:Debug_Analyze>:-fstack-usage>     # 生成 .su 文件
-            $<$<CONFIG:Debug_Analyze>:-fdump-ipa-cgraph> # 导出调用图
+            -fstack-usage    # 生成 .su 文件
+            -fdump-ipa-cgraph # 导出调用图
     )
 endif ()
 # 检测是否是 GCC 或 Clang 编译器
 if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" OR CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-    # 修正：移除 .elf 后缀，确保与 add_executable 中定义的名称一致
+    message(STATUS "当前为 GCC || Clang 环境, 已开启调试优化、禁止动态栈分配!")
     target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE
-
             # 2. 调试稳定性
             -fno-omit-frame-pointer  # 保留帧指针
             -fno-optimize-sibling-calls # 禁用尾调用优化
 
-            # 3. 堵死动态栈分配 (安全红线)
+            # 3. 堵死动态栈分配
             -Wvla -Werror=vla        # 严禁变长数组
             -Walloca -Werror=alloca  # 严禁 alloca()
     )
 endif ()
 # --- 生成 .bin 和 .hex 文件 ---
 if (CMAKE_OBJCOPY)
-    message(STATUS "Found objcopy: ${CMAKE_OBJCOPY}")
+    message(STATUS "找到 objcopy: ${CMAKE_OBJCOPY} 用于生成bin && hex文件!")
     add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD
             COMMAND ${CMAKE_OBJCOPY} -O binary $<TARGET_FILE:${CMAKE_PROJECT_NAME}> ${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}.bin
-            COMMENT "Generating .bin file")
+    )
 
     add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD
             COMMAND ${CMAKE_OBJCOPY} -O ihex $<TARGET_FILE:${CMAKE_PROJECT_NAME}> ${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}.hex
-            COMMENT "Generating .hex file")
+    )
 
     add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD
-            COMMAND ${CMAKE_SIZE} $<TARGET_FILE:${CMAKE_PROJECT_NAME}>
-            COMMENT "Printing size information")
+            COMMAND ${CMAKE_COMMAND} -E echo "=>内存占用大小:"
+    )
+
 else ()
-    message(WARNING "CMAKE_OBJCOPY is not set. .bin and .hex files will not be generated.")
+    message(WARNING "CMAKE_OBJCOPY 没有设置 .bin and .hex 文件将不会被生成")
 endif ()
 
 # --- Stack/Recursion audit target ---
 find_package(Python3 COMPONENTS Interpreter)
 if (Python3_Interpreter_FOUND)
+    message("已找到Python3 环境准备递归审计及最坏情况堆栈！")
     add_custom_target(audit-stack
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/audit_stack.py
             --build-dir ${CMAKE_BINARY_DIR}
             --require-entry
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-            COMMENT "Auditing recursion and worst-case stack paths (.cgraph + .su)"
+            COMMENT "递归审计及最坏情况堆栈路径中... (.cgraph + .su)"
     )
 else ()
-    message(WARNING "Python3 interpreter not found; audit-stack target will be unavailable.")
+    message(WARNING "找不到 Python3 解释器; 审计栈目标将不可用.")
 endif ()
