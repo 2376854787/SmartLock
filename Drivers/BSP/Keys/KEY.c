@@ -6,6 +6,7 @@
 
 #include "HFSM.h"
 #include "cmsis_gcc.h"
+#include "osal.h"
 #include "stm32f4xx_hal_gpio.h"
 
 /********************************************************************************************************************************************
@@ -412,9 +413,10 @@ static void LONG_PRESS_HOLD_entry(StateMachine* fsm) {
  * @param timeout_ms    超时时间 (毫秒)
  */
 static void Key_Timer_Start(KEY_TypedefHandle* key, uint32_t timeout_ms) {
-    __disable_irq();
+    osal_crit_state_t state;
+    OSAL_enter_critical_ex(&state);
     key->timer_counter = timeout_ms;
-    __enable_irq();
+    OSAL_exit_critical_ex(state);
 }
 
 /**
