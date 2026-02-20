@@ -468,4 +468,9 @@ ret_code_t hal_uart_port_read(hal_uart_t* h, uint8_t* out, uint32_t want, uint32
     return rc;
 }
 
+hal_uart_id_t hal_uart_port_get_id(const hal_uart_t* h) {
+    if (!h) return HAL_UART_ID_MAX;
+    return h->id;
+}
+
 #endif
