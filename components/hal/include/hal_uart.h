@@ -102,10 +102,22 @@ ret_code_t hal_uart_rx_start(hal_uart_t* h);
  */
 ret_code_t hal_uart_read(hal_uart_t* h, uint8_t* out, uint32_t want, uint32_t* nread);
 
+/**
+ * @brief 将=数据通过串口进行异步发送
+ * @param h 串口句柄
+ * @param buf 将要发送的数据地址
+ * @param len 数据长度
+ * @return 状态码
+ */
+ret_code_t hal_uart_send_async(hal_uart_t* h, const uint8_t* buf, uint32_t len);
+
+/**
+ *
+ * @param h 句柄
+ * @param cb 回调函数
+ * @param user 用户上下文
+ * @return
+ */
 ret_code_t hal_uart_set_evt_cb(hal_uart_t* h, hal_uart_evt_cb_t cb, void* user);
 
-/* 临界区保护 */
-void hal_enter_critical(void);
-
-void hal_exit_critical(void);
 #endif  // HAL_UART_H

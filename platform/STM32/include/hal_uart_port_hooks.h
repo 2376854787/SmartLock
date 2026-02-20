@@ -25,6 +25,7 @@ void hal_uart_error_case(const UART_HandleTypeDef* huart);
 /* 放到 `HAL_UARTEx_RxEventCallback()` 中调用（启用 `USE_HAL_UARTEx_ReceiveToIdle_DMA` 时）：提交 RX
  * 增量并通知 HAL_UART_EVT_RX */
 void hal_uart_rx_event_case(const UART_HandleTypeDef* huart, uint16_t Size);
+void hal_uart_rx_dma_progress_case(const UART_HandleTypeDef* huart);
 
 /* 可选：如果你希望用统一入口，在 `USARTx_IRQHandler` / DMA IRQHandler 里调用这些函数 */
 void stm32_uart_irq_usart(hal_uart_id_t id);

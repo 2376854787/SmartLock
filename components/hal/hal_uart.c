@@ -36,7 +36,6 @@ ret_code_t hal_uart_port_set_evt_cb(hal_uart_t* h, hal_uart_evt_cb_t cb, void* u
     RET_MAKE(RET_MOD_HAL, RET_SUB_HAL_UART, RET_CODE_MAKE((cls_), (reason_)))
 #endif
 
-/* ========== 商业做法：保留底层(port)原始错误码用于追踪 ========== */
 /* 你可以在工程里提供强符号实现，把 rc_port 写入日志/事件环形缓冲/故障记录等 */
 __attribute__((weak)) void hal_uart_on_port_error(ret_code_t rc_port, const char* api,
                                                   hal_uart_id_t id, uint32_t arg0, uint32_t arg1) {
@@ -49,7 +48,6 @@ __attribute__((weak)) void hal_uart_on_port_error(ret_code_t rc_port, const char
     LOG_E("port", "port:%d, api:%s, uart_id:%d", rc_port, api, id);
 }
 
-/* ========== port -> HAL 错误码映射（关键：统一口径，不泄露 PORT）========== */
 /* 规则：对外只暴露 HAL-UART 语义；底层细节用 hook 保留 */
 static inline ret_code_t uart_map_port_to_hal(ret_code_t rc_port, const char* api, hal_uart_id_t id,
                                               uint32_t arg0, uint32_t arg1) {
@@ -110,8 +108,13 @@ static inline ret_code_t uart_map_port_to_hal(ret_code_t rc_port, const char* ap
 #endif
 }
 
-/* ========== HAL API（对外）========== */
-
+/**
+ *
+ * @param id 板级资源映射id
+ * @param cfg 配置
+ * @param out 最终配置
+ * @return
+ */
 ret_code_t hal_uart_open(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_uart_t** out) {
     /* HAL 契约校验：参数错误由 HAL 统一返回 */
     if (!cfg || !out) return UART_HAL_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
@@ -167,7 +170,7 @@ ret_code_t hal_uart_read(hal_uart_t* h, uint8_t* out, uint32_t want, uint32_t* n
 
 ret_code_t hal_uart_set_evt_cb(hal_uart_t* h, hal_uart_evt_cb_t cb, void* user) {
     if (!h) return UART_HAL_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
-    /* cb 是否允许为 NULL：按你的契约决定。若不允许就打开这行 */
+    /* cb 是否允许为 NULL */
     /* if (!cb) return UART_HAL_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG); */
 
     const ret_code_t rc = hal_uart_port_set_evt_cb(h, cb, user);

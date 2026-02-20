@@ -233,6 +233,16 @@ void hal_uart_rx_event_case(const UART_HandleTypeDef* huart, uint16_t Size) {
 }
 #endif
 
+void hal_uart_rx_dma_progress_case(const UART_HandleTypeDef* huart) {
+    for (int i = 0; i < (int)HAL_UART_ID_MAX; i++) {
+        hal_uart_t* u = &g_uarts[i];
+        if (u->bsp.huart == huart) {
+            rx_commit_delta(u);
+            return;
+        }
+    }
+}
+
 /**
  * @brief  消除空闲中断的flag 提交DMA接收增量
  * @param u 抽象串口句柄

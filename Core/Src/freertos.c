@@ -48,6 +48,7 @@
 #include "usart.h"
 #include "wifi_mqtt_task.h"
 #include "heap_check.h"
+#include "hal_uart_port_hooks.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -388,6 +389,9 @@ void StartTask_LCD(void *argument)
 /* USER CODE BEGIN Application */
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef* huart, uint16_t Size) {
+#if defined(USE_STM32_HAL) && defined(ENABLE_HAL_UART)
+    hal_uart_rx_event_case(huart, Size);
+#endif
     if (huart->Instance == USART1) {
         // 串口1任务 维护一个指针在IDLE 以及半满全满中断中处理
         process_dma_data();
@@ -397,6 +401,22 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef* huart, uint16_t Size) {
     if (huart->Instance == USART3) {
         AT_Core_RxCallback(&g_at_manager, &huart3, Size);
     }
+}
+
+void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef* huart) {
+#if defined(USE_STM32_HAL) && defined(ENABLE_HAL_UART)
+    hal_uart_rx_dma_progress_case(huart);
+#else
+    (void)huart;
+#endif
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef* huart) {
+#if defined(USE_STM32_HAL) && defined(ENABLE_HAL_UART)
+    hal_uart_rx_dma_progress_case(huart);
+#else
+    (void)huart;
+#endif
 }
 
 void HAL_UART_ErrorCallback(UART_HandleTypeDef* huart) {
