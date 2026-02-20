@@ -36,7 +36,7 @@ ret_code_t stm32_uart_bsp_get(hal_uart_id_t id, stm32_uart_bsp_t* out) {
             out->rx_dma_len = sizeof(g_uart1_rx_dma);  // 长度 必须为2的幂次大小
             out->sw_rb_len  = 2048;                    /* 软件RB的容量 KB 尽量为2的幂次大小 */
             out->irq_prio   = 5;
-            return UART_MAP_RET(RET_CLASS_PARAM,  RET_R_OK);
+            return RET_OK;
         default:
             return UART_MAP_RET(RET_CLASS_RESOURCE, RET_R_NO_RESOURCE);
     }
