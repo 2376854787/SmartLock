@@ -3,7 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "cmsis_os2.h"
+#include "osal.h"
 #include "RingBuffer.h"
 #include  "ret_code.h"
 #include  "main.h"
@@ -26,7 +26,7 @@ typedef enum {
 } Param_Format;
 
 #define AT_CMD_BUFFER_SIZE 128
-extern osMutexId_t esp01s_Mutex01Handle;
+extern osal_mutex_t esp01s_Mutex01Handle;
 extern ESP01S_Handle g_esp01_handle;
 extern volatile uint8_t g_esp01s_flag;
 ret_code_t command_send(UART_HandleTypeDef *huart, const char *command, const char *wait_rsu, uint16_t max_wait_time);
