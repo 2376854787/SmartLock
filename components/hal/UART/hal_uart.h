@@ -1,6 +1,7 @@
 #ifndef HAL_UART_H
 #define HAL_UART_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "ret_code.h"

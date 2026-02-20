@@ -17,6 +17,7 @@ uint32_t hal_get_tick_ms(void);
  * @return 返回当前以 us 为单位的时间戳
  */
 uint32_t hal_get_tick_us32(void);
+uint64_t hal_get_tick_us64(void);
 
 /**
  * @brief 毫秒级阻塞延时
@@ -37,7 +38,7 @@ void hal_time_delay_us(uint32_t us);
  * @return 返回 DWT->CYCCNT 寄存器实时的存储值
  * @note 使用前必须确保 DWT 初始化成功
  */
-uint64_t hal_get_cycle32(void);
+uint32_t hal_get_cycle32(void);
 
 /**
  * @brief 提供任意合法主频下的us周期

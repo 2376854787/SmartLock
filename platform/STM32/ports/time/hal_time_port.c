@@ -83,7 +83,7 @@ static void dwt_recalibrate_if_needed(void) {
  * @note 可以回绕 上层应该做好检查（无符号处理）
  * @return 返回当前以 us 为单位的时间
  */
-uint64_t hal_get_tick_us32(void) {
+uint32_t hal_get_tick_us32(void) {
     /* 递归检测：如果正在初始化中被再次调用，直接返回降级值 */
     if (CORE_UNLIKELY(dwt_init_in_progress)) {
         return hal_get_tick_ms() * 1000U;
@@ -176,6 +176,11 @@ uint64_t hal_get_tick_us32(void) {
  * @note CMSISv2 实现下为将 ms 转换为ticks后调用osDelay 的非阻塞延时
  *       裸机为 HAL_Delay 阻塞延时
  */
+uint64_t hal_get_tick_us64(void) {
+    (void)hal_get_tick_us32();
+    return dwt_us_accum;
+}
+
 void hal_time_delay_ms(uint32_t ms) {
 #if defined(OSAL_BACKEND_CMSIS_OS2)
     OSAL_delay_ms(ms);
@@ -260,6 +265,10 @@ uint32_t hal_get_tick_ms(void) {
 
 uint32_t hal_get_tick_us32(void) {
     return 0U;
+}
+
+uint64_t hal_get_tick_us64(void) {
+    return (uint64_t)hal_get_tick_us32();
 }
 
 void hal_time_delay_ms(uint32_t ms) {

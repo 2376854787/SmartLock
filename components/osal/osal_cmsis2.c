@@ -163,8 +163,11 @@ uint32_t OSAL_tick_to_ms(osal_tick_t ticks) {
  */
 ret_code_t OSAL_delay_ms(uint32_t ms) {
     if (ms == 0) return RET_OK;
-    (void)osDelay(OSAL_ms_to_ticks(ms));
-    return RET_OK;
+    const osStatus_t st = osDelay(OSAL_ms_to_ticks(ms));
+    if (st == osOK) return RET_OK;
+    if (st == osErrorISR) return OSAL_TASK_RET(RET_CLASS_FATAL, RET_R_ISR_CONTEXT);
+    if (st == osErrorParameter) return OSAL_TASK_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    return OSAL_TASK_RET(RET_CLASS_FATAL, RET_R_PANIC);
 }
 
 /**
@@ -612,7 +615,7 @@ ret_code_t OSAL_msgq_delete(osal_msgq_t msgq) {
     const osStatus_t st = osMessageQueueDelete((osMessageQueueId_t)msgq);
     if (st == osOK) return RET_OK;
     if (st == osErrorParameter) return OSAL_QUEUE_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
-    if (st == osErrorISR) return OSAL_MUTEX_RET(RET_CLASS_TIMEOUT, RET_R_TIMEOUT);
+    if (st == osErrorISR) return OSAL_QUEUE_RET(RET_CLASS_FATAL, RET_R_ISR_CONTEXT);
     return OSAL_QUEUE_RET(RET_CLASS_FATAL, RET_R_PANIC);
 }
 
