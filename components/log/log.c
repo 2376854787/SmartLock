@@ -13,6 +13,7 @@
 #include "RingBuffer.h"
 #include "osal.h"
 #include "ret_code.h"
+#include "hal_time.h"
 
 #define snprintf_my  sniprintf
 #define vsnprintf_my vsniprintf
@@ -186,7 +187,7 @@ void Log_Printf(LogLevel_t level, const char* file, int line, const char* tag, c
     /* ================= 格式化阶段 ================= */
 
     /* 获取系统滴答数 */
-    const uint32_t tick = HAL_GetTick();
+    const uint32_t tick = hal_get_tick_ms();
 
     /* 设置颜色与等级字符 */
     const char* color   = "";
@@ -359,7 +360,7 @@ void Log_Hexdump(LogLevel_t level, const char* file, int line, const char* tag, 
     const uint8_t* p    = (const uint8_t*)buf;
 
     /* 3、获取时间戳、根据日志等级获取输出颜色 */
-    const uint32_t tick = HAL_GetTick();
+    const uint32_t tick = hal_get_tick_ms();
     const char* color   = "";
     char level_char     = ' ';
     switch (level) {
