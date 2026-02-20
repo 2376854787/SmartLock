@@ -11,14 +11,20 @@
 extern UART_HandleTypeDef huart1;
 extern DMA_HandleTypeDef hdma_usart1_rx;
 extern DMA_HandleTypeDef hdma_usart1_tx;
+extern UART_HandleTypeDef huart3;
+extern DMA_HandleTypeDef hdma_usart3_rx;
+extern DMA_HandleTypeDef hdma_usart3_tx;
 
 /* DMA 环形缓冲 + 软件 RB（静态） */
 #if defined(CORE_ALIGNED)
 static CORE_ALIGNED(32) uint8_t g_uart1_rx_dma[512];
+static CORE_ALIGNED(32) uint8_t g_uart3_rx_dma[512];
 #elif defined(__ALIGNED)
 static __ALIGNED(32) uint8_t g_uart1_rx_dma[512];
+static __ALIGNED(32) uint8_t g_uart3_rx_dma[512];
 #else
 static uint8_t g_uart1_rx_dma[512];
+static uint8_t g_uart3_rx_dma[512];
 #endif
 
 ret_code_t stm32_uart_bsp_get(hal_uart_id_t id, stm32_uart_bsp_t* out) {
@@ -35,6 +41,18 @@ ret_code_t stm32_uart_bsp_get(hal_uart_id_t id, stm32_uart_bsp_t* out) {
             out->rx_dma_buf = g_uart1_rx_dma;          // DMA 内存侧地址
             out->rx_dma_len = sizeof(g_uart1_rx_dma);  // 长度 必须为2的幂次大小
             out->sw_rb_len  = 2048;                    /* 软件RB的容量 KB 尽量为2的幂次大小 */
+            out->irq_prio   = 5;
+            return RET_OK;
+        case HAL_UART_ID_3:
+            out->huart      = &huart3;
+            out->hdma_rx    = &hdma_usart3_rx;
+            out->hdma_tx    = &hdma_usart3_tx;
+            out->usart_irq  = USART3_IRQn;
+            out->dma_rx_irq = DMA1_Stream1_IRQn;
+            out->dma_tx_irq = DMA1_Stream3_IRQn;
+            out->rx_dma_buf = g_uart3_rx_dma;
+            out->rx_dma_len = sizeof(g_uart3_rx_dma);
+            out->sw_rb_len  = 2048;
             out->irq_prio   = 5;
             return RET_OK;
         default:
