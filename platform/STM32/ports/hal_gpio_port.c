@@ -37,6 +37,14 @@ __WEAK NORETURN void hal_gpio_assert_failed(const char* file, int line) {
 #endif
 #endif
 
+#ifndef HAL_GPIO_IRQ_PRIO
+#define HAL_GPIO_IRQ_PRIO 6u
+#endif
+
+#ifndef HAL_GPIO_IRQ_SUBPRIO
+#define HAL_GPIO_IRQ_SUBPRIO 0u
+#endif
+
 /* ---------------- 句柄定义（只在 port.c 可见） ---------------- */
 
 struct hal_gpio {
@@ -359,6 +367,43 @@ static IRQn_Type get_pin_irqn(uint16_t pin) {
     if (pin >= 10 && pin <= 15) return EXTI15_10_IRQn;
     return NonMaskableInt_IRQn; /* Should not happen */
 }
+/**
+ * @brief 判断当前的中断和pin是否是对上的
+ * @param pin pin
+ * @param irqn 中断
+ * @return 是否是配对的
+ */
+static bool pin_belongs_to_irqn(uint16_t pin, IRQn_Type irqn) {
+    switch (irqn) {
+        case EXTI0_IRQn:
+            return pin == 0u;
+        case EXTI1_IRQn:
+            return pin == 1u;
+        case EXTI2_IRQn:
+            return pin == 2u;
+        case EXTI3_IRQn:
+            return pin == 3u;
+        case EXTI4_IRQn:
+            return pin == 4u;
+        case EXTI9_5_IRQn:
+            return (pin >= 5u && pin <= 9u);
+        case EXTI15_10_IRQn:
+            return (pin >= 10u && pin <= 15u);
+        default:
+            return false;
+    }
+}
+/**
+ * @brief
+ * @param irqn 中断
+ * @return
+ */
+static bool any_line_uses_irqn(IRQn_Type irqn) {
+    for (uint16_t pin = 0; pin < 16u; ++pin) {
+        if (pin_belongs_to_irqn(pin, irqn) && (s_gpio_irq_cbs[pin].cb != NULL)) return true;
+    }
+    return false;
+}
 
 /**
  * @brief 传入配置信息注册回调函数
@@ -371,14 +416,23 @@ ret_code_t hal_gpio_port_register_irq(hal_gpio_t* h, hal_gpio_irq_cb_t cb, void*
     if (!h || !cb) return PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     if (h->pin >= 16u) return PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
 
+    const uint32_t primask = __get_PRIMASK();
+    __disable_irq();
+    /*　判断当前位置是否已经注册了一个回调函数　*/
+    if (s_gpio_irq_cbs[h->pin].cb && s_gpio_irq_cbs[h->pin].cb != cb) {
+        __set_PRIMASK(primask);
+        return PORT_RET(RET_CLASS_STATE, RET_R_BUSY);
+    }
+
     /* 1. 存入回调表 */
     s_gpio_irq_cbs[h->pin].cb        = cb;
     s_gpio_irq_cbs[h->pin].user_data = user_data;
+    __set_PRIMASK(primask);
 
     /* 2. 使能 NVIC */
-    IRQn_Type irqn                   = get_pin_irqn(h->pin);
-    /* 设置优先级 (默认给个中等优先级，用户若需调整可自行调用 NVIC API，但此处必须 Enable) */
-    HAL_NVIC_SetPriority(irqn, 6, 0);
+    const IRQn_Type irqn = get_pin_irqn(h->pin);
+    __HAL_GPIO_EXTI_CLEAR_IT(pin_mask(h->pin));
+    HAL_NVIC_SetPriority(irqn, HAL_GPIO_IRQ_PRIO, HAL_GPIO_IRQ_SUBPRIO);
     HAL_NVIC_EnableIRQ(irqn);
 
     return RET_OK;
@@ -393,11 +447,17 @@ ret_code_t hal_gpio_port_register_irq(hal_gpio_t* h, hal_gpio_irq_cb_t cb, void*
 ret_code_t hal_gpio_port_unregister_irq(hal_gpio_t* h) {
     if (!h) return PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     if (h->pin >= 16u) return PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
-
+    /* 获取中断 */
+    const IRQn_Type irqn   = get_pin_irqn(h->pin);
+    const uint32_t primask = __get_PRIMASK();
+    __disable_irq();
+    /* 注销回调 */
     s_gpio_irq_cbs[h->pin].cb        = NULL;
     s_gpio_irq_cbs[h->pin].user_data = NULL;
-
-    /* 简单起见，暂不 Disable IRQ，因为 5-9 和 10-15 是共享的，需要引用计数才能安全关闭 */
+    const bool irqn_in_use           = any_line_uses_irqn(irqn);
+    __set_PRIMASK(primask);
+    /* 该中断无任何引用后关闭 */
+    if (!irqn_in_use) HAL_NVIC_DisableIRQ(irqn);
     return RET_OK;
 }
 
