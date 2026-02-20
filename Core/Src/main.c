@@ -33,6 +33,7 @@
 
 #include "ESP01S.h"
 #include "KEY.h"
+#include "Usart1_manage.h"
 #include "auto_init.h"
 #include "bh1750.h"
 #include "blackbox_record.h"
@@ -42,7 +43,6 @@
 #include "lv_port_disp.h"
 #include "lv_port_indev.h"
 #include "lvgl.h"
-#include "myfree.h"
 #include "vectortable_to_ram.h"
 #include "wifi_mqtt_task.h"
 
