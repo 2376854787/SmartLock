@@ -30,6 +30,7 @@
  
 #include "main.h"
 #include "lcd.h"
+#include "hal_time.h"
 
 
 /**
@@ -41,7 +42,7 @@ void lcd_ex_st7789_reginit(void)
 {
     lcd_wr_regno(0x11);
 
-    HAL_Delay(120);
+    hal_time_delay_ms(120);
 
     lcd_wr_regno(0x36);
     lcd_wr_data(0x00);
@@ -225,7 +226,7 @@ void lcd_ex_ili9341_reginit(void)
     lcd_wr_data(0x00);
     lcd_wr_data(0xef);
     lcd_wr_regno(0x11); /* Exit Sleep */
-    HAL_Delay(120);
+    hal_time_delay_ms(120);
     lcd_wr_regno(0x29); /* display on */
  }
  
@@ -902,7 +903,7 @@ void lcd_ex_nt35310_reginit(void)
     lcd_wr_data(0x55);  /* 66 */
 
     lcd_wr_regno(0x11);
-    HAL_Delay(100);
+    hal_time_delay_ms(100);
     lcd_wr_regno(0x29);
     lcd_wr_regno(0x35);
     lcd_wr_data(0x00);
@@ -925,7 +926,7 @@ void lcd_ex_st7796_reginit(void)
 {
     lcd_wr_regno(0x11);
 
-    HAL_Delay(120);
+    hal_time_delay_ms(120);
 
     lcd_wr_regno(0x36); /* Memory Data Access Control MY,MX~~ */
     lcd_wr_data(0x48);
@@ -1014,7 +1015,7 @@ void lcd_ex_st7796_reginit(void)
     lcd_wr_regno(0xF0);
     lcd_wr_data(0x69);
 
-    HAL_Delay(120);
+    hal_time_delay_ms(120);
 
     lcd_wr_regno(0x21);
     lcd_wr_regno(0x29);
@@ -1485,9 +1486,9 @@ void lcd_ex_nt35510_reginit(void)
     lcd_write_reg(0x3A00, 0x05);
 
     lcd_wr_regno(0x1100);
-    HAL_Delay(120);
+    hal_time_delay_ms(120);
     lcd_wr_regno(0x2900);
-    HAL_Delay(10);
+    hal_time_delay_ms(10);
     lcd_wr_regno(0x2C00);
 }
 
@@ -1653,9 +1654,9 @@ void lcd_ex_ili9806_reginit(void)
     lcd_wr_data(0x00);  /* 02-180 */
 
     lcd_wr_regno(0x11);
-    HAL_Delay(120);
+    hal_time_delay_ms(120);
     lcd_wr_regno(0x29);  
-    HAL_Delay(20);
+    hal_time_delay_ms(20);
     lcd_wr_regno(0x2C);
 }
 
@@ -1670,16 +1671,16 @@ void lcd_ex_ssd1963_reginit(void)
     lcd_wr_data(0x1D);  /* 参数1 */
     lcd_wr_data(0x02);  /* 参数2 Divider M = 2, PLL = 300/(M+1) = 100MHz */
     lcd_wr_data(0x04);  /* 参数3 Validate M and N values */
-    HAL_Delay(1);
+    hal_time_delay_ms(1);
     //delay_us(100);
     lcd_wr_regno(0xE0); /*  Start PLL command */
     lcd_wr_data(0x01);  /*  enable PLL */
-    HAL_Delay(10);
+    hal_time_delay_ms(10);
     lcd_wr_regno(0xE0); /*  Start PLL command again */
     lcd_wr_data(0x03);  /*  now, use PLL output as system clock */
-    HAL_Delay(12);
+    hal_time_delay_ms(12);
     lcd_wr_regno(0x01); /* 软复位 */
-    HAL_Delay(10);
+    hal_time_delay_ms(10);
 
     lcd_wr_regno(0xE6); /* 设置像素频率,33Mhz */
     lcd_wr_data(0x2F);

@@ -29,6 +29,7 @@
 #include "lcd.h"
 
 #include "fsmc.h"
+#include "hal_time.h"
 #include "lcd_ex.c"
 #include "lcdfont.h"
 #include "main.h"
@@ -553,7 +554,7 @@ void lcd_set_window(uint16_t sx, uint16_t sy, uint16_t width, uint16_t height) {
  */
 void lcd_init(void) {
     FSMC_NORSRAM_TimingTypeDef fsmc_write_handle = {0};
-    HAL_Delay(50);
+    hal_time_delay_ms(50);
 
     /* 尝试9341 ID的读取 */
     lcd_wr_regno(0xD3);
@@ -611,7 +612,7 @@ void lcd_init(void) {
                     lcd_wr_regno(0xC501);       /* 读取ID高八位 */
                     lcddev.id |= lcd_rd_data(); /* 读回0x00 */
 
-                    HAL_Delay(5); /* 等待5ms, 因为0XC501指令对1963来说就是软件复位指令,
+                    hal_time_delay_ms(5); /* 等待5ms, 因为0XC501指令对1963来说就是软件复位指令,
                                      等待5ms让1963复位完成再操作 */
 
                     if (lcddev.id != 0x5510) /* 也不是NT5510,尝试看看是不是ILI9806 */
