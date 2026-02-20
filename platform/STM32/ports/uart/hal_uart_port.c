@@ -7,6 +7,7 @@
 
 #include "RingBuffer.h"
 #include "hal_uart.h"
+#include "osal.h"
 #include "ret_code.h"
 #include "stm32_hal.h"
 #include "stm32_uart_bsp.h"
@@ -457,14 +458,19 @@ ret_code_t hal_uart_port_send_async(hal_uart_t* h, const uint8_t* buf, uint32_t 
  */
 ret_code_t hal_uart_port_read(hal_uart_t* h, uint8_t* out, uint32_t want, uint32_t* nread) {
     if (!h || !out || want == 0u || !nread) return UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
-    hal_uart_t* u       = (hal_uart_t*)h;
+    hal_uart_t* u = (hal_uart_t*)h;
 
-    uint32_t size       = want;
-    const ret_code_t rc = ReadRingBuffer(&u->rb, out, &size, u->isCompatible ? 1 : 0);
+    uint32_t size = want;
+    ret_code_t rc;
+    if (OSAL_in_isr()) {
+        rc = ReadRingBufferFromISR(&u->rb, out, &size, u->isCompatible ? 1 : 0);
+    } else {
+        rc = ReadRingBuffer(&u->rb, out, &size, u->isCompatible ? 1 : 0);
+    }
 
     /* 约定：严格模式下若不足，ReadRingBuffer 应返回 DATA_NOT_ENOUGH 且 size不变；
        兼容模式下 size 为实际读取量。 */
-    *nread              = size;
+    *nread = size;
     return rc;
 }
 
