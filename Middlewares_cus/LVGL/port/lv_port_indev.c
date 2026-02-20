@@ -30,7 +30,7 @@ void lv_port_indev_init(void) {
                              .i2c_addr     = GT911_ADDR_HIGH,
                              .max_x        = DISP_PHYS_W, /* GT911 始终用物理分辨率 480 */
                              .max_y        = DISP_PHYS_H, /* GT911 始终用物理分辨率 800 */
-                             .refresh_rate = 0};
+                             .refresh_rate = 100};
 
     const ret_code_t ret  = gt911_init(&s_lv_gt911_dev, &cfg);
     if (ret != RET_OK) {
