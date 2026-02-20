@@ -7,6 +7,7 @@
 #include "bh1750_config.h"
 #include "i2c.h"
 #include "log.h"
+#include "hal_time.h"
 #include "stm32f4xx_hal.h"
 #define BH1750_ADDR ((BH1750_ADDR_GND) << 1)
 /* 寄存器默认测量时间 */
@@ -118,9 +119,9 @@ uint32_t BH1750_GetLastError(void) { return g_bh1750.last_error; }
  * @return 是否超时
  */
 static bool BH1750_WaitTx(uint32_t timeout_ms) {
-  const uint32_t t0 = HAL_GetTick();
+  const uint32_t t0 = hal_get_tick_ms();
   while (BH1750_GetTxState() == BH1750_TX_BUSY) {
-    if (HAL_GetTick() - t0 > timeout_ms)
+    if (hal_get_tick_ms() - t0 > timeout_ms)
       return false;
   }
   return true;
