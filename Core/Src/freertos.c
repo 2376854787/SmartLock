@@ -392,17 +392,12 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef* huart, uint16_t Size) {
 #if defined(USE_STM32_HAL) && defined(ENABLE_HAL_UART)
     hal_uart_rx_event_case(huart, Size);
 #endif
-    if (huart->Instance == USART1) {
-        // 串口1任务 维护一个指针在IDLE 以及半满全满中断中处理
-        process_dma_data();
-        return;
-    }
+
 
     if (huart->Instance == USART3) {
         AT_Core_RxCallback(&g_at_manager, &huart3, Size);
     }
 }
-
 void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef* huart) {
 #if defined(USE_STM32_HAL) && defined(ENABLE_HAL_UART)
     hal_uart_rx_dma_progress_case(huart);
@@ -421,16 +416,17 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef* huart) {
 
 void HAL_UART_ErrorCallback(UART_HandleTypeDef* huart) {
     if (huart->Instance == USART1) {
-        // uint32_t error = HAL_UART_GetError(huart);
-        //  处理错误，如 ORE/FE
+#if defined(USE_STM32_HAL) && defined(ENABLE_HAL_UART)
+        hal_uart_error_case(huart);
+        return;
+#else
         __HAL_UART_CLEAR_OREFLAG(huart);
         __HAL_UART_CLEAR_FEFLAG(huart);
-        // 重启 UART 和 DMA
         HAL_UART_DMAStop(huart);
         MX_USART1_UART_Init();
         HAL_UART_Receive_DMA(huart, DmaBuffer, DMA_BUFFER_SIZE);
+#endif
     }
 }
-
 /* USER CODE END Application */
 
