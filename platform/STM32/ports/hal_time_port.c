@@ -20,6 +20,11 @@ static bool dwt_available   = false;
 static bool dwt_fail_logged = false;
 /* 当前主频下每 us的计数器数 */
 static uint32_t cycles_per_us;
+/* 运行时间重新校准与单调时间状态 */
+static uint32_t dwt_last_sysclk = 0u; /* 上次记录的系统主频 */
+static uint64_t dwt_us_accum    = 0u; /* 累计的us总数 */
+static uint32_t dwt_last_cyccnt = 0u; /* 上次记录的周期数 */
+static uint32_t dwt_cycle_rem   = 0u; /* 周期换算余数减少截断误差 */
 /**
  * 初始化 DWT寄存器
  */
@@ -31,6 +36,11 @@ void dwt_init_once(void) {
     mem_barrier();
     inst_barrier();
     cycles_per_us = SystemCoreClock / 1000000U;
+    if (cycles_per_us == 0u) cycles_per_us = 1u;
+    dwt_last_sysclk = SystemCoreClock;
+    dwt_last_cyccnt = DWT->CYCCNT;
+    dwt_us_accum    = 0u;
+    dwt_cycle_rem   = 0u;
 }
 
 /**
@@ -45,10 +55,35 @@ uint32_t hal_get_tick_ms(void) {
 static volatile bool dwt_init_in_progress = false;
 
 /**
+ * @brief 判断系统主频是否变化 然后更新全局参数
+ */
+static void dwt_recalibrate_if_needed(void) {
+    /* 判断系统主频是否变化 */
+    const uint32_t cur_sysclk = SystemCoreClock;
+    if (CORE_UNLIKELY(cur_sysclk == 0u)) return;
+    if (CORE_LIKELY(cur_sysclk == dwt_last_sysclk)) return;
+    /*　进入临界区　*/
+    const uint32_t primask = __get_PRIMASK();
+    __disable_irq();
+    /* 内存屏障 */
+    mem_barrier();
+    /* 重新计算每us的周期数 */
+    if (CORE_UNLIKELY(cur_sysclk != dwt_last_sysclk)) {
+        uint32_t cpu_per_us = cur_sysclk / 1000000u;
+        if (cpu_per_us == 0u) cpu_per_us = 1u;
+        cycles_per_us   = cpu_per_us;
+        dwt_last_sysclk = cur_sysclk;
+        if (dwt_cycle_rem >= cpu_per_us) dwt_cycle_rem %= cpu_per_us;
+        mem_barrier();
+    }
+    __set_PRIMASK(primask);
+}
+
+/**
  * @note 可以回绕 上层应该做好检查（无符号处理）
  * @return 返回当前以 us 为单位的时间
  */
-uint32_t hal_get_tick_us32(void) {
+uint64_t hal_get_tick_us32(void) {
     /* 递归检测：如果正在初始化中被再次调用，直接返回降级值 */
     if (CORE_UNLIKELY(dwt_init_in_progress)) {
         return hal_get_tick_ms() * 1000U;
@@ -110,9 +145,30 @@ uint32_t hal_get_tick_us32(void) {
         return hal_get_tick_ms() * 1000U;
     }
     /* DWT 启动成功才采用该值 */
+    dwt_recalibrate_if_needed();
     if (CORE_UNLIKELY(cycles_per_us == 0U)) return hal_get_tick_ms() * 1000U;
-    const uint32_t us = (uint32_t)DWT->CYCCNT / cycles_per_us;
-    return us;
+    /* 获取当前的周期数 */
+    const uint32_t now_cyc = DWT->CYCCNT;
+    /* 进入临界区 */
+    const uint32_t primask = __get_PRIMASK();
+    __disable_irq();
+    mem_barrier();
+    /* 计算相距的 DWT 周期 */
+    const uint32_t delta_cyc = now_cyc - dwt_last_cyccnt;
+    dwt_last_cyccnt          = now_cyc;
+    /* 计算总周期数 = 余数 + 这次相差的周期 */
+    const uint64_t sum_cyc   = (uint64_t)dwt_cycle_rem + (uint64_t)delta_cyc;
+    /* 计算出这次可以除尽的 us 数 */
+    const uint32_t inc_us    = (uint32_t)(sum_cyc / cycles_per_us);
+    /* 更新余数 */
+    dwt_cycle_rem            = (uint32_t)(sum_cyc - ((uint64_t)inc_us * (uint64_t)cycles_per_us));
+    /* 更新总us数 */
+    dwt_us_accum += (uint64_t)inc_us;
+    // const uint32_t us32 = (uint32_t)dwt_us_accum;
+
+    mem_barrier();
+    __set_PRIMASK(primask);
+    return dwt_us_accum;
 }
 /**
  * @brief ms级延时
@@ -146,9 +202,22 @@ void hal_time_delay_us(uint32_t us) {
         return;
     }
 
-    const uint32_t start_clk  = DWT->CYCCNT; /* 直接拿最原始的 CPU Tick */
+    const uint32_t start_clk = DWT->CYCCNT; /* 直接拿最原始的 CPU Tick */
     /* 将 us 转换为 CPU Tick，避开在循环里反复做除法 */
-    const uint32_t wait_ticks = us * cycles_per_us;
+    /* 检查主频是否发生了变化 */
+    dwt_recalibrate_if_needed();
+    /* 计算出需要等待的 实际周期数 */
+    const uint64_t wait_ticks64 = (uint64_t)us * (uint64_t)cycles_per_us;
+    /* 处理超出最大周期数的情况 */
+    if (CORE_UNLIKELY(wait_ticks64 > 0xFFFFFFFFu)) {
+        const uint32_t start_us = hal_get_tick_us32();
+        /* 退化为直接使用 us 计算*/
+        while ((uint32_t)(hal_get_tick_us32() - start_us) < us) {
+            // wait
+        }
+        return;
+    }
+    const uint32_t wait_ticks = (uint32_t)wait_ticks64;
 
     /* 利用无符号减法处理回绕 */
     while (DWT->CYCCNT - start_clk < wait_ticks) {
