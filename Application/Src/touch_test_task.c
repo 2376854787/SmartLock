@@ -9,11 +9,13 @@
 
 #include "touch_test_task.h"
 
+#include <stddef.h>
+
 #include "board_gpio_ids.h"
-#include "cmsis_os2.h"
 #include "gt911.h"
 #include "hal_gpio.h"
 #include "log.h"
+#include "osal.h"
 
 #define TAG "TOUCH"
 
@@ -21,7 +23,7 @@
 static gt911_dev_t s_touch;
 
 /* 触摸中断通知信号量 */
-static osSemaphoreId_t s_touch_sem;
+static osal_sem_t s_touch_sem;
 
 /* ======================== EXTI 中断回调 ======================== */
 
@@ -30,9 +32,9 @@ static osSemaphoreId_t s_touch_sem;
  * @param  user_data  用户数据 (信号量句柄)
  */
 static void touch_irq_handler_cb(void* user_data) {
-    const osSemaphoreId_t sem = (osSemaphoreId_t)user_data;
+    const osal_sem_t sem = (osal_sem_t)user_data;
     if (sem != NULL) {
-        osSemaphoreRelease(sem);
+        (void)OSAL_sem_give_from_isr(sem);
     }
 }
 
@@ -42,13 +44,13 @@ void StartTouchTestTask(void* argument) {
     (void)argument;
 
     /* 等系统稳定 */
-    osDelay(500);
+    (void)OSAL_delay_ms(500);
 
     /* 创建二值信号量（初始值 0，触摸中断释放） */
-    s_touch_sem = osSemaphoreNew(1, 0, NULL);
-    if (s_touch_sem == NULL) {
+    if (OSAL_sem_create(&s_touch_sem, "touch_sem", 0, 1) != RET_OK)
+    {
         LOG_E(TAG, "信号量创建失败");
-        osThreadSuspend(osThreadGetId());
+
         return;
     }
 
@@ -65,7 +67,7 @@ void StartTouchTestTask(void* argument) {
     ret_code_t rc         = gt911_init(&s_touch, &cfg);
     if (rc != RET_OK) {
         LOG_E(TAG, "GT911 初始化失败! rc=0x%08lX", (unsigned long)rc);
-        osThreadSuspend(osThreadGetId());
+
         return;
     }
 
@@ -101,9 +103,9 @@ void StartTouchTestTask(void* argument) {
 
     for (;;) {
         /* 阻塞等待触摸中断信号量，最长 500ms 超时（兜底防卡死） */
-        const osStatus_t sem_rc = osSemaphoreAcquire(s_touch_sem, 500);
+        const ret_code_t sem_rc = OSAL_sem_take(s_touch_sem, 500);
 
-        if (sem_rc == osOK || sem_rc == osErrorTimeout) {
+        if (sem_rc == RET_OK || ret_is_timeout(sem_rc)) {
             /* 中断触发 or 超时 (超时也读一下，防止中断丢失或未触发)
                其实超时读一下也没坏处，当作低频轮询兜底
             */
