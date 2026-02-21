@@ -114,7 +114,7 @@ const osThreadAttr_t LightSensor_Task_attributes = {
 osThreadId_t heap_check_task_handle;
 const osThreadAttr_t heap_check_task_attributes = {
     .name="heap_check_task",
-    .stack_size = 128 *8,
+    .stack_size = 256 *6,
     .priority = (osPriority_t)osPriorityLow,
 };
 /* USER CODE END FunctionPrototypes */
@@ -242,7 +242,7 @@ void MX_FREERTOS_Init(void) {
     Log_PortInit();
     Log_Init();
     /* 串口AT解析任务 创建信号量、创建任务*/
-    at_core_task_init(&g_at_manager, &huart3);
+    at_core_task_init(&g_at_manager);
 
   /* USER CODE END RTOS_THREADS */
 
@@ -368,7 +368,7 @@ void StartTask_LCD(void *argument)
         }
 
         if (!esp_init_done && lv_port_disp_get_flush_count() > 20) {
-            esp01s_Init(&huart3, 1024);
+            esp01s_Init();
             esp_init_done = 1;
             LOG_I("StartTask_LCD", "ESP init done");
         }
@@ -392,11 +392,6 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef* huart, uint16_t Size) {
 #if defined(USE_STM32_HAL) && defined(ENABLE_HAL_UART)
     hal_uart_rx_event_case(huart, Size);
 #endif
-
-
-    if (huart->Instance == USART3) {
-        AT_Core_RxCallback(&g_at_manager, &huart3, Size);
-    }
 }
 void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef* huart) {
 #if defined(USE_STM32_HAL) && defined(ENABLE_HAL_UART)
@@ -415,18 +410,17 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef* huart) {
 }
 
 void HAL_UART_ErrorCallback(UART_HandleTypeDef* huart) {
-    if (huart->Instance == USART1) {
 #if defined(USE_STM32_HAL) && defined(ENABLE_HAL_UART)
-        hal_uart_error_case(huart);
-        return;
+    hal_uart_error_case(huart);
 #else
+    if (huart->Instance == USART1) {
         __HAL_UART_CLEAR_OREFLAG(huart);
         __HAL_UART_CLEAR_FEFLAG(huart);
         HAL_UART_DMAStop(huart);
         MX_USART1_UART_Init();
         HAL_UART_Receive_DMA(huart, DmaBuffer, DMA_BUFFER_SIZE);
-#endif
     }
+#endif
 }
 /* USER CODE END Application */
 

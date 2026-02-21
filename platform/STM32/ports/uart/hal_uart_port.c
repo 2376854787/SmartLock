@@ -276,7 +276,7 @@ void stm32_uart_irq_usart(hal_uart_id_t id) {
  */
 void stm32_uart_irq_dma_rx(hal_uart_id_t id) {
     if (id >= HAL_UART_ID_MAX) return;
-    hal_uart_t* u = &g_uarts[id];
+    const hal_uart_t* u = &g_uarts[id];
     if (u->bsp.hdma_rx) HAL_DMA_IRQHandler(u->bsp.hdma_rx);
 }
 

@@ -10,7 +10,6 @@
 #include "osal.h"
 #include "LightSensor.h"
 #include "log.h"
-#include "usart.h"
 
 void StartLightSensorTask(void *argument) {
     LightSensor_Init();
