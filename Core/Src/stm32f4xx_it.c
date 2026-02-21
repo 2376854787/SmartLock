@@ -22,11 +22,9 @@
 #include "stm32f4xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "AT_Core_Task.h"
 #include "KEY.h"
 #include "fault_capture_cm.h"
 #include "hal_uart_port_hooks.h"
-#include "log_port.h"
 
 
 /* USER CODE END Includes */
@@ -373,12 +371,10 @@ void DMA2_Stream7_IRQHandler(void)
 /* USER CODE BEGIN 1 */
 
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef* huart) {
+    /* 串口回调 */
 #if defined(USE_STM32_HAL) && defined(ENABLE_HAL_UART)
     hal_uart_txCp_case(huart);
 #endif
-    /* DMA 发送后回调唤醒 */
-    AT_Manage_TxCpltCallback(huart);
-    LOG_UART_TxCpltCallback(huart);
 }
 
 /* USER CODE END 1 */

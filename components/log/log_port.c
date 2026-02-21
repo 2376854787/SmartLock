@@ -1,16 +1,49 @@
-#include <stdio.h>
+#include <stddef.h>
 
+#include "Usart1_manage.h"
 #include "hal_uart.h"
 #include "log.h"
 #include "ret_code.h"
-#include "Usart1_manage.h"
-#include "usart.h"
 
-static volatile uint8_t s_uart_tx_busy = 0;
+static volatile uint8_t s_uart_tx_busy = 0u;
 static hal_uart_t* s_log_uart          = NULL;
 
 #define LOG_PORT_RET(clas_, err_) \
     RET_MAKE(RET_MOD_LOG, RET_SUB_LOG_CORE, RET_CODE_MAKE((clas_), (err_)))
+
+#ifndef LOG_UART_PORT_ID
+#define LOG_UART_PORT_ID HAL_UART_ID_1
+#endif
+
+#ifndef LOG_UART_BAUD
+#define LOG_UART_BAUD 2000000u
+#endif
+
+#ifndef LOG_UART_DATA_BITS
+#define LOG_UART_DATA_BITS WORDLENGTH_8B
+#endif
+
+#ifndef LOG_UART_STOP_BITS
+#define LOG_UART_STOP_BITS STOPBITS_1
+#endif
+
+#ifndef LOG_UART_PARITY
+#define LOG_UART_PARITY 0u
+#endif
+
+#ifndef LOG_UART_FLOW_CTRL
+#define LOG_UART_FLOW_CTRL false
+#endif
+
+static void Log_UartEvtCb(void* user, const hal_uart_event_t* evt) {
+    (void)user;
+    if (!evt) return;
+
+    if (evt->type == HAL_UART_EVT_TX_DONE || evt->type == HAL_UART_EVT_ERROR) {
+        s_uart_tx_busy = 0u;
+        Log_OnTxDoneISR();
+    }
+}
 
 static int Log_uart_send_async(const uint8_t* d, uint16_t n, void* user) {
     (void)user;
@@ -33,24 +66,22 @@ void Log_PortInit(void) {
     if (!s_log_uart) s_log_uart = Usart1_GetHalHandle();
 
     if (!s_log_uart) {
-        hal_uart_cfg_t cfg;
-        cfg.baud         = huart1.Init.BaudRate;
-        cfg.data_bits    = (huart1.Init.WordLength == UART_WORDLENGTH_9B) ? WORDLENGTH_9B : WORDLENGTH_8B;
-        cfg.stop_bits    = (huart1.Init.StopBits == UART_STOPBITS_2) ? STOPBITS_2 : STOPBITS_1;
-        cfg.parity       = (uint8_t)huart1.Init.Parity;
-        cfg.flow_ctrl    = (huart1.Init.HwFlowCtl != UART_HWCONTROL_NONE);
-        cfg.isCompatible = true;
-        if (ret_is_ok(hal_uart_open(HAL_UART_ID_0, &cfg, &s_log_uart))) {
+        const hal_uart_cfg_t cfg = {
+            .baud         = LOG_UART_BAUD,
+            .data_bits    = LOG_UART_DATA_BITS,
+            .stop_bits    = LOG_UART_STOP_BITS,
+            .parity       = (uint8_t)LOG_UART_PARITY,
+            .flow_ctrl    = LOG_UART_FLOW_CTRL,
+            .isCompatible = true,
+        };
+        if (ret_is_ok(hal_uart_open(LOG_UART_PORT_ID, &cfg, &s_log_uart))) {
             (void)hal_uart_rx_start(s_log_uart);
         }
     }
 
-    Log_SetBackend((log_backend_t){.send_async = Log_uart_send_async, .user = NULL});
-}
-
-void LOG_UART_TxCpltCallback(UART_HandleTypeDef* huart) {
-    if (huart == &huart1) {
-        s_uart_tx_busy = 0u;
-        Log_OnTxDoneISR();/* 通知 LogTask：这笔发送结束 */
+    if (s_log_uart) {
+        (void)hal_uart_set_evt_cb(s_log_uart, Log_UartEvtCb, NULL);
     }
+
+    Log_SetBackend((log_backend_t){.send_async = Log_uart_send_async, .user = NULL});
 }

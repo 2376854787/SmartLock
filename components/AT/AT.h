@@ -1,19 +1,39 @@
-//
-// Created by yan on 2025/12/7.
-//
-
 #ifndef SMARTCLOCK_AT_H
 #define SMARTCLOCK_AT_H
 #include "HFSM.h"
 #include "RingBuffer.h"
-#include "stm32f4xx_hal.h"
+#include "hal_uart.h"
 /* 1: 启用RTOS模式(信号量/互斥锁)  0: 启用裸机模式(轮询) */
 #ifndef AT_RTOS_ENABLE
 #define AT_RTOS_ENABLE 1 /*是否启用了RTOS*/
 #endif
-/* 2、=阻塞发送(HAL_UART_Transmit)  1=DMA发送(HAL_UART_Transmit_DMA)*/
+/* 2: 0=block send, 1=DMA/async send */
 #ifndef AT_TX_USE_DMA
 #define AT_TX_USE_DMA 1
+#endif
+
+#ifndef AT_UART_PORT_ID
+#define AT_UART_PORT_ID HAL_UART_ID_3
+#endif
+
+#ifndef AT_UART_BAUD
+#define AT_UART_BAUD 921600u
+#endif
+
+#ifndef AT_UART_DATA_BITS
+#define AT_UART_DATA_BITS WORDLENGTH_8B
+#endif
+
+#ifndef AT_UART_STOP_BITS
+#define AT_UART_STOP_BITS STOPBITS_1
+#endif
+
+#ifndef AT_UART_PARITY
+#define AT_UART_PARITY 0u
+#endif
+
+#ifndef AT_UART_FLOW_CTRL
+#define AT_UART_FLOW_CTRL false
 #endif
 /* 核心任务任务通知唤醒 */
 #define AT_FLAG_RX (1u << 0)
@@ -22,7 +42,6 @@
 /* AT指令超时设置 */
 #define AT_RX_RB_SIZE 1024      /* AT接收环形缓冲区大小 最好为2的幂*/
 #define AT_LEN_RB_SIZE 64       /* 长度缓冲区: 存每行的长度 (存32行足够了, 32*2byte=64) */
-#define AT_DMA_BUF_SIZE 256     /* DMA 接收缓冲区 */
 #define AT_LINE_MAX_LEN 256     /* 单行回复最大长度 */
 #define AT_CMD_TIMEOUT_DEF 5000 /* 默认超时时间 5s */
 #define AT_MAX_PENDING 16       /* 同同一个串口最大排队的命令数 */
@@ -44,18 +63,18 @@ typedef bool (*HW_Send)(AT_Manager_t *mgr, const uint8_t *data, uint16_t len);
 /* AT命令执行返回的结果 */
 typedef enum {
     AT_RESP_OK = 0,  /* 收到了期待的回复 */
-    AT_RESP_ERROR,   /*收到了“Error” */
+    AT_RESP_ERROR,   /* 收到了“Error” */
     AT_RESP_TIMEOUT, /* 系统超时没有回复 */
     AT_RESP_BUSY,    /* 系统忙 */
-    AT_RESP_WAITING  /* (内部状态) 正在等待中 */
+    AT_RESP_WAITING  /* 正在等待中 */
 } AT_Resp_t;
 
 /* 内部事件 ID （用于驱动 HFSM）*/
 typedef enum {
     AT_EVT_NONE = 0,
-    AT_EVT_SEND,    /* [操作] 请求发送 */
-    AT_EVT_RX_LINE, /* [中断/轮询] 收到了一行完整数据 */
-    AT_EVT_TIMEOUT, /* [Tick] 定时器超时 */
+    AT_EVT_SEND,    /*  请求发送 */
+    AT_EVT_RX_LINE, /*  收到了一行完整数据 */
+    AT_EVT_TIMEOUT, /*  定时器超时 */
 } AT_EventID_t;
 
 /* 串口发送是否采用DMA */
@@ -75,7 +94,7 @@ typedef enum { AT_TX_BLOCK = 0, AT_TX_DMA = 1 } AT_TxMode;
  */
 typedef struct {
     /* ===========================
-     * 1) 请求参数（由调用者写入）
+     * 1) 请求参数
      * =========================== */
 
     /** 要发送的 AT 命令文本（必须是 '\0' 结尾的字符串） */
@@ -125,9 +144,14 @@ typedef struct {
      * - 1：对象已分配/正在使用
      * - 0：对象空闲，可再次分配
      *
-     * 通常与“对象池管理策略（栈/链表/位图）”配合使用。
      */
     volatile uint8_t in_use;
+    /**
+     * 超时取消请求标志
+     * - 1：调用侧请求核心任务安全终止该命令
+     * - 0：正常流程
+     */
+    volatile uint8_t cancel_req;
 
 } AT_Command_t;
 
@@ -162,7 +186,7 @@ typedef struct AT_Manager_t {
      * ========================================================= */
 
     /**
-     * 接收字节环形缓冲（Byte Ring Buffer）
+     * 接收字节环形缓冲
      * - 写入侧：ISR/接收回调（增量搬运）
      * - 读取侧：核心任务（按行长度读取）
      *
@@ -178,32 +202,32 @@ typedef struct AT_Manager_t {
     HW_Send hw_send;
 
     /** 串口句柄（HAL/驱动层句柄），用于 DMA 状态查询、回调映射等 */
-    UART_HandleTypeDef *uart;
+    hal_uart_t *uart_hal;
+    hal_uart_id_t uart_id;
+    uint32_t uart_baud;
 
     /* =========================================================
      * 3) 解析与接收相关缓存
      * ========================================================= */
 
     /**
-     * 线性行缓存（Line Buffer）
+     * 线性行缓存
      * - 核心任务从 rx_rb 中读取一行后存放于此，再做字符串匹配/路由
      * - 该缓存为“任务上下文私有”，原则上不应在 ISR 中写
      */
     uint8_t line_buf[AT_LINE_MAX_LEN];
 
     /**
-     * DMA 循环接收缓冲（DMA Rx Circular Buffer）
+     * DMA 循环接收缓冲
      * - DMA 写入侧：硬件/驱动
      * - 消费侧：接收回调根据 DMA 写指针增量取出新数据
      */
-    uint8_t dma_rx_arr[AT_DMA_BUF_SIZE];
 
     /**
      * 行处理索引（可用于行缓存消费过程中的游标）
      * - 若仅作为调试/统计，可考虑后续收敛
      * - volatile：可能在不同上下文读取（建议统一由核心任务维护）
      */
-    volatile uint16_t line_idx;
 
     /**
      * ISR 侧“当前行累计长度”
@@ -213,7 +237,7 @@ typedef struct AT_Manager_t {
     volatile uint16_t isr_line_len;
 
     /**
-     * 行长度环形缓冲（Length Queue）
+     * 行长度环形缓冲
      * - 存放每一行的长度（uint16）
      * - 写入侧：ISR/接收回调（边界打点）
      * - 读取侧：核心任务（按长度从 rx_rb 取出完整行）
@@ -226,7 +250,6 @@ typedef struct AT_Manager_t {
      * DMA 增量处理游标：记录上次处理到的 DMA 写入位置
      * - 用于处理 DMA 环形回卷：计算“新增字节段”
      */
-    volatile uint16_t last_pos;
 
     /**
      * 接收溢出标志
@@ -257,7 +280,7 @@ typedef struct AT_Manager_t {
     AT_Command_t *curr_cmd;
 
     /**
-     * 当前命令会话开始时刻（tick）
+     * 当前命令会话开始时刻
      * - 用于统计时延/日志
      * - 与 deadline tick 配合用于超时裁决
      */
@@ -278,11 +301,10 @@ typedef struct AT_Manager_t {
      * 通常由发送启动与发送完成回调维护
      */
     volatile uint8_t tx_busy;
-
     /**
      * 发送错误标志
-     * - 在发送错误回调中置位
-     * - 核心任务读取后应进行错误处置（结束命令/重试/恢复）
+     * - 1：最近一次发送在底层回调中上报错误
+     * - 0：发送完成正常
      */
     volatile uint8_t tx_error;
 
@@ -323,7 +345,7 @@ typedef struct AT_Manager_t {
     uint16_t free_top;
 
     /**
-     * 当前活动命令的超时点（tick）
+     * 当前活动命令的超时点
      * - req_start_tick + timeout 转换而来
      * - 核心任务定期检查 now >= deadline 来裁决 TIMEOUT
      */
@@ -350,15 +372,9 @@ typedef struct AT_Manager_t {
  * @param uart 串口句柄
  * @param hw_send 硬件串口发送函数指针
  */
-void AT_Core_Init(AT_Manager_t *at_manager, UART_HandleTypeDef *uart, HW_Send hw_send);
+void AT_Core_Init(AT_Manager_t *at_manager, hal_uart_id_t uart_id, const hal_uart_cfg_t *uart_cfg,
+                  HW_Send hw_send);
 
-/**
- * @brief 接收数据回调 (放入串口接收中断)
- * @param at_manager AT设备句柄
- * @param huart      串口句柄
- * @param Size       接收的大小
- */
-void AT_Core_RxCallback(AT_Manager_t *at_manager, const UART_HandleTypeDef *huart, uint16_t Size);
 
 /**
  * @brief 核心轮询/处理函数
@@ -377,13 +393,6 @@ void AT_Core_Process(AT_Manager_t *at_manager);
  */
 AT_Resp_t AT_SendCmd(AT_Manager_t *at_manager, const char *cmd, const char *expect,
                      uint32_t timeout_ms);
-
-/**
- * @brief 将ms转换为心跳
- * @param ms 需要转换为心跳的ms
- * @return 返回心跳
- */
-uint32_t AT_MsToTicks(uint32_t ms);
 
 /**
  * @brief   返回当前句柄当前执行对象的进度状态

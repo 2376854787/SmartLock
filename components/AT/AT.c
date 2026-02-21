@@ -1,13 +1,9 @@
-//
-// Created by yan on 2025/12/7.
-//
 #include "APP_config.h"
 #if defined(ENABLE_AT_SYSTEM)
 #include <stdio.h>
 #include <string.h>
 
 #include "AT.h"
-#include "AT_UartMap.h"
 #include "MemoryAllocation.h"
 #include "log.h"
 #include "ret_code.h"
@@ -18,13 +14,171 @@ AT_Resp_t AT_Wait(AT_Command_t* h, uint32_t wait_ms);
 
 void AT_CmdRelease(AT_Manager_t* mgr, AT_Command_t* h);
 
+#define AT_UART_RET(cls_, reason_) \
+    RET_MAKE(RET_MOD_HAL, RET_SUB_HAL_UART, RET_CODE_MAKE((cls_), (reason_)))
+static void AT_UartEvtCb(void* user, const hal_uart_event_t* evt);
+
+/**
+ * @brief 初始化串口 开启接收
+ * @param at_device AT句柄
+ * @param id 板级id
+ * @param cfg 配置
+ * @return
+ */
+static ret_code_t AT_StartHalUart(AT_Manager_t* at_device, hal_uart_id_t id,
+                                  const hal_uart_cfg_t* cfg) {
+    if (!at_device || !cfg) return AT_UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    /* 配置串口参数 */
+
+    if (at_device->uart_hal) {
+        (void)hal_uart_close(at_device->uart_hal);
+        at_device->uart_hal = NULL;
+    }
+
+    /* 初始化串口 */
+    ret_code_t rc = hal_uart_open(id, cfg, &at_device->uart_hal);
+    if (ret_is_err(rc)) return rc;
+    /* 设置串口回调函数 */
+    rc = hal_uart_set_evt_cb(at_device->uart_hal, AT_UartEvtCb, at_device);
+    if (ret_is_err(rc)) {
+        (void)hal_uart_close(at_device->uart_hal);
+        at_device->uart_hal = NULL;
+        return rc;
+    }
+
+    /* 开启接受 */
+    rc = hal_uart_rx_start(at_device->uart_hal);
+    if (ret_is_err(rc)) {
+        (void)hal_uart_close(at_device->uart_hal);
+        at_device->uart_hal = NULL;
+        return rc;
+    }
+
+    return RET_OK;
+}
+
+/**
+ * @brief 解析由串口钩子触发后 读取的信息 找到完整一行并保存该句子的大小信息 以及信息搬运到 AT的句柄
+ * RB 内
+ * @param at_manager AT句柄
+ * @param has_line 是否找到了完整的一句
+ */
+static void AT_DrainHalRxFromIsr(AT_Manager_t* at_manager, bool* has_line) {
+    if (has_line) *has_line = false;
+    if (!at_manager || !at_manager->uart_hal) return;
+
+    bool stop               = false;
+    uint32_t write_size_one = 1;
+/* 将找到的一行完整数据 的大小信息写入RB */
+#define AT_HANDLE_HAL_RX_BYTE(b)                                                                     \
+    do {                                                                                             \
+        write_size_one = 1;                                                                          \
+        if (ret_is_ok(WriteRingBufferFromISR(&at_manager->rx_rb, &(b), &write_size_one, 0))) {       \
+            /* 当前行累计长度 */                                                                     \
+            ++(at_manager->isr_line_len);                                                            \
+            if ((b) == '\n' || (b) == '>') { /* 一句完整的句子写入当前句子的长度 */                  \
+                uint16_t len_val         = at_manager->isr_line_len;                                 \
+                uint32_t len_size        = sizeof(uint16_t);                                         \
+                /* 写入 */                                                                           \
+                ret_code_t ok_len        = WriteRingBufferFromISR(&at_manager->msg_len_rb,           \
+                                                                  (uint8_t*)&len_val, &len_size, 0); \
+                at_manager->isr_line_len = 0;                                                        \
+                if (ret_is_err(ok_len)) {                                                            \
+                    at_manager->rx_overflow = 1;                                                     \
+                    stop                    = true;                                                  \
+                } else if (has_line) {                                                               \
+                    *has_line = true;                                                                \
+                }                                                                                    \
+            }                                                                                        \
+        } else { /* 溢出 */                                                                          \
+            at_manager->rx_overflow = 1;                                                             \
+            stop                    = true;                                                          \
+        }                                                                                            \
+    } while (0)
+
+    uint8_t chunk[256];
+    while (!stop) {
+        uint32_t nread      = 0;
+        /* 将数据从句柄附带的RB 读取到临时缓冲区 */
+        const ret_code_t rc = hal_uart_read(at_manager->uart_hal, chunk, sizeof(chunk), &nread);
+        if (ret_is_err(rc) || nread == 0u) break;
+        /* 挨个字节判断是否找到了断尾字符 */
+        for (uint32_t i = 0; i < nread; i++) {
+            uint8_t byte = chunk[i];
+            AT_HANDLE_HAL_RX_BYTE(byte);
+            if (stop) break;
+        }
+    }
+
+#undef AT_HANDLE_HAL_RX_BYTE
+}
+/**
+ * @brief 处理串口钩子 上报的事件
+ * @param user 用户上下文
+ * @param evt 串口向上汇报的事件
+ */
+static void AT_UartEvtCb(void* user, const hal_uart_event_t* evt) {
+    /* 强转为 AT 句柄 */
+    AT_Manager_t* at_manager = (AT_Manager_t*)user;
+    if (!at_manager || !evt) return;
+    /* 接收事件 IDLE 半满、全满 */
+    if (evt->type == HAL_UART_EVT_RX) {
+        bool has_line = false;
+        /* 挨个字符解析成完整的一句 */
+        AT_DrainHalRxFromIsr(at_manager, &has_line);
+#if AT_RTOS_ENABLE
+        /* 唤醒任务处理 */
+        if (has_line && at_manager->core_task) {
+            OSAL_thread_flags_set(at_manager->core_task, AT_FLAG_RX);
+        }
+#endif
+        return;
+    }
+
+#if AT_RTOS_ENABLE
+    /* 发送完成 */
+    if (evt->type == HAL_UART_EVT_TX_DONE) {
+        at_manager->tx_busy = 0;
+        at_manager->tx_error = 0;
+        /* 释放信号量 */
+        (void)OSAL_sem_give_from_isr(at_manager->tx_done_sem);
+        if (at_manager->core_task) {
+            /* 唤醒任务处理。继续发送可能有的下一个命令 */
+            OSAL_thread_flags_set(at_manager->core_task, AT_FLAG_TXDONE);
+        }
+        return;
+    }
+    /*　串口发生错误　*/
+    if (evt->type == HAL_UART_EVT_ERROR) {
+        /* TX 路径错误：唤醒发送等待方和核心任务的发送状态机 */
+        if (at_manager->tx_busy) {
+            at_manager->tx_busy  = 0;
+            at_manager->tx_error = 1;
+            (void)OSAL_sem_give_from_isr(at_manager->tx_done_sem);
+            if (at_manager->core_task) {
+                OSAL_thread_flags_set(at_manager->core_task, AT_FLAG_TXDONE);
+            }
+            return;
+        }
+
+        /* RX 路径错误：标记溢出并唤醒解析线程执行止血重置 */
+        at_manager->rx_overflow = 1;
+        if (at_manager->core_task) {
+            OSAL_thread_flags_set(at_manager->core_task, AT_FLAG_RX);
+        }
+    }
+#endif
+}
+
 /**
  * @brief 初始化串口设备句柄初始化变量、消息队列、静态对象池
  * @param at_device 串口设备句柄
- * @param uart      绑定的串口
+ * @param uart_id 串口板级id
+ * @param uart_cfg 串口配置
  * @param hw_send   发送函数指针
  */
-void AT_Core_Init(AT_Manager_t* at_device, UART_HandleTypeDef* uart, const HW_Send hw_send) {
+void AT_Core_Init(AT_Manager_t* at_device, hal_uart_id_t uart_id, const hal_uart_cfg_t* uart_cfg,
+                  const HW_Send hw_send) {
     /* 1、接收发送命令函数指针 */
     at_device->hw_send = hw_send;
 
@@ -44,35 +198,29 @@ void AT_Core_Init(AT_Manager_t* at_device, UART_HandleTypeDef* uart, const HW_Se
     /* 3、初始化 HFSM 为空闲状态*/
 
     /* 4、初始化变量 */
-    at_device->line_idx            = 0;
     at_device->isr_line_len        = 0;
-    at_device->last_pos            = 0;
     at_device->curr_cmd            = NULL;
     at_device->urc_cb              = NULL;
     at_device->urc_user            = NULL;
-    at_device->uart                = uart;
+    at_device->uart_hal            = NULL;
+    at_device->uart_id             = uart_id;
+    at_device->uart_baud           = (uart_cfg && uart_cfg->baud) ? uart_cfg->baud : 115200u;
     at_device->fsm.customizeHandle = at_device;
-    at_device->fsm.fsm_name        = "fsm";
+    at_device->fsm.fsm_name        = "AT";
     /* 有需求重新实现状态机 */
-    LOG_I("AT", "Bind UART=%p Instance=%p", uart, uart->Instance);
+    LOG_I("AT", "Bind UART ID=%u", (unsigned)uart_id);
 
     /* 5、RTOS 裸机环境分开处理 */
 #if AT_RTOS_ENABLE
-
+    /* 句柄设置为休闲 */
     at_device->tx_busy  = 0;
     at_device->tx_error = 0;
-#if defined(AT_TX_USE_DMA) && (AT_TX_USE_DMA == 1)
+    /* 初始化信号量 */
     OSAL_sem_create(&at_device->tx_done_sem, "ATDone", 0,
                     1);  // 初值0：等回调释放
     if (!at_device->tx_done_sem) {
         LOG_E("AT", "tx_done_sem create failed");
     }
-#endif
-
-    /*让 HAL 回调能找到对应 mgr */
-    at_device->uart = uart;
-    /* 绑定串口-> at_device 的路径*/
-    AT_BindUart(at_device, uart);
 
     /* 默认初始化跟随全局设置 */
     at_device->tx_mode = (AT_TX_USE_DMA ? AT_TX_DMA : AT_TX_BLOCK);
@@ -93,6 +241,7 @@ void AT_Core_Init(AT_Manager_t* at_device, UART_HandleTypeDef* uart, const HW_Se
     at_device->free_top = 0;
     for (uint16_t i = 0; i < AT_MAX_PENDING; i++) {
         at_device->cmd_pool[i].in_use     = 0;
+        at_device->cmd_pool[i].cancel_req = 0;
         at_device->cmd_pool[i].result     = AT_RESP_WAITING;
         at_device->cmd_pool[i].timeout_ms = AT_CMD_TIMEOUT_DEF;
 
@@ -103,121 +252,21 @@ void AT_Core_Init(AT_Manager_t* at_device, UART_HandleTypeDef* uart, const HW_Se
 
         at_device->free_stack[at_device->free_top++] = i;
     }
-
-    /* 3、开启串口DMA接收 */
-    HAL_UARTEx_ReceiveToIdle_DMA(uart, at_device->dma_rx_arr, AT_DMA_BUF_SIZE);
 #else
     /* 裸机模式：简单复位标志位 */
-
     at_device->is_locked = false;
-    /* 、开启串口DMA接收 */
-    HAL_UARTEx_ReceiveToIdle_DMA(uart, at_device->dma_rx_arr, AT_DMA_BUF_SIZE);
 #endif
-    LOG_D("AT", "INIT at=%p core_task=%p\r\n", at_device, at_device->core_task);
-}
-
-/**
- *@brief  处理DMA的回调
- * @param at_manager
- * @param huart 串口句柄
- * @param Size  这次新增数据
- * @note  DMA + circle模式
- */
-void AT_Core_RxCallback(AT_Manager_t* at_manager, const UART_HandleTypeDef* huart, uint16_t Size) {
-    (void)Size;
-    bool has_line = false;
-    bool stop     = false;
-    /* 0. 句柄检查 */
-    if (huart->Instance != at_manager->uart->Instance) return;
-
-    /* 1. 计算 DMA 接收的数据量和位置 */
-    /* 当前索引位置 */
-    const uint16_t cur_pos = AT_DMA_BUF_SIZE - __HAL_DMA_GET_COUNTER(huart->hdmarx);
-
-    /* 为空没有触发*/
-    if (cur_pos == at_manager->last_pos) return;
-    if (cur_pos > AT_DMA_BUF_SIZE) {
-        LOG_E("AT", "DMA异常");
-        return;
-    }
-
-    /* 新增长度 */
-    uint16_t raw_len;
-    /* 传输开始索引位置 */
-    uint16_t start_index;
-
-    // 计算本次接收数据的长度和起始索引
-    if (cur_pos > at_manager->last_pos) {
-        raw_len     = cur_pos - at_manager->last_pos;
-        start_index = at_manager->last_pos;
-    } else {
-        raw_len     = AT_DMA_BUF_SIZE - at_manager->last_pos;
-        start_index = at_manager->last_pos;
-    }
-
-    /* 2. 准备变量 */
-
-    /* [静态变量] 记录当前行已接收的字节数 (跨中断保持) */
-
-    /*  WriteRingBufferFromISR 需要传入指针，这里准备好 */
-    uint32_t write_size_one = 1;
-
-    /* 定义一个宏来处理单个字节逻辑，避免回卷代码重复 */
-#define AT_HANDLE_BYTE(b)                                                                            \
-    do {                                                                                             \
-        /* 尝试写入 数据 RingBuffer */                                                               \
-        write_size_one = 1;                                                                          \
-        if (ret_is_ok(WriteRingBufferFromISR(&at_manager->rx_rb, &(b), &write_size_one, 0))) {       \
-            /* 只有写入成功才统计长度，防止 Buffer 满导致逻辑错位 */                                 \
-            ++(at_manager->isr_line_len);                                                            \
-                                                                                                     \
-            /* 检测结束符 \n 或 > */                                                                 \
-            if ((b) == '\n' || (b) == '>') {                                                         \
-                /* 将当前行的长度 (uint16_t) 存入 长度 RingBuffer */                                 \
-                uint16_t len_val         = at_manager->isr_line_len;                                 \
-                uint32_t len_size        = sizeof(uint16_t);                                         \
-                /* 把 &len_val 强转为 uint8_t* 写入 2 个字节 */                                      \
-                ret_code_t ok_len        = WriteRingBufferFromISR(&at_manager->msg_len_rb,           \
-                                                                  (uint8_t*)&len_val, &len_size, 0); \
-                at_manager->isr_line_len = 0;                                                        \
-                /* 溢出 */                                                                           \
-                if ((ret_is_err(ok_len))) {                                                          \
-                    at_manager->rx_overflow = 1;                                                     \
-                    stop                    = true;                                                  \
-                } else {                                                                             \
-                    has_line = true;                                                                 \
-                }                                                                                    \
-            }                                                                                        \
-        }                                                                                            \
-    } while (0)
-
-    /* 3. 第一段循环处理 */
-    for (uint16_t i = 0; i < raw_len; i++) {
-        uint8_t byte = at_manager->dma_rx_arr[start_index + i];
-        AT_HANDLE_BYTE(byte);
-        if (stop) break;
-    }
-
-    /* 4. 第二段循环处理 (处理 DMA 回卷情况: buffer尾 -> buffer头) */
-    if (cur_pos < at_manager->last_pos) {
-        for (uint16_t i = 0; i < cur_pos; i++) {
-            uint8_t byte = at_manager->dma_rx_arr[i];
-            AT_HANDLE_BYTE(byte);
-            if (stop) break;
+    {
+        /* 初始化串口 并开启 DMA 接收 */
+        const ret_code_t rc = AT_StartHalUart(at_device, uart_id, uart_cfg);
+        if (ret_is_err(rc)) {
+            LOG_E("AT", "hal uart start failed rc=%d", (int)rc);
         }
     }
-
-    /* 5. 更新位置 */
-    at_manager->last_pos = cur_pos;
-
-    /* 6. 通知任务 */
-    if (has_line && at_manager->core_task) {
-        OSAL_thread_flags_set(at_manager->core_task, AT_FLAG_RX);
-    }
+    LOG_D("AT", "INIT at=%p core_task=%p\r\n", at_device, at_device->core_task);
 }
-
 /**
- * @brief 对串口接收的数据进行处理
+ * @brief 对串口接收处理断帧后的的数据进行处理
  * @param at_manager AT管理句柄
  */
 void AT_Core_Process(AT_Manager_t* at_manager) {
@@ -298,14 +347,30 @@ AT_Resp_t AT_SendCmd(AT_Manager_t* mgr, const char* cmd, const char* expect, uin
     AT_Command_t* h = AT_Submit(mgr, cmd, expect, timeout_ms);
     if (!h) return AT_RESP_BUSY;
 
-    const AT_Resp_t r = AT_Wait(h, h->timeout_ms);
+    AT_Resp_t r = AT_Wait(h, h->timeout_ms);
+    if (r == AT_RESP_TIMEOUT && h->result == AT_RESP_WAITING) {
+        /* 等待超时只代表调用侧超时，不代表 core_task 已结束对该对象的引用。 */
+        h->cancel_req = 1;
+        if (mgr->core_task) {
+            (void)OSAL_thread_flags_set(mgr->core_task, AT_FLAG_TX);
+        }
+
+        const uint32_t settle_ms   = (h->timeout_ms < 200u) ? h->timeout_ms : 200u;
+        const ret_code_t settle_rc = OSAL_sem_take(h->done_sem, settle_ms);
+        if (ret_is_ok(settle_rc)) {
+            r = h->result;
+        } else {
+            r = AT_RESP_TIMEOUT;
+            LOG_E("AT", "cmd settle timeout cmd=%s", h->cmd_buf);
+        }
+    }
     AT_CmdRelease(mgr, h);
     return r;
 #endif
 }
 
 /**
- * @brief 对返回的字符串进行处理
+ * @brief 处理断帧后的句子 进行期望字符串的模式匹配 匹配不上默认调用 URC回调
  * @param mgr AT设备句柄
  * @param line 返回的语句
  */
@@ -323,7 +388,7 @@ static void AT_OnLine(AT_Manager_t* mgr, const char* line) {
             OSAL_sem_give(c->done_sem);
             // 触发发送下一条
             if (mgr->core_task) OSAL_thread_flags_set(mgr->core_task, AT_FLAG_TX);
-            LOG_D("AT", "match result=%d line=%s", c->result, line);
+            LOG_D("AT", "match result= AT_RESP_OK %d line=%s", c->result, line);
             return;
         }
         if (strstr(line, "ERROR")) {
@@ -331,7 +396,7 @@ static void AT_OnLine(AT_Manager_t* mgr, const char* line) {
             mgr->curr_cmd = NULL;
             OSAL_sem_give(c->done_sem);
             if (mgr->core_task) OSAL_thread_flags_set(mgr->core_task, AT_FLAG_TX);
-            LOG_D("AT", "match result=%d line=%s", c->result, line);
+            LOG_D("AT", "match result= AT_RESP_ERROR %d line=%s", c->result, line);
             return;
         }
         if (strstr(line, "busy p") || strstr(line, "busy s")) {
@@ -339,7 +404,7 @@ static void AT_OnLine(AT_Manager_t* mgr, const char* line) {
             mgr->curr_cmd = NULL;
             OSAL_sem_give(c->done_sem);
             if (mgr->core_task) OSAL_thread_flags_set(mgr->core_task, AT_FLAG_TX);
-            LOG_D("AT", "match result=%d line=%s", c->result, line);
+            LOG_D("AT", "match result= AT_RESP_BUSY %d line=%s", c->result, line);
             return;
         }
 
@@ -359,22 +424,6 @@ static void AT_OnLine(AT_Manager_t* mgr, const char* line) {
 }
 
 /**
- * @brief 将ms转换为心跳
- * @param ms 需要转换为心跳的ms
- * @return 返回心跳
- */
-uint32_t AT_MsToTicks(const uint32_t ms) {
-#if AT_RTOS_ENABLE
-    const uint32_t freq = OSAL_tick_freq_hz();
-    uint64_t ticks      = ((uint64_t)ms * freq + 999u) / 1000u;
-    if (ticks > 0xFFFFFFFFu) ticks = 0xFFFFFFFFu;
-    return (uint32_t)ticks;
-#else
-    return ms;
-#endif
-}
-
-/**
  * @brief 返回静态对象池中的一个空闲命令对象
  * @param mgr AT设备句柄
  * @return 返回空闲命令对象
@@ -384,7 +433,7 @@ static AT_Command_t* AT_CmdAlloc(AT_Manager_t* mgr) {
 #if AT_RTOS_ENABLE
     /* 获取锁 */
     if (mgr->pool_mutex) OSAL_mutex_lock(mgr->pool_mutex, OSAL_WAIT_FOREVER);
-    /* 如果空闲对象为空 */
+    /* 如果没有空闲对象 */
     if (mgr->free_top == 0) {
         if (mgr->pool_mutex) OSAL_mutex_unlock(mgr->pool_mutex);
         return NULL;
@@ -417,22 +466,23 @@ static void AT_CmdFree(AT_Manager_t* mgr, AT_Command_t* c) {
         LOG_E("AT", "CmdFree invalid ptr=%p", c);
         return;
     }
+    /* 加锁：保护 in_use 检查、对象重置和 free 栈回收的原子性 */
+    if (mgr->pool_mutex) OSAL_mutex_lock(mgr->pool_mutex, OSAL_WAIT_FOREVER);
 
     /* 防止重复释放 */
     if (c->in_use == 0) {
+        if (mgr->pool_mutex) OSAL_mutex_unlock(mgr->pool_mutex);
         LOG_E("AT", "CmdFree double free idx=%u", (unsigned)(c - mgr->cmd_pool));
         return;
     }
     // 清理字段（保留 done_sem）
     c->in_use        = 0;
+    c->cancel_req    = 0;
     c->result        = AT_RESP_WAITING;
     c->timeout_ms    = AT_CMD_TIMEOUT_DEF;
     c->cmd_buf[0]    = '\0';
     c->expect_buf[0] = '\0';
-
-    /* 加锁 */
-    if (mgr->pool_mutex) OSAL_mutex_lock(mgr->pool_mutex, OSAL_WAIT_FOREVER);
-    /* 计算索引 */
+    /* 指针相减计算元素索引 */
     const uint16_t idx = (uint16_t)(c - mgr->cmd_pool);
     /* 计算 c 在com_pool是第几个元素 */
     if (mgr->free_top < AT_MAX_PENDING) {
@@ -440,7 +490,6 @@ static void AT_CmdFree(AT_Manager_t* mgr, AT_Command_t* c) {
     } else {
         LOG_E("AT", "free_stack overflow (double free?) idx=%u", idx);
     }
-
     /* 释放锁 */
     if (mgr->pool_mutex) OSAL_mutex_unlock(mgr->pool_mutex);
 #else
@@ -450,8 +499,9 @@ static void AT_CmdFree(AT_Manager_t* mgr, AT_Command_t* c) {
 }
 
 /**
- * @brief 获取信号量确保发送后被任务唤醒
+ * @brief 获取信号量确保发送后只能被被数据接收到唤醒
  * @param sem 需要被获取的信号量
+ * @note 死等
  */
 void AT_SemDrain(osal_sem_t sem) {
 #if AT_RTOS_ENABLE
@@ -488,10 +538,10 @@ AT_Command_t* AT_Submit(AT_Manager_t* mgr, const char* cmd, const char* expect,
     AT_Command_t* c = AT_CmdAlloc(mgr);
     if (!c) return NULL;
 
-    /* 4、获取掉信号量 */
+    /* 4、尝试消耗掉掉信号量 保持默认没有信号量*/
     AT_SemDrain(c->done_sem);
 
-    /* 5、拷贝 cmd，避免上层栈字符串悬空；可在这里统一补 */
+    /* 5、拷贝 cmd，避免上层栈字符串悬空 */
     strncpy(c->cmd_buf, cmd, AT_CMD_MAX_LEN - 1);
     c->cmd_buf[AT_CMD_MAX_LEN - 1] = '\0';
 
@@ -504,6 +554,7 @@ AT_Command_t* AT_Submit(AT_Manager_t* mgr, const char* cmd, const char* expect,
     }
 
     c->timeout_ms     = timeout_ms;
+    c->cancel_req     = 0;
     c->result         = AT_RESP_WAITING;
 
     // 入队（队列满则归还）
@@ -516,7 +567,7 @@ AT_Command_t* AT_Submit(AT_Manager_t* mgr, const char* cmd, const char* expect,
 
     // 唤醒 core_task：通知有新命令
     if (mgr->core_task) {
-        OSAL_thread_flags_set(mgr->core_task, AT_FLAG_TX);  // AT_FLAG_TX
+        OSAL_thread_flags_set(mgr->core_task, AT_FLAG_TX);
     }
     LOG_D("AT", "submit cmd=%s q=%p", c->cmd_buf, mgr->cmd_q);
     return c;
@@ -524,7 +575,7 @@ AT_Command_t* AT_Submit(AT_Manager_t* mgr, const char* cmd, const char* expect,
 }
 
 /**
- * @brief 阻塞等待直到获取到信号量或者超时
+ * @brief 非阻塞等待直到获取到信号量或者超时
  * @param h 命令对象指针
  * @param wait_ms 等待的时间
  * @return 返回
@@ -537,14 +588,16 @@ AT_Resp_t AT_Wait(AT_Command_t* h, const uint32_t wait_ms) {
 #else
     if (!h) return AT_RESP_ERROR;
 
-    /* 阻塞等待 */
+    /* 非阻塞等待 */
     const ret_code_t st = OSAL_sem_take(h->done_sem, wait_ms);
-
+    if (ret_is_ok(st)) {
+        return h->result;
+    }
     if (ret_is_timeout(st)) {
         /* 理论上 core_task 会在超时时释放 done_sem；这里 st!=OK 意味着系统异常 */
         return AT_RESP_TIMEOUT;
     }
-    return h->result;
+    return AT_RESP_TIMEOUT;
 #endif
 }
 
@@ -556,6 +609,10 @@ AT_Resp_t AT_Wait(AT_Command_t* h, const uint32_t wait_ms) {
 void AT_CmdRelease(AT_Manager_t* mgr, AT_Command_t* h) {
 #if AT_RTOS_ENABLE
     if (!mgr || !h) return;
+    if (mgr->curr_cmd == h) {
+        LOG_E("AT", "CmdRelease denied: command still owned by core");
+        return;
+    }
     AT_CmdFree(mgr, h);
 #else
     (void)mgr;
@@ -570,7 +627,7 @@ void AT_CmdRelease(AT_Manager_t* mgr, AT_Command_t* h) {
  */
 AT_Resp_t AT_Poll(AT_Command_t* h) {
     if (!h) return AT_RESP_ERROR;
-    return h->result;  // WAITING/OK/ERROR/TIMEOUT
+    return h->result;
 }
 
 /**
@@ -606,7 +663,7 @@ AT_Command_t* AT_SendAsync(AT_Manager_t* mgr, const char* cmd, const char* expec
  */
 uint32_t AT_TxTimeoutMs(AT_Manager_t* mgr, uint16_t len) {
     // 估算：1字节≈10bit（起始+8数据+停止），超时时间留余量
-    const uint32_t baud = (mgr && mgr->uart) ? mgr->uart->Init.BaudRate : 115200;
+    const uint32_t baud = (mgr && mgr->uart_baud != 0u) ? mgr->uart_baud : 115200u;
     uint32_t ms         = (uint32_t)((uint64_t)len * 10u * 1000u / baud);
     if (ms < 5) ms = 5;
     return ms + 20;  // 额外裕量
