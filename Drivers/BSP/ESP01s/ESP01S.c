@@ -11,8 +11,8 @@ enum {
     ESP01S_BACKOFF_MAX_MS            = 8000u,
 };
 
-static bool esp01s_ping_failed(void) {
-    return (AT_SendCmd(&g_at_manager, "AT+PING=\"www.baidu.com\"\r\n", "TIMEOUT",
+static bool esp01s_ping_ok(void) {
+    return (AT_SendCmd(&g_at_manager, "AT+PING=\"www.baidu.com\"\r\n", "OK",
                        ESP01S_CMD_TIMEOUT_MS) == AT_RESP_OK);
 }
 
@@ -57,7 +57,7 @@ void esp01s_Init(void) {
     }
 
     /* 网络联通测试 */
-    if (!esp01s_ping_failed()) {
+    if (esp01s_ping_ok()) {
         LOG_E("ESP01S", "网络联通测试成功");
         /* 关闭SmartConfig */
         AT_SendCmd(&g_at_manager, "AT+CWSTOPSMART\r\n", "OK", ESP01S_CMD_TIMEOUT_MS);
@@ -78,7 +78,7 @@ void esp01s_Init(void) {
         (void)AT_SendCmd(&g_at_manager, "AT+CWSTARTSMART=3\r\n", "CONNECTED",
                          ESP01S_SMARTCONFIG_TIMEOUT_MS);
 
-        if (!esp01s_ping_failed()) {
+        if (esp01s_ping_ok()) {
             LOG_E("ESP01S", "网络联通测试成功");
             /* 关闭SmartConfig */
             AT_SendCmd(&g_at_manager, "AT+CWSTOPSMART\r\n", "OK", ESP01S_CMD_TIMEOUT_MS);
