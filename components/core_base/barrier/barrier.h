@@ -8,21 +8,18 @@
  * ARCH_COMPILER_BARRIER: 仅防止编译器乱序 (软件屏障)
  */
 
-// 声明接口（具体的实现在下面根据宏自动选择）
+// 声明接口
 static inline void mem_barrier(void);
 static inline void sync_barrier(void);
 static inline void inst_barrier(void);
 static inline void compiler_barrier(void);
 
 /* ----------------------------------------------------------- */
-/* 2. 具体的实现层 (Implementation Layer)                      */
+/* 2. 具体的实现层  */
 /* ----------------------------------------------------------- */
 
-/* === 场景 A: 如果是 ARM 架构 (STM32, NXP 等) === */
+/* ===  ARM 架构  === */
 #if defined(__arm__) || defined(__aarch64__)
-
-// 为了做到“库无关”，我们直接嵌入汇编，不引用 cmsis.h
-
 __attribute__((unused)) static inline void mem_barrier(void) {
     __asm volatile("dmb 0xF" ::: "memory");
 }
@@ -35,10 +32,10 @@ __attribute__((unused)) static inline void inst_barrier(void) {
     __asm volatile("isb 0xF" ::: "memory");
 }
 
-/* === 场景 B: 如果是 RISC-V 架构 (ESP32-C3 等) === */
+/* ===  RISC-V 架构  === */
 #elif defined(__riscv)
 
-// RISC-V 的屏障指令叫 fence
+// RISC-V 的屏障指令 fence
 
 static inline void mem_barrier(void) {
     // RISC-V 的读写屏障
@@ -51,11 +48,11 @@ static inline void sync_barrier(void) {
 }
 
 static inline void inst_barrier(void) {
-    // 刷新指令缓存 (Instruction Cache Flush)
+    // 刷新指令缓存
     __asm volatile("fence.i" ::: "memory");
 }
 
-/* === 场景 C: 如果是 x86 (在电脑上跑模拟/单元测试) === */
+/* ===  x86  === */
 #elif defined(__x86_64__) || defined(__i386__)
 
 static inline void mem_barrier(void) {
@@ -72,7 +69,7 @@ static inline void inst_barrier(void) {
     __asm volatile("" ::: "memory");
 }
 
-/* === 场景 D: 兜底 (未知架构) === */
+/* === 兜底 (未知架构) === */
 #else
 // 至少加上编译器屏障，防止编译器乱序
 static inline void mem_barrier(void) {

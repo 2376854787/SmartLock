@@ -23,7 +23,7 @@
 
 #include "APP_config.h"
 
-#if defined(ENABLE_SOFT_I2C)
+#if defined(ENABLE_SOFT_I2C) && defined(ENABLE_HAL_GPIO)
 
 #include "assert_cus.h"
 #include "hal_time.h"

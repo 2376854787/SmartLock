@@ -51,6 +51,7 @@ typedef enum {
     RET_MOD_OTA      = 0x0Cu, /* OTA/Boot/升级 */
     RET_MOD_TOOLS    = 0x0Du, /* 通用工具类 */
     RET_MOD_EVENTBUS = 0x0Eu, /* 事件总线 */
+    RET_MOD_SYS      = 0x0Fu  /* 系统 */
 } ret_module_id_t;
 
 /* =============================================================================
@@ -183,10 +184,15 @@ typedef enum {
     RET_SUB_TOOLS_NONE = 0x00u,
     RET_SUB_TOOLS_CRC  = 0x01u,
 } ret_sub_tools_t;
+/* ---- 事件总线 子模块 ---- */
 typedef enum {
     RET_SUB_EVENTBUS_NONE   = 0x00u,
     RET_SUB_EVENTBUS_SYSTEM = 0x01u,
 } ret_sub_eventbus_t;
+/* ---- 系统 子模块 ---- */
+typedef enum {
+    RET_SUB_SYS_WDG = 0x00u,
+} ret_sub_sys_t;
 /* =============================================================================
  * 3) Code(16-bit) = Class(4-bit) + Reason(12-bit)
  * =============================================================================

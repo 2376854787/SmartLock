@@ -931,7 +931,7 @@ bool RingBuffer_IsFull(const RingBuffer* rb) {
  */
 uint16_t RingBuffer_GetUsedPermille(const RingBuffer* rb) {
     RB_CHECK_VALID_U32(rb);
-    const uint32_t used = RingBuffer_GetUsedSize(rb);  // 线程安全
+    const uint32_t used = RingBuffer_GetUsedSize(rb);
     const uint32_t cap  = (rb->size > 1u) ? (rb->size - 1u) : 1u;
     uint32_t p          = (used * 1000u) / cap;
     if (p > 1000u) p = 1000u;
@@ -944,7 +944,7 @@ uint16_t RingBuffer_GetUsedPermille(const RingBuffer* rb) {
  */
 uint16_t RingBuffer_GetUsedPermilleFromISR(const RingBuffer* rb) {
     RB_CHECK_VALID_U32(rb);
-    const uint32_t used = RingBuffer_GetUsedSizeFromISR(rb);  // 线程安全
+    const uint32_t used = RingBuffer_GetUsedSizeFromISR(rb);
     const uint32_t cap  = (rb->size > 1u) ? (rb->size - 1u) : 1u;
     uint32_t p          = (used * 1000u) / cap;
     if (p > 1000u) p = 1000u;
