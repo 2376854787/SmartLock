@@ -2,23 +2,46 @@
 
 #include <stdio.h>
 
-#include "hal_uart.h"
 #include "ret_code.h"
-#include "usart.h"
 
 static hal_uart_t* s_uart1_hal = NULL;
 
+#ifndef USART1_HAL_PORT_ID
+#define USART1_HAL_PORT_ID HAL_UART_ID_1
+#endif
+
+#ifndef USART1_BAUD
+#define USART1_BAUD 2000000u
+#endif
+
+#ifndef USART1_DATA_BITS
+#define USART1_DATA_BITS WORDLENGTH_8B
+#endif
+
+#ifndef USART1_STOP_BITS
+#define USART1_STOP_BITS STOPBITS_1
+#endif
+
+#ifndef USART1_PARITY
+#define USART1_PARITY 0u
+#endif
+
+#ifndef USART1_FLOW_CTRL
+#define USART1_FLOW_CTRL false
+#endif
+
 bool MyUart_Init(void) {
     if (s_uart1_hal == NULL) {
-        hal_uart_cfg_t cfg;
-        cfg.baud         = huart1.Init.BaudRate;
-        cfg.data_bits    = (huart1.Init.WordLength == UART_WORDLENGTH_9B) ? WORDLENGTH_9B : WORDLENGTH_8B;
-        cfg.stop_bits    = (huart1.Init.StopBits == UART_STOPBITS_2) ? STOPBITS_2 : STOPBITS_1;
-        cfg.parity       = (uint8_t)huart1.Init.Parity;
-        cfg.flow_ctrl    = (huart1.Init.HwFlowCtl != UART_HWCONTROL_NONE);
-        cfg.isCompatible = true;
+        const hal_uart_cfg_t cfg = {
+            .baud         = USART1_BAUD,
+            .data_bits    = USART1_DATA_BITS,
+            .stop_bits    = USART1_STOP_BITS,
+            .parity       = (uint8_t)USART1_PARITY,
+            .flow_ctrl    = USART1_FLOW_CTRL,
+            .isCompatible = true,
+        };
 
-        if (ret_is_err(hal_uart_open(HAL_UART_ID_0, &cfg, &s_uart1_hal))) {
+        if (ret_is_err(hal_uart_open(USART1_HAL_PORT_ID, &cfg, &s_uart1_hal))) {
             printf("UART HAL init failed\n");
             return false;
         }
@@ -34,4 +57,3 @@ bool MyUart_Init(void) {
 hal_uart_t* Usart1_GetHalHandle(void) {
     return s_uart1_hal;
 }
-
