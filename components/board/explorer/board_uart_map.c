@@ -30,7 +30,7 @@ static uint8_t g_uart3_rx_dma[512];
 ret_code_t stm32_uart_bsp_get(hal_uart_id_t id, stm32_uart_bsp_t* out) {
     if (!out) return UART_MAP_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     switch (id) {
-        case HAL_UART_ID_0:
+        case HAL_UART_ID_1:
             /* 串口 MSP 配置 */
             out->huart      = &huart1;
             out->hdma_rx    = &hdma_usart1_rx;
