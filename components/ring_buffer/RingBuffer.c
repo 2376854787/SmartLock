@@ -261,6 +261,112 @@ static ret_code_t RB_Reserve_Logic(const RingBuffer* rb, uint32_t want, RingBuff
     *granted = n1 + n2;
     return RET_OK;
 }
+/**============================================================================================ */
+/**==================================      Span拷贝工具     ===================================== */
+/**============================================================================================ */
+/**
+ * @brief 将线性缓冲区数据写入 span 描述的两段目标空间
+ * @param span 由 Reserve 接口返回的目标窗口（p1/n1 + p2/n2）
+ * @param src  线性源数据地址
+ * @param len  想要拷贝的字节数
+ * @note 实际写入字节数 = min(len, span->n1 + span->n2)
+ */
+void RingBuffer_SpanWriteFromLinear(const RingBufferSpan* span, const uint8_t* src, uint32_t len) {
+    if (!span || !src || len == 0u) return;
+
+    uint32_t copied = 0u;
+    if (span->n1 > 0u) {
+        const uint32_t n = (len < span->n1) ? len : span->n1;
+        memcpy(span->p1, src, n);
+        copied = n;
+    }
+
+    if (copied < len && span->n2 > 0u) {
+        uint32_t n = len - copied;
+        if (n > span->n2) n = span->n2;
+        memcpy(span->p2, src + copied, n);
+    }
+}
+
+/**
+ * @brief 将 span 描述的两段数据合并读取到线性目标缓冲区
+ * @param span 数据窗口（通常由 ReadReserve 返回）
+ * @param dst  线性目标地址
+ * @param len  想要读取的字节数
+ * @note 实际读取字节数 = min(len, span->n1 + span->n2)
+ */
+void RingBuffer_SpanReadToLinear(const RingBufferSpan* span, uint8_t* dst, uint32_t len) {
+    if (!span || !dst || len == 0u) return;
+
+    uint32_t copied = 0u;
+    if (span->n1 > 0u) {
+        const uint32_t n = (len < span->n1) ? len : span->n1;
+        memcpy(dst, span->p1, n);
+        copied = n;
+    }
+
+    if (copied < len && span->n2 > 0u) {
+        uint32_t n = len - copied;
+        if (n > span->n2) n = span->n2;
+        memcpy(dst + copied, span->p2, n);
+    }
+}
+
+/**
+ * @brief 从环形源缓冲区拷贝数据到 span 目标窗口（支持源端回绕）
+ * @param span         目标窗口（通常由 WriteReserve 返回）
+ * @param src_ring     环形源缓冲区首地址（如 DMA circular buffer）
+ * @param src_ring_len 环形源缓冲区长度（字节）
+ * @param src_pos      源端起始索引
+ * @param len          想要拷贝的字节数
+ * @note 实际写入字节数 = min(len, span->n1 + span->n2)
+ */
+void RingBuffer_SpanWriteFromCircular(const RingBufferSpan* span, const uint8_t* src_ring,
+                                      uint32_t src_ring_len, uint32_t src_pos, uint32_t len) {
+    if (!span || !src_ring || src_ring_len == 0u || len == 0u) return;
+
+    /* 规范化源端起点，避免 src_pos 超过环长 */
+    uint32_t pos = src_pos % src_ring_len;
+
+    /* 先写入目标第一段 p1 */
+    if (span->n1 > 0u) {
+        const uint32_t n1 = (len < span->n1) ? len : span->n1;
+        if (n1 > 0u) {
+            /* 源端从 pos 到环尾的连续可读长度 */
+            const uint32_t tail = src_ring_len - pos;
+            if (n1 <= tail) {
+                /* 源端不回绕：一次 memcpy 完成 */
+                memcpy(span->p1, &src_ring[pos], n1);
+                pos += n1;
+                /* 命中环尾时，回到 0 */
+                if (pos == src_ring_len) pos = 0u;
+            } else {
+                /* 源端回绕：先拷尾部，再拷头部 */
+                memcpy(span->p1, &src_ring[pos], tail);
+                memcpy(span->p1 + tail, &src_ring[0], n1 - tail);
+                pos = n1 - tail;
+            }
+        }
+    }
+
+    /* 再写入目标第二段 p2（仅当 len 超过了 p1 已承担部分） */
+    if (span->n2 > 0u && len > span->n1) {
+        uint32_t n2 = len - span->n1;
+        if (n2 > span->n2) n2 = span->n2;
+        if (n2 > 0u) {
+            /* 重新计算当前 pos 到环尾的连续长度 */
+            const uint32_t tail = src_ring_len - pos;
+            if (n2 <= tail) {
+                /* 源端不回绕 */
+                memcpy(span->p2, &src_ring[pos], n2);
+            } else {
+                /* 源端回绕 */
+                memcpy(span->p2, &src_ring[pos], tail);
+                memcpy(span->p2 + tail, &src_ring[0], n2 - tail);
+            }
+        }
+    }
+}
 
 /**
  * @brief 创建指定大小的RB

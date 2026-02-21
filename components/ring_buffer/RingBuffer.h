@@ -50,6 +50,17 @@ typedef struct {
     uint8_t *p2;
     uint32_t n2;
 } RingBufferSpan;
+
+/**============================================================================================ */
+/**==================================      Span拷贝工具     ===================================== */
+/**============================================================================================ */
+
+void RingBuffer_SpanWriteFromLinear(const RingBufferSpan *span, const uint8_t *src, uint32_t len);
+
+void RingBuffer_SpanReadToLinear(const RingBufferSpan *span, uint8_t *dst, uint32_t len);
+
+void RingBuffer_SpanWriteFromCircular(const RingBufferSpan *span, const uint8_t *src_ring,
+                                      uint32_t src_ring_len, uint32_t src_pos, uint32_t len);
 /**============================================================================================ */
 /**==================================       BASE          ===================================== */
 /**============================================================================================ */
