@@ -124,6 +124,26 @@ ret_code_t hal_uart_read(hal_uart_t* h, uint8_t* out, uint32_t want, uint32_t* n
     return RET_OK;
 }
 
+ret_code_t hal_uart_read_reserve(hal_uart_t* h, uint32_t want, hal_uart_read_span_t* out,
+                                 uint32_t* nread) {
+    if (nread) *nread = 0u;
+    if (!h || !out) return UART_HAL_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+
+    const ret_code_t rc = hal_uart_port_read_reserve(h, want, out, nread);
+    if (ret_is_err(rc))
+        return uart_map_port_to_hal(rc, "hal_uart_read_reserve", hal_uart_port_get_id(h), want, 0u);
+    return RET_OK;
+}
+
+ret_code_t hal_uart_read_commit(hal_uart_t* h, uint32_t nread) {
+    if (!h) return UART_HAL_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+
+    const ret_code_t rc = hal_uart_port_read_commit(h, nread);
+    if (ret_is_err(rc))
+        return uart_map_port_to_hal(rc, "hal_uart_read_commit", hal_uart_port_get_id(h), nread, 0u);
+    return RET_OK;
+}
+
 ret_code_t hal_uart_set_evt_cb(hal_uart_t* h, hal_uart_evt_cb_t cb, void* user) {
     if (!h) return UART_HAL_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
 
@@ -169,6 +189,21 @@ ret_code_t hal_uart_read(hal_uart_t* h, uint8_t* out, uint32_t want, uint32_t* n
     (void)out;
     (void)want;
     if (nread) *nread = 0u;
+    return UART_HAL_RET(RET_CLASS_PARAM, RET_R_UNSUPPORTED);
+}
+
+ret_code_t hal_uart_read_reserve(hal_uart_t* h, uint32_t want, hal_uart_read_span_t* out,
+                                 uint32_t* nread) {
+    (void)h;
+    (void)want;
+    (void)out;
+    if (nread) *nread = 0u;
+    return UART_HAL_RET(RET_CLASS_PARAM, RET_R_UNSUPPORTED);
+}
+
+ret_code_t hal_uart_read_commit(hal_uart_t* h, uint32_t nread) {
+    (void)h;
+    (void)nread;
     return UART_HAL_RET(RET_CLASS_PARAM, RET_R_UNSUPPORTED);
 }
 

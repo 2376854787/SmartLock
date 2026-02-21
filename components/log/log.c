@@ -83,14 +83,34 @@ static inline uint8_t Log_BackendReady(void) {
 static inline const log_backend_t* Log_GetBackend(void) {
     return &s_log_backend;
 }
+
+static ret_code_t Log_SendChunkWait(const log_backend_t* b, const uint8_t* data, uint32_t len) {
+    if (!b || !b->send_async || !data || len == 0u) {
+        return RET_MAKE(RET_MOD_LOG, RET_SUB_LOG_CORE,
+                        RET_CODE_MAKE(RET_CLASS_PARAM, RET_R_INVALID_ARG));
+    }
+
+    ret_code_t rc;
+    do {
+        rc = b->send_async(data, (uint16_t)len, b->user);
+        if (ret_is_busy(rc)) {
+            printf("LOG发送BUSY！！！\r\n");
+            (void)OSAL_thread_flags_wait(LOG_TX_DONE_FLAG, OSAL_FLAGS_WAIT_ANY, OSAL_WAIT_FOREVER);
+        }
+    } while (ret_is_busy(rc));
+
+    if (ret_is_ok(rc)) {
+        (void)OSAL_thread_flags_wait(LOG_TX_DONE_FLAG, OSAL_FLAGS_WAIT_ANY, OSAL_WAIT_FOREVER);
+    }
+    return rc;
+}
 #if LOG_ASYNC_ENABLE
 /**
  * @brief 日志后台处理任务
  * @note  负责从 RingBuffer 取出数据并通过串口发送
  */
 void Log_Task_Entry(void* argument) {
-    static uint8_t send_buf[128];
-    uint32_t read_len;
+    (void)argument;
 
     for (;;) {
         /* 等待：有新日志 或 上一笔发送完成（都可能触发继续flush） */
@@ -98,33 +118,33 @@ void Log_Task_Entry(void* argument) {
                                      OSAL_WAIT_FOREVER);
 
         for (;;) {
-            read_len = sizeof(send_buf);
-
-            if (!ret_is_ok(ReadRingBuffer(&s_logRB, send_buf, &read_len, true)) || read_len == 0) {
+            RingBufferSpan span = {0};
+            uint32_t read_len   = 0u;
+            if (!ret_is_ok(RingBuffer_ReadReserve(&s_logRB, LOG_RB_SIZE, &span, &read_len, true)) ||
+                read_len == 0u) {
                 break; /* 空了 */
             }
 
             if (!Log_BackendReady()) {
                 /* 后端未就绪：丢弃 */
                 printf("LOG发送端待就位！！！\r\n");
+                (void)RingBuffer_ReadCommit(&s_logRB, read_len);
                 continue;
             }
 
             const log_backend_t* b = Log_GetBackend();
+            ret_code_t rc       = RET_OK;
+            if (span.n1 > 0u) {
+                rc = Log_SendChunkWait(b, span.p1, span.n1);
+            }
+            if (ret_is_ok(rc) && span.n2 > 0u) {
+                rc = Log_SendChunkWait(b, span.p2, span.n2);
+            }
 
-            /* 启动发送：若忙则等待完成再重试 */
-            uint32_t rc;
-            do {
-                rc = b->send_async(send_buf, (uint16_t)read_len, b->user);
-                if (ret_is_busy(rc)) {
-                    printf("LOG发送BUSY！！！\r\n");
-                    (void)OSAL_thread_flags_wait(LOG_TX_DONE_FLAG, OSAL_FLAGS_WAIT_ANY,
-                                                 OSAL_WAIT_FOREVER);
-                }
-            } while (ret_is_busy(rc));
-
-            /* 启动成功后必须等这笔发送完成，才能复用 send_buf 读下一段 */
-            (void)OSAL_thread_flags_wait(LOG_TX_DONE_FLAG, OSAL_FLAGS_WAIT_ANY, OSAL_WAIT_FOREVER);
+            (void)RingBuffer_ReadCommit(&s_logRB, read_len);
+            if (ret_is_err(rc)) {
+                printf("LOG发送失败 rc=%ld\r\n", (long)rc);
+            }
         }
     }
 }

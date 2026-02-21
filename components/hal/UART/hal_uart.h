@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "RingBuffer.h"
 #include "ret_code.h"
 
 /* 串口号定义 */
@@ -49,6 +50,9 @@ typedef struct {
         } err;
     };
 } hal_uart_event_t;
+
+/* 零拷贝读窗口（与 RingBufferSpan 对齐，按只读语义使用） */
+typedef RingBufferSpan hal_uart_read_span_t;
 
 /* 串口事件回调 */
 typedef void (*hal_uart_evt_cb_t)(void* user, const hal_uart_event_t* evt);
@@ -102,6 +106,25 @@ ret_code_t hal_uart_rx_start(hal_uart_t* h);
  * @return 状态码
  */
 ret_code_t hal_uart_read(hal_uart_t* h, uint8_t* out, uint32_t want, uint32_t* nread);
+
+/**
+ * @brief 申请串口接收缓冲区中的可读窗口（零拷贝）
+ * @param h 串口句柄
+ * @param want 想要读取的字节数。传 0 表示“尽可能多”。
+ * @param out 返回窗口信息
+ * @param nread 实际可读字节数
+ * @return 状态码
+ */
+ret_code_t hal_uart_read_reserve(hal_uart_t* h, uint32_t want, hal_uart_read_span_t* out,
+                                 uint32_t* nread);
+
+/**
+ * @brief 提交已经消费的接收字节数（与 hal_uart_read_reserve 配套）
+ * @param h 串口句柄
+ * @param nread 已消费字节数
+ * @return 状态码
+ */
+ret_code_t hal_uart_read_commit(hal_uart_t* h, uint32_t nread);
 
 /**
  * @brief 将=数据通过串口进行异步发送

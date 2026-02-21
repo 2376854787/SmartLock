@@ -19,9 +19,9 @@
 
 /* ========== UART 上下文 ========== */
 struct hal_uart {
-    const char* name;         /*串口名称*/
+    const char* name;         /* 串口名称*/
     void* cb_user;            /* 用户上下文 */
-    hal_uart_id_t id;         /*串口内部id*/
+    hal_uart_id_t id;         /* 串口内部id*/
     stm32_uart_bsp_t bsp;     /* 串口映射配置 */
     RingBuffer rb;            /* 软件 RB：用于上层 read */
     uint32_t rx_last_pos;     /* 上次处理的 DMA 写指针 */
@@ -32,7 +32,9 @@ struct hal_uart {
 };
 /*　存储全局串口资源 */
 static struct hal_uart g_uarts[HAL_UART_ID_MAX];
-
+ret_code_t hal_uart_port_read_reserve(hal_uart_t* h, uint32_t want, hal_uart_read_span_t* out,
+                                      uint32_t* nread);
+ret_code_t hal_uart_port_read_commit(hal_uart_t* h, uint32_t nread);
 /**
  * @brief 占位
  * @param ptr DMA初始地址
@@ -70,7 +72,6 @@ static inline bool isPowerOfTwo_Size(uint32_t size) {
 static inline void emit_evt(const hal_uart_t* u, const hal_uart_event_t* evt) {
     if (u->cb) u->cb(u->cb_user, evt);
 }
-
 /**
  * @beief 返回当前串口DMA接收指针的具体位置
  * @param u 串口句柄
@@ -111,73 +112,44 @@ static void rx_commit_delta(hal_uart_t* u) {
     /* cache invalidate：H7/F7 可覆盖 */
     stm32_uart_dma_rx_invalidate(u->bsp.rx_dma_buf, u->bsp.rx_dma_len);
 
-    /* 先看空间 */
-    const uint32_t remain = RingBuffer_GetRemainSizeFromISR(&u->rb);
+    /* 获取可以写的空间大小 */
+    RingBufferSpan span = {0};
+    uint32_t granted    = 0u;
+    const ret_code_t rc =
+        RingBuffer_WriteReserve_SPSC(&u->rb, delta, &span, &granted, u->isCompatible);
 
-    /* 严格模式 */
-    if (!u->isCompatible) {
-        /* 严格：空间不足 -> 全丢 */
-        if (remain < delta) {
-            u->rx_last_pos     = pos;                          /* 更新上次坐标为新的坐标 */
-            hal_uart_event_t e = {.type = HAL_UART_EVT_ERROR}; /* 返回事件类型 错误 + 原因 */
-            e.err.flags =
-                UART_RET(RET_CLASS_RESOURCE, RET_R_BUFFER_FULL); /* 错误类型 ：缓冲区空间不够*/
-            emit_evt(u, &e);                                     /* 执行事件回调函数 */
-            return;
-        }
-        /* 空间足够，完整写入 */
-        /* 分段写入 判断是否回环*/
-        const uint32_t first = (last + delta <= len) ? delta : (len - last);
-
-        uint32_t w           = first;
-        (void)WriteRingBufferFromISR(&u->rb, &u->bsp.rx_dma_buf[last], &w, 0);
-
-        /* 回环了写入第二段 */
-        if (first < delta) {
-            const uint32_t second = delta - first;
-            uint32_t w2           = second;
-            (void)WriteRingBufferFromISR(&u->rb, &u->bsp.rx_dma_buf[0], &w2,
-                                         /*isForceWrite=*/0);
-        }
-        u->rx_last_pos       = pos;                       /* 更新上次的位置 */
-        hal_uart_event_t evt = {.type = HAL_UART_EVT_RX}; /* 返回事件类型 有接收到新的数据 */
-        evt.rx.bytes         = delta;                     /* 增量长度 */
-        emit_evt(u, &evt);                                /* 执行事件回调函数 */
+    /* 严格模式：空间不足全丢 */
+    if (!u->isCompatible && ret_is_err(rc)) {
+        u->rx_last_pos     = pos;
+        hal_uart_event_t e = {.type = HAL_UART_EVT_ERROR};
+        e.err.flags        = UART_RET(RET_CLASS_RESOURCE, RET_R_BUFFER_FULL);
+        emit_evt(u, &e);
         return;
     }
 
-    /* 兼容模式: 尽力写，丢弃多余 */
-    /* 取容量 和 需要写入的大小  中的较小值 */
-    const uint32_t to_write = (remain < delta) ? remain : delta;
-    /* 计算丢弃了多少字节 */
+    const uint32_t to_write = granted;
     const uint32_t dropped  = delta - to_write;
 
     if (to_write > 0u) {
-        /* 计算没有回环的第一段 大小 */
-        const uint32_t first_need = (last + to_write <= len) ? to_write : (len - last);
-
-        uint32_t w                = first_need;
-        (void)WriteRingBufferFromISR(&u->rb, &u->bsp.rx_dma_buf[last], &w, 1);
-        /* 判断是否回环 回环就写余下的部分 */
-        if (first_need < to_write) {
-            const uint32_t second_need = to_write - first_need;
-            uint32_t w2                = second_need;
-            (void)WriteRingBufferFromISR(&u->rb, &u->bsp.rx_dma_buf[0], &w2, 1);
+        /* 从DMA 搬运到 uart 的rb */
+        RingBuffer_SpanWriteFromCircular(&span, u->bsp.rx_dma_buf, len, last, to_write);
+        /* 提交搬运的信息更新 容器索引 */
+        const ret_code_t commit_rc = RingBuffer_WriteCommit_SPSC(&u->rb, to_write);
+        if (ret_is_ok(commit_rc)) {
+            hal_uart_event_t evt = {.type = HAL_UART_EVT_RX};
+            evt.rx.bytes         = to_write;
+            emit_evt(u, &evt);
+        } else {
+            hal_uart_event_t e = {.type = HAL_UART_EVT_ERROR};
+            e.err.flags        = UART_RET(RET_CLASS_RESOURCE, RET_R_BUFFER_FULL);
+            emit_evt(u, &e);
         }
-
-        hal_uart_event_t evt = {.type = HAL_UART_EVT_RX}; /* 返回事件类型 有接收到新的数据 */
-        evt.rx.bytes         = to_write;                  /* 增量长度 */
-        emit_evt(u, &evt);                                /* 执行事件回调函数 */
     }
-
-    u->rx_last_pos = pos; /* 更新上次的位置 */
-
-    /* 当丢弃了数据 返回错误 */
+    u->rx_last_pos = pos;
     if (dropped > 0u) {
-        hal_uart_event_t e = {.type = HAL_UART_EVT_ERROR}; /* 返回事件类型 错误 + 原因 */
+        hal_uart_event_t e = {.type = HAL_UART_EVT_ERROR};
         e.err.flags        = UART_RET(RET_CLASS_RESOURCE, RET_R_BUFFER_FULL);
-        ;                /* 错误类型 ：数据溢出*/
-        emit_evt(u, &e); /* 执行事件回调函数 */
+        emit_evt(u, &e);
     }
 }
 
@@ -458,20 +430,70 @@ ret_code_t hal_uart_port_send_async(hal_uart_t* h, const uint8_t* buf, uint32_t 
  */
 ret_code_t hal_uart_port_read(hal_uart_t* h, uint8_t* out, uint32_t want, uint32_t* nread) {
     if (!h || !out || want == 0u || !nread) return UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
-    hal_uart_t* u = (hal_uart_t*)h;
+    hal_uart_read_span_t span = {0};
+    uint32_t granted          = 0u;
+    ret_code_t rc             = hal_uart_port_read_reserve(h, want, &span, &granted);
+    if (ret_is_err(rc)) return rc;
 
-    uint32_t size = want;
-    ret_code_t rc;
-    if (OSAL_in_isr()) {
-        rc = ReadRingBufferFromISR(&u->rb, out, &size, u->isCompatible ? 1 : 0);
-    } else {
-        rc = ReadRingBuffer(&u->rb, out, &size, u->isCompatible ? 1 : 0);
+    RingBuffer_SpanReadToLinear(&span, out, granted);
+    rc     = hal_uart_port_read_commit(h, granted);
+    *nread = granted;
+    return rc;
+}
+/**
+ * @brief 申请串口接收缓冲区中的可读窗口
+ * @param h 串口句柄
+ * @param want 想要读取的字节数
+ * @param out 数据接收地址
+ * @param nread 实际读取的字节数
+ * @return状态码
+ * @note 读：严格=必须足够才读且不消费；兼容=尽力读
+ */
+ret_code_t hal_uart_port_read_reserve(hal_uart_t* h, uint32_t want, hal_uart_read_span_t* out,
+                                      uint32_t* nread) {
+    if (nread) *nread = 0u;
+    if (!h || !out || !nread) return UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    hal_uart_t* u       = (hal_uart_t*)h;
+
+    uint32_t want_local = want;
+    if (want_local == 0u) {
+        want_local =
+            OSAL_in_isr() ? RingBuffer_GetUsedSizeFromISR(&u->rb) : RingBuffer_GetUsedSize(&u->rb);
+        if (want_local == 0u) {
+            out->p1 = NULL;
+            out->p2 = NULL;
+            out->n1 = 0u;
+            out->n2 = 0u;
+            *nread  = 0u;
+            return RET_OK;
+        }
     }
 
-    /* 约定：严格模式下若不足，ReadRingBuffer 应返回 DATA_NOT_ENOUGH 且 size不变；
-       兼容模式下 size 为实际读取量。 */
-    *nread = size;
-    return rc;
+    RingBufferSpan span = {0};
+    uint32_t granted    = 0u;
+    const ret_code_t rc =
+        RingBuffer_ReadReserve_SPSC(&u->rb, want_local, &span, &granted, u->isCompatible);
+    if (ret_is_err(rc)) return rc;
+
+    out->p1 = span.p1;
+    out->p2 = span.p2;
+    out->n1 = span.n1;
+    out->n2 = span.n2;
+    *nread  = granted;
+    return RET_OK;
+}
+/**
+ * @brief 提交已经消费的接收字节数
+ * @param h 句柄
+ * @param nread 提交字节数
+ * @return
+ */
+ret_code_t hal_uart_port_read_commit(hal_uart_t* h, uint32_t nread) {
+    if (!h) return UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    if (nread == 0u) return RET_OK;
+
+    hal_uart_t* u = (hal_uart_t*)h;
+    return RingBuffer_ReadCommit_SPSC(&u->rb, nread);
 }
 
 hal_uart_id_t hal_uart_port_get_id(const hal_uart_t* h) {

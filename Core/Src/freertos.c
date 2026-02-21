@@ -380,7 +380,7 @@ void StartTask_LCD(void *argument)
             last_report_tick = HAL_GetTick();
         }
 
-        osDelay(5);
+        osDelay(1);
     }
   /* USER CODE END StartTask_LCD */
 }
