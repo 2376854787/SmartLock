@@ -1,11 +1,11 @@
 #include <stdbool.h>
-#include <stddef.h>
 #include <string.h>
 
 #include "RingBuffer.h"
 #include "eb_types.h"
+#include "hal_time.h"
 #include "osal.h"
-#include "stm32f4xx_hal.h"
+
 bool eb_port_mailbox_push(void* mailbox, const eb_event_t* ev) {
     RingBuffer* rb      = (RingBuffer*)mailbox;
     uint32_t n          = (uint32_t)sizeof(eb_event_t);
@@ -57,7 +57,7 @@ bool eb_port_mailbox_overwrite(void* mailbox, const eb_event_t* ev) {
 }
 
 uint32_t eb_port_timestamp(void) {
-    return HAL_GetTick();
+    return hal_get_tick_ms();
 }
 
 // void writer_lock_acquire(void* handle) {
