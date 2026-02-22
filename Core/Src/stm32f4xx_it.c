@@ -1,4 +1,4 @@
-/* USER CODE BEGIN Header */
+﻿/* USER CODE BEGIN Header */
 /**
  ******************************************************************************
  * @file    stm32f4xx_it.c
@@ -96,7 +96,7 @@ void NMI_Handler(void)
 /**
   * @brief This function handles Hard fault interrupt.
   */
-void HardFault_Handler(void)
+__attribute__((naked)) void HardFault_Handler(void)
 {
   /* USER CODE BEGIN HardFault_IRQn 0 */
     __asm volatile(
@@ -105,19 +105,16 @@ void HardFault_Handler(void)
         "mrseq r0, msp     \n"
         "mrsne r0, psp     \n"
         "mov r1, %0        \n"
-        "b FaultCapture_FromStack_cm \n" ::"I"(BB_CRASH_HARDFAULT));
+        "b FaultCapture_FromStack_cm \n"
+        :
+        : "I"(BB_CRASH_HARDFAULT));
   /* USER CODE END HardFault_IRQn 0 */
-  while (1)
-  {
-    /* USER CODE BEGIN W1_HardFault_IRQn 0 */
-    /* USER CODE END W1_HardFault_IRQn 0 */
-  }
 }
 
 /**
   * @brief This function handles Memory management fault.
   */
-void MemManage_Handler(void)
+__attribute__((naked)) void MemManage_Handler(void)
 {
   /* USER CODE BEGIN MemoryManagement_IRQn 0 */
     __asm volatile(
@@ -126,19 +123,16 @@ void MemManage_Handler(void)
         "mrseq r0, msp     \n"
         "mrsne r0, psp     \n"
         "mov r1, %0        \n"
-        "b FaultCapture_FromStack_cm \n" ::"I"(BB_CRASH_MEMMANAGE));
+        "b FaultCapture_FromStack_cm \n"
+        :
+        : "I"(BB_CRASH_MEMMANAGE));
   /* USER CODE END MemoryManagement_IRQn 0 */
-  while (1)
-  {
-    /* USER CODE BEGIN W1_MemoryManagement_IRQn 0 */
-    /* USER CODE END W1_MemoryManagement_IRQn 0 */
-  }
 }
 
 /**
   * @brief This function handles Pre-fetch fault, memory access fault.
   */
-void BusFault_Handler(void)
+__attribute__((naked)) void BusFault_Handler(void)
 {
   /* USER CODE BEGIN BusFault_IRQn 0 */
     __asm volatile(
@@ -147,19 +141,16 @@ void BusFault_Handler(void)
         "mrseq r0, msp     \n"
         "mrsne r0, psp     \n"
         "mov r1, %0        \n"
-        "b FaultCapture_FromStack_cm \n" ::"I"(BB_CRASH_BUSFAULT));
+        "b FaultCapture_FromStack_cm \n"
+        :
+        : "I"(BB_CRASH_BUSFAULT));
   /* USER CODE END BusFault_IRQn 0 */
-  while (1)
-  {
-    /* USER CODE BEGIN W1_BusFault_IRQn 0 */
-    /* USER CODE END W1_BusFault_IRQn 0 */
-  }
 }
 
 /**
   * @brief This function handles Undefined instruction or illegal state.
   */
-void UsageFault_Handler(void)
+__attribute__((naked)) void UsageFault_Handler(void)
 {
   /* USER CODE BEGIN UsageFault_IRQn 0 */
     __asm volatile(
@@ -168,13 +159,10 @@ void UsageFault_Handler(void)
         "mrseq r0, msp     \n"
         "mrsne r0, psp     \n"
         "mov r1, %0        \n"
-        "b FaultCapture_FromStack_cm \n" ::"I"(BB_CRASH_USAGEFAULT));
+        "b FaultCapture_FromStack_cm \n"
+        :
+        : "I"(BB_CRASH_USAGEFAULT));
   /* USER CODE END UsageFault_IRQn 0 */
-  while (1)
-  {
-    /* USER CODE BEGIN W1_UsageFault_IRQn 0 */
-    /* USER CODE END W1_UsageFault_IRQn 0 */
-  }
 }
 
 /**
@@ -370,9 +358,10 @@ void DMA2_Stream7_IRQHandler(void)
 
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef* huart) {
     /* 串口回调 */
-#if defined(USE_STM32_HAL) && defined(ENABLE_HAL_UART)
+#if (CFG_TARGET_PLATFORM_STM32_HAL == 1) && (CFG_FEAT_HAL_UART == 1)
     hal_uart_txCp_case(huart);
 #endif
 }
 
 /* USER CODE END 1 */
+
