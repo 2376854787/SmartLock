@@ -37,6 +37,9 @@
 #include "Usart1_manage.h"
 #include "bh1750.h"
 #include "crc16.h"
+#include "hal_time.h"
+#include "hal_uart_port_hooks.h"
+#include "heap_check.h"
 #include "lcd.h"
 #include "log.h"
 #include "log_port.h"
@@ -46,9 +49,8 @@
 #include "tim.h"
 #include "touch_test_task.h"
 #include "usart.h"
-#include "heap_check.h"
-#include "hal_uart_port_hooks.h"
 #include "watchdog_app.h"
+#include "wdg_supervisor.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -89,7 +91,7 @@ osThreadId_t lcdTaskHandle;
 const osThreadAttr_t lcdTask_attributes = {
   .name = "lcdTask",
   .stack_size = 800 * 4,
-  .priority = (osPriority_t) osPriorityLow,
+  .priority = (osPriority_t) osPriorityNormal,
 };
 
 /* Private function prototypes -----------------------------------------------*/
@@ -268,7 +270,14 @@ void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN StartDefaultTask */
     /* Infinite loop */
+    /* 注册看门狗挑战任务：deadline = 2倍任务周期 + 监督周期抖动 + 计算时间 + 余量 */
+    uint8_t id =0;
+    const uint32_t default_task_deadline = wdg_sup_deadline_budget_ms(
+        2u * 30u, CFG_PARAM_WATCHDOG_APP_SUP_PERIOD_MS, 0u, 50u);
+    wdg_sup_register(&id,"default task", WDG_WATCH_CHALLENGE,WDG_ALGO_MATH_MIX32
+        ,1234, 5, default_task_deadline);
     for (;;) {
+
         // LED 1翻转
         HAL_GPIO_TogglePin(LED1_GPIO_Port, LED1_Pin);
         KEY_Tasks();
@@ -279,6 +288,8 @@ void StartDefaultTask(void *argument)
         // char buffer[64];
         // sprintf(buffer, "%ld", prase);
         // lcd_show_string(10, 400, 240, 32, 32, buffer, RED);
+        /* 做题挑战 */
+        wdg_sup_task_service(id);
         osDelay(30);
     }
   /* USER CODE END StartDefaultTask */
@@ -295,8 +306,15 @@ void StartTask02(void *argument)
 {
   /* USER CODE BEGIN StartTask02 */
     /* Infinite loop */
+    /* UART任务存在阻塞风险，deadline按2倍任务周期预留 */
+    uint8_t id =0;
+    const uint32_t uart_task_deadline = wdg_sup_deadline_budget_ms(
+        2u * 250u, CFG_PARAM_WATCHDOG_APP_SUP_PERIOD_MS, 0u, 50u);
+    wdg_sup_register(&id,"start task02", WDG_WATCH_CHALLENGE,WDG_ALGO_MATH_MIX32
+        ,2, 3, uart_task_deadline);
     for (;;) {
         HAL_GPIO_TogglePin(LED0_GPIO_Port, LED0_Pin);
+        wdg_sup_task_service(id);
         osDelay(250);
     }
   /* USER CODE END StartTask02 */
@@ -313,6 +331,9 @@ void StartTask_LCD(void *argument)
 {
   /* USER CODE BEGIN StartTask_LCD */
     /* Infinite loop */
+    // uint8_t id =0;
+    // wdg_sup_register(&id,"start task02", WDG_WATCH_CHALLENGE,WDG_ALGO_MATH_MIX32
+    //     ,222, 3,2*20 + CFG_PARAM_WATCHDOG_APP_TIMEOUT_MS +50);
     lv_init();
     lv_tick_set_cb(HAL_GetTick);
     lv_port_disp_init();
@@ -350,6 +371,8 @@ void StartTask_LCD(void *argument)
     uint8_t esp_init_done     = 0;
 
     for (;;) {
+        const uint16_t tick = HAL_GetTick();
+        LOG_I("test", "开始时间%d",tick);
         lv_timer_handler();
 
         /* --- 触控追踪更新 --- */
@@ -383,8 +406,10 @@ void StartTask_LCD(void *argument)
                   (unsigned long)watermark);
             last_report_tick = HAL_GetTick();
         }
-
-        osDelay(1);
+      // wdg_sup_task_service(id);
+        const uint32_t duration = hal_get_tick_ms()-tick;
+        LOG_I("test", "执行时间%d",duration);
+        osDelay(20);
     }
   /* USER CODE END StartTask_LCD */
 }
