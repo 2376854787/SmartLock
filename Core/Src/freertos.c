@@ -1,4 +1,4 @@
-/* USER CODE BEGIN Header */
+﻿/* USER CODE BEGIN Header */
 /**
  ******************************************************************************
  * File Name          : freertos.c
@@ -46,9 +46,9 @@
 #include "tim.h"
 #include "touch_test_task.h"
 #include "usart.h"
-#include "wifi_mqtt_task.h"
 #include "heap_check.h"
 #include "hal_uart_port_hooks.h"
+#include "watchdog_app.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -243,6 +243,10 @@ void MX_FREERTOS_Init(void) {
     Log_Init();
     /* 串口AT解析任务 创建信号量、创建任务*/
     at_core_task_init(&g_at_manager);
+    /* 启用 IWDG 抽象 + Supervisor 线程 */
+    if (ret_is_err(Watchdog_AppInit())) {
+        Error_Handler();
+    }
 
   /* USER CODE END RTOS_THREADS */
 
@@ -389,12 +393,12 @@ void StartTask_LCD(void *argument)
 /* USER CODE BEGIN Application */
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef* huart, uint16_t Size) {
-#if defined(USE_STM32_HAL) && defined(ENABLE_HAL_UART)
+#if (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1)) && (defined(CFG_FEAT_HAL_UART) && (CFG_FEAT_HAL_UART == 1))
     hal_uart_rx_event_case(huart, Size);
 #endif
 }
 void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef* huart) {
-#if defined(USE_STM32_HAL) && defined(ENABLE_HAL_UART)
+#if (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1)) && (defined(CFG_FEAT_HAL_UART) && (CFG_FEAT_HAL_UART == 1))
     hal_uart_rx_dma_progress_case(huart);
 #else
     (void)huart;
@@ -402,7 +406,7 @@ void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef* huart) {
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef* huart) {
-#if defined(USE_STM32_HAL) && defined(ENABLE_HAL_UART)
+#if (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1)) && (defined(CFG_FEAT_HAL_UART) && (CFG_FEAT_HAL_UART == 1))
     hal_uart_rx_dma_progress_case(huart);
 #else
     (void)huart;
@@ -410,7 +414,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef* huart) {
 }
 
 void HAL_UART_ErrorCallback(UART_HandleTypeDef* huart) {
-#if defined(USE_STM32_HAL) && defined(ENABLE_HAL_UART)
+#if (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1)) && (defined(CFG_FEAT_HAL_UART) && (CFG_FEAT_HAL_UART == 1))
     hal_uart_error_case(huart);
 #else
     if (huart->Instance == USART1) {
@@ -423,4 +427,6 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef* huart) {
 #endif
 }
 /* USER CODE END Application */
+
+
 

@@ -1,7 +1,7 @@
 #ifndef SMARTLOCK_STM32_HAL_CONFIG_H
 #define SMARTLOCK_STM32_HAL_CONFIG_H
 
-#include "platform_config.h"
+#include "target_config.h"
 
 /* ============================================================================
  * L3 平台层配置

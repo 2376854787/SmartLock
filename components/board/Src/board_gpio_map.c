@@ -4,7 +4,6 @@
 
 #include "APP_config.h"
 #include "board_gpio_ids.h"
-#include "platform_config.h"
 
 #if (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1)) && (defined(CFG_FEAT_HAL_GPIO) && (CFG_FEAT_HAL_GPIO == 1))
 #include "stm32_hal.h"
