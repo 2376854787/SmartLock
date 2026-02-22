@@ -331,9 +331,6 @@ void StartTask_LCD(void *argument)
 {
   /* USER CODE BEGIN StartTask_LCD */
     /* Infinite loop */
-    // uint8_t id =0;
-    // wdg_sup_register(&id,"start task02", WDG_WATCH_CHALLENGE,WDG_ALGO_MATH_MIX32
-    //     ,222, 3,2*20 + CFG_PARAM_WATCHDOG_APP_TIMEOUT_MS +50);
     lv_init();
     lv_tick_set_cb(HAL_GetTick);
     lv_port_disp_init();
@@ -371,8 +368,6 @@ void StartTask_LCD(void *argument)
     uint8_t esp_init_done     = 0;
 
     for (;;) {
-        const uint16_t tick = HAL_GetTick();
-        LOG_I("test", "开始时间%d",tick);
         lv_timer_handler();
 
         /* --- 触控追踪更新 --- */
@@ -406,9 +401,6 @@ void StartTask_LCD(void *argument)
                   (unsigned long)watermark);
             last_report_tick = HAL_GetTick();
         }
-      // wdg_sup_task_service(id);
-        const uint32_t duration = hal_get_tick_ms()-tick;
-        LOG_I("test", "执行时间%d",duration);
         osDelay(20);
     }
   /* USER CODE END StartTask_LCD */
