@@ -1,8 +1,7 @@
 #include <stddef.h>
 
-#include "Usart1_manage.h"
-#include "hal_uart.h"
 #include "log.h"
+#include "log_port.h"
 #include "ret_code.h"
 
 static volatile uint8_t s_uart_tx_busy = 0u;
@@ -35,6 +34,15 @@ static hal_uart_t* s_log_uart          = NULL;
 #define LOG_UART_FLOW_CTRL false
 #endif
 
+/**
+ * @brief 可选钩子：返回一个已初始化的共享 UART 句柄
+ * @note 默认返回 NULL，表示由 Log_PortInit 自行打开串口。
+ *       应用层可提供同名强实现用于共享现有串口句柄。
+ */
+__attribute__((weak)) hal_uart_t* Log_PortAcquireSharedUart(void) {
+    return NULL;
+}
+
 static void Log_UartEvtCb(void* user, const hal_uart_event_t* evt) {
     (void)user;
     if (!evt) return;
@@ -63,7 +71,7 @@ static int Log_uart_send_async(const uint8_t* d, uint16_t n, void* user) {
 }
 
 void Log_PortInit(void) {
-    if (!s_log_uart) s_log_uart = Usart1_GetHalHandle();
+    if (!s_log_uart) s_log_uart = Log_PortAcquireSharedUart();
 
     if (!s_log_uart) {
         const hal_uart_cfg_t cfg = {

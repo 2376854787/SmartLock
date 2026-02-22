@@ -1,14 +1,17 @@
-﻿#include "board_gpio_map.h"
+#include "board_gpio_map.h"
 
 #include <stdint.h>
 
+#include "../../include/gpio/board_gpio_ids.h"
 #include "APP_config.h"
-#include "board_gpio_ids.h"
 
-#if (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1)) && (defined(CFG_FEAT_HAL_GPIO) && (CFG_FEAT_HAL_GPIO == 1))
+#if (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1)) && \
+    (defined(CFG_FEAT_HAL_GPIO) && (CFG_FEAT_HAL_GPIO == 1))
 #include "stm32_hal.h"
+
 #define PORT_RET(clas_, err_) \
     RET_MAKE(RET_MOD_PORT, RET_SUB_PORT_STM32, RET_CODE_MAKE((clas_), (err_)))
+
 typedef struct {
     uint32_t id;
     board_gpio_hw_t hw;
@@ -29,13 +32,11 @@ ret_code_t board_gpio_lookup(uint32_t id, board_gpio_hw_t* out) {
         if (s_map[i].id == id) {
             if (!s_map[i].hw.port || s_map[i].hw.pin >= 16u)
                 return PORT_RET(RET_CLASS_STATE, RET_R_NOT_READY);
-            ;
             *out = s_map[i].hw;
             return RET_OK;
         }
     }
     return PORT_RET(RET_CLASS_STATE, RET_R_NOT_READY);
-    ;
 }
 #else
 /* 非 STM32 HAL 平台：不提供映射 */
@@ -45,5 +46,4 @@ ret_code_t board_gpio_lookup(uint32_t id, board_gpio_hw_t* out) {
     return RET_E_UNSUPPORTED;
 }
 #endif
-
 

@@ -6,7 +6,6 @@
 #include <string.h> /* 用于 strrchr, memcpy */
 
 #include "log.h"  /* 确保文件名与头文件一致 */
-#include "main.h" /* 包含HAL库定义 */
 
 /* 引入 CMSIS-OS2 和 RingBuffer */
 #include "MemoryAllocation.h"
@@ -190,7 +189,7 @@ void Log_Printf(LogLevel_t level, const char* file, int line, const char* tag, c
     /* 1. 过滤低等级日志 */
     if (level > LOG_CURRENT_LEVEL) return;
 
-    const bool in_isr = (__get_IPSR() != 0);
+    const bool in_isr = OSAL_in_isr();
 
     /* 2. 获取互斥锁 (保护静态缓冲区 static char log_buf) */
     /* 只有当内核运行中时才需要锁，初始化阶段单线程运行不需要锁 */
@@ -266,7 +265,7 @@ void Log_Printf(LogLevel_t level, const char* file, int line, const char* tag, c
 
 #if LOG_ASYNC_ENABLE
     /* 异步模式：判断内核是否正在运行 */
-    if (__get_IPSR() == 0) {
+    if (!OSAL_in_isr()) {
         if (OSAL_kernel_is_running()) {
             /* 尝试写入 RingBuffer */
             uint32_t write_len    = total_len;
@@ -290,7 +289,7 @@ void Log_Printf(LogLevel_t level, const char* file, int line, const char* tag, c
             /* 如果调度器没启动 (例如在 Log_Init 前使用)，强制使用同步发送 */
             printf("RTOS调度器没启动！！！%s \r\n", log_buf);
         }
-    } /* if (__get_IPSR() == 0) */
+    } /* if (!OSAL_in_isr()) */
     else {
         /* 警告需要锁/阻塞代码 被上层尝试调用 */
         char buffer[128];

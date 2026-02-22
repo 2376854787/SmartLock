@@ -1,13 +1,16 @@
-#include "board_uart_map.h"
+#include "APP_config.h"
 
-#include "hal_uart.h"
+#if (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1)) && \
+    (defined(CFG_FEAT_HAL_UART) && (CFG_FEAT_HAL_UART == 1))
+
 #include "main.h"
+#include "stm32_uart_bsp.h"
 
 /* 根据当前所属模块id 与返回状态生成32位状态码 */
-#define UART_MAP_RET(clas_, errno_) RET_MAKE(RET_MOD_HAL, RET_SUB_HAL_UART, RET_CODE_MAKE((clas_), (errno_)))
+#define UART_MAP_RET(clas_, errno_) \
+    RET_MAKE(RET_MOD_HAL, RET_SUB_HAL_UART, RET_CODE_MAKE((clas_), (errno_)))
 
 /* cubemx 或者自己初始化定义的句柄 */
-/* 串口1 */
 extern UART_HandleTypeDef huart1;
 extern DMA_HandleTypeDef hdma_usart1_rx;
 extern DMA_HandleTypeDef hdma_usart1_tx;
@@ -31,16 +34,15 @@ ret_code_t stm32_uart_bsp_get(hal_uart_id_t id, stm32_uart_bsp_t* out) {
     if (!out) return UART_MAP_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     switch (id) {
         case HAL_UART_ID_1:
-            /* 串口 MSP 配置 */
             out->huart      = &huart1;
             out->hdma_rx    = &hdma_usart1_rx;
             out->hdma_tx    = &hdma_usart1_tx;
             out->usart_irq  = USART1_IRQn;
             out->dma_rx_irq = DMA2_Stream2_IRQn;
             out->dma_tx_irq = DMA2_Stream7_IRQn;
-            out->rx_dma_buf = g_uart1_rx_dma;          // DMA 内存侧地址
-            out->rx_dma_len = sizeof(g_uart1_rx_dma);  // 长度 必须为2的幂次大小
-            out->sw_rb_len  = 2048;                    /* 软件RB的容量 KB 尽量为2的幂次大小 */
+            out->rx_dma_buf = g_uart1_rx_dma;          /* DMA 内存侧地址 */
+            out->rx_dma_len = sizeof(g_uart1_rx_dma);  /* 长度必须为2的幂次大小 */
+            out->sw_rb_len  = 2048;                    /* 软件RB容量 */
             out->irq_prio   = 5;
             return RET_OK;
         case HAL_UART_ID_3:
@@ -59,3 +61,6 @@ ret_code_t stm32_uart_bsp_get(hal_uart_id_t id, stm32_uart_bsp_t* out) {
             return UART_MAP_RET(RET_CLASS_RESOURCE, RET_R_NO_RESOURCE);
     }
 }
+
+#endif
+
