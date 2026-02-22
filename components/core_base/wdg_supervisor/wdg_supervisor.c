@@ -2,6 +2,7 @@
 
 #if (defined(CFG_FEAT_WDG_SUPERVISOR) && (CFG_FEAT_WDG_SUPERVISOR == 1))
 
+#include <limits.h>
 #include <string.h>
 
 #include "barrier.h"
@@ -24,7 +25,7 @@ typedef struct {
     volatile uint32_t value;  /* 回复的答案 */
     volatile uint32_t status; /* 状态 */
 } wdg_resp_t;
-
+/* 邮箱 */
 typedef struct {
     wdg_chal_t chal; /* 挑战题 */
     wdg_resp_t resp; /* 回复的答案 */
@@ -32,31 +33,35 @@ typedef struct {
 
 /* ===================== 监督对象表 ===================== */
 typedef struct {
-    bool used;             /*　是否被使用　*/
-    wdg_watch_type_t type; /* 监督类型 */
-    wdg_algo_t algo;       /* 算法类型 */
-    uint32_t key;          /* key */
-    uint32_t param;        /* 迭代次数等 */
-    uint32_t deadline_ms;  /* 死亡时间间隔 */
-    const char *name;      /* 名称 */
+    bool used;               /* 是否被使用 */
+    wdg_watch_type_t type;   /* 监督类型 */
+    wdg_algo_t algo;         /* 算法类型 */
+    uint32_t key;            /* 任务私钥 */
+    uint32_t param;          /* 迭代次数等 */
+    uint32_t deadline_ms;    /* 挑战超时阈值（毫秒） */
+    uint32_t hb_miss_budget; /* 允许缺失周期窗口，最小为1 */
+    uint32_t hb_miss_count;  /* 当前连续缺失计数 */
+    uint32_t chal_tick_ms;   /* 本轮挑战发布时间戳 */
+    const char *name;        /* 名称 */
 } wdg_watch_t;
 
 static wdg_watch_t s_watch[WDG_SUP_MAX_WATCH];       // 记录有哪些任务被监控，以及它们的规则
 static wdg_mailbox_t s_mb[WDG_SUP_MAX_WATCH];        // 每个任务一个专属邮箱
 static uint32_t s_last_chal_seq[WDG_SUP_MAX_WATCH];  // 记录每个任务最后一次做的题号，防重复做题
-static uint32_t s_boot_tick0        = 0;             // 开机时的系统Tick（毫秒）
-static uint32_t s_period_ms         = 200;           // 老师巡查的周期，默认200ms
-static uint32_t s_boot_grace_ms     = 6000;          // 开机宽限期 默认6s
+static uint32_t s_boot_tick0            = 0;         // 开机时的系统Tick（毫秒）
+static uint32_t s_period_ms             = 200;       // 老师巡查的周期，默认200ms
+static uint32_t s_boot_grace_ms         = 6000;      // 开机宽限期 默认6s
 
-static uint32_t s_required_hb_mask  = 0;  // 需要心跳的位掩码（哪些位被监控了）
-static uint32_t s_seen_hb_mask      = 0;  // 实际收到心跳的位掩码
+static uint32_t s_required_hb_mask      = 0;  // 需要心跳的位掩码（哪些位被监控了）
+static uint32_t s_seen_hb_mask          = 0;  // 实际收到心跳的位掩码
 
-static uint32_t s_required_ch_mask  = 0;  // 需要做挑战题的位掩码
+static uint32_t s_required_ch_mask      = 0;  // 需要做挑战题的位掩码 辅助快速从s_watch 查找
 
-static volatile bool s_inited       = false;
-static volatile bool s_fail_latched = false;        // 死亡锁存器：一旦置为true说明系统没救了等死
-static uint32_t s_seq               = 0;            // 全局题目期号，每次发题+1
-static uint32_t s_prng              = 0xC001D00Du;  // 伪随机数种子
+static volatile bool s_inited           = false;
+static volatile bool s_fail_latched     = false;  // 死亡锁存器：一旦置为true说明系统没救了等死
+static volatile wdg_sup_state_t s_state = WDG_SUP_STATE_INIT;  // 当前监督器运行状态 初始状态
+static uint32_t s_seq                   = 0;                   // 全局题目期号，每次发题+1
+static uint32_t s_prng                  = 0xC001D00Du;         // 伪随机数种子
 
 #if (defined(CFG_FEAT_OSAL_BACKEND_CMSIS_OS2) && (CFG_FEAT_OSAL_BACKEND_CMSIS_OS2 == 1))
 static osal_thread_t s_sup_thread = NULL;
@@ -68,7 +73,7 @@ static osal_thread_t s_sup_thread = NULL;
  * @param nonce 随机数 老师生成
  * @param key 任务密钥
  * @param iters 迭代次数
- * @return
+ * @return 计算得到的挑战应答值
  */
 static uint32_t wdg_math_mix32(uint32_t nonce, uint32_t key, uint32_t iters) {
     uint32_t x = nonce ^ key ^ 0xA5A5A5A5u;
@@ -86,7 +91,7 @@ static uint32_t wdg_math_mix32(uint32_t nonce, uint32_t key, uint32_t iters) {
  * @param id 任务id
  * @param nonce 随机数
  * @param seq 序列号
- * @return
+ * @return 期望答案值
  */
 static uint32_t wdg_expected_calc(uint8_t id, uint32_t nonce, uint32_t seq) {
     (void)seq; /* 当前算法不需要 seq，但保留接口，后续可混入 seq */
@@ -109,25 +114,18 @@ static uint32_t prng_next(void) {
     return x;
 }
 
-/* 失败原因编码 */
-enum {
-    WDG_FAIL_TIMEOUT      = 1, /* 超时 */
-    WDG_FAIL_WRONG_ANSWER = 2, /* 错误的答案 */
-    WDG_FAIL_HB_MISSING   = 3, /* 没有心跳 */
-    WDG_FAIL_FRESH        = 4, /* 喂狗失败 */
-};
+typedef enum {
+    RESP_PENDING      = 0, /* 尚未响应本题 */
+    RESP_OK           = 1, /* 正确 */
+    RESP_BAD_STATUS   = 2, /* 任务回包状态异常 */
+    RESP_WRONG_ANSWER = 3, /* 回答错误 */
+} wdg_resp_result_t;
+
 /**
- *
- * @param id       肇事者任务id
- * @param seq      序列号
- * @param nonce    随机数
- * @param expected 期待的答案
- * @param got      实际的答案
- * @param reason   死亡原因
+ * @brief 失败钩子默认弱实现，可在 port 层覆盖
  */
 __attribute__((weak)) void wdg_sup_fail_hook(uint8_t id, uint32_t seq, uint32_t nonce,
                                              uint32_t expected, uint32_t got, uint32_t reason) {
-    /* 默认空实现：你可以在别处实现它并在里面调用 blackbox */
     (void)id;
     (void)seq;
     (void)nonce;
@@ -140,6 +138,7 @@ __attribute__((weak)) void wdg_sup_fail_hook(uint8_t id, uint32_t seq, uint32_t 
  */
 static void latch_fail_and_wait_reset(void) {
     s_fail_latched = true;
+    s_state        = WDG_SUP_STATE_FAIL_LATCHED;
     /* 停止喂狗，等待 IWDG 复位；可进入安全态 */
     while (1) {
 #if defined(__WFI)
@@ -151,7 +150,7 @@ static void latch_fail_and_wait_reset(void) {
  * @brief 初始化看门狗全局变量
  * @param period_ms 监控周期
  * @param boot_grace_ms 开机宽限时间
- * @return
+ * @return RET_OK:成功，其他:错误码
  */
 ret_code_t wdg_sup_init(uint32_t period_ms, uint32_t boot_grace_ms) {
     if (period_ms == 0u) return RET_MAKE_PARAM(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_RANGE_ERR);
@@ -171,6 +170,7 @@ ret_code_t wdg_sup_init(uint32_t period_ms, uint32_t boot_grace_ms) {
     s_required_ch_mask = 0;
     /* 死亡锁存为 false */
     s_fail_latched     = false;
+    s_state            = WDG_SUP_STATE_INIT;
     /* 全局题目号 */
     s_seq              = 0;
     /* 开机时的题目号 */
@@ -204,13 +204,16 @@ ret_code_t wdg_sup_register(uint8_t *out_id, const char *name, wdg_watch_type_t 
     /* 遍历找到一个没有被使用的位置用于存储当前 任务的注册 */
     for (uint32_t i = 0; i < WDG_SUP_MAX_WATCH; i++) {
         if (!s_watch[i].used) {
-            s_watch[i].used        = true;
-            s_watch[i].type        = type;
-            s_watch[i].algo        = algo;
-            s_watch[i].key         = key;
-            s_watch[i].param       = (param == 0u) ? 1u : param;
-            s_watch[i].deadline_ms = deadline_ms;
-            s_watch[i].name        = name;
+            s_watch[i].used           = true;
+            s_watch[i].type           = type;
+            s_watch[i].algo           = algo;
+            s_watch[i].key            = key;
+            s_watch[i].param          = (param == 0u) ? 1u : param;
+            s_watch[i].deadline_ms    = deadline_ms;
+            s_watch[i].hb_miss_budget = 1u;
+            s_watch[i].hb_miss_count  = 0u;
+            s_watch[i].chal_tick_ms   = 0u;
+            s_watch[i].name           = (name != NULL) ? name : "unnamed";
             /* 心跳类型 */
             if (type == WDG_WATCH_HEARTBEAT) {
                 s_required_hb_mask |= (1u << i);
@@ -308,6 +311,64 @@ static bool in_boot_grace_window(void) {
     const uint32_t now = hal_get_tick_ms();
     return (s_boot_grace_ms > 0u) && ((now - s_boot_tick0) < s_boot_grace_ms);
 }
+
+/**
+ * @brief 更新监督器运行状态
+ * @return true:本周期刚从 WARMUP 进入 RUN，false:未发生该切换
+ * @note 内部辅助函数
+ */
+static bool update_runtime_state(void) {
+    bool entered_run = false;
+    if (s_state == WDG_SUP_STATE_INIT) {
+        s_state = WDG_SUP_STATE_WARMUP;
+    }
+    if (s_state == WDG_SUP_STATE_WARMUP && !in_boot_grace_window()) {
+        s_state     = WDG_SUP_STATE_RUN;
+        entered_run = true;
+    }
+    return entered_run;
+}
+
+/**
+ * @brief 重置所有 HEARTBEAT 任务的缺失窗口计数
+ * @note 仅在 WARMUP 期间调用，避免启动阶段误判
+ */
+static void reset_heartbeat_windows(void) {
+    for (uint32_t i = 0; i < WDG_SUP_MAX_WATCH; i++) {
+        if (s_watch[i].used && s_watch[i].type == WDG_WATCH_HEARTBEAT) {
+            s_watch[i].hb_miss_count = 0u;
+        }
+    }
+}
+
+/**
+ * @brief 检查 HEARTBEAT 任务是否超出允许缺失窗口
+ * @param seq 当前监督序列号，用于失败记录
+ * @note 任一任务达到缺失上限即锁存失败，停止喂狗等待硬复位
+ */
+static void check_heartbeat_or_fail(uint32_t seq) {
+    for (uint32_t i = 0; i < WDG_SUP_MAX_WATCH; i++) {
+        /* 找出是 心跳监测的任务 id*/
+        if (!(s_required_hb_mask & (1u << i))) continue;
+        /* 查看当前id的心跳是否是 有响应 */
+        const bool seen = ((s_seen_hb_mask & (1u << i)) != 0u);
+        /* 缺失复位 */
+        if (seen) {
+            s_watch[i].hb_miss_count = 0u;
+            continue;
+        }
+        /* 缺失计数 +1 */
+        if (s_watch[i].hb_miss_count < UINT32_MAX) {
+            s_watch[i].hb_miss_count++;
+        }
+        /* 缺失计数大于 指定配置 记录并打印错误 */
+        if (s_watch[i].hb_miss_count >= s_watch[i].hb_miss_budget) {
+            wdg_sup_fail_hook((uint8_t)i, seq, 0u, s_watch[i].hb_miss_budget,
+                              s_watch[i].hb_miss_count, WDG_SUP_FAIL_HB_MISSING);
+            latch_fail_and_wait_reset();
+        }
+    }
+}
 /**
  * @brief 给任务邮箱推送做题的资源
  * @param id 任务id
@@ -317,109 +378,103 @@ static bool in_boot_grace_window(void) {
  */
 static void publish_challenge(uint8_t id, uint32_t seq, uint32_t nonce) {
     /* 获取到邮箱 */
-    wdg_mailbox_t *mb = &s_mb[id];
+    wdg_mailbox_t *mb        = &s_mb[id];
+    s_watch[id].chal_tick_ms = hal_get_tick_ms();
     /* 推送任务做题需要的东西 */
-    mb->chal.nonce    = nonce;
-    mb->chal.algo     = (uint32_t)s_watch[id].algo;
-    mb->chal.param    = s_watch[id].param;
+    mb->chal.nonce           = nonce;
+    mb->chal.algo            = (uint32_t)s_watch[id].algo;
+    mb->chal.param           = s_watch[id].param;
 
     /* 先写 nonce/algo/param，再发布 chal.seq */
     mem_barrier();
     mb->chal.seq = seq;
 }
 /**
- * @brief 判断一次挑战是否成功
+ * @brief 检查一次 challenge 响应结果
  * @param id 任务id
- * @param seq 序列号
- * @param nonce 随机数
- * @param out_got 输出任务回复的答案
- * @return 答案是否正确 且是对应的题号
+ * @param seq 当前挑战序号
+ * @param nonce 当前挑战随机数
+ * @param out_got 输出：任务回包值（可为 NULL）
+ * @param out_expected 输出：监督器期望值（可为 NULL）
+ * @return 响应状态：pending/ok/bad_status/wrong_answer
  */
-static bool check_one_response(uint8_t id, uint32_t seq, uint32_t nonce, uint32_t *out_got) {
-    /* 获取到邮箱 */
+static wdg_resp_result_t check_one_response(uint8_t id, uint32_t seq, uint32_t nonce,
+                                            uint32_t *out_got, uint32_t *out_expected) {
+    /* 获取邮箱 */
     const wdg_mailbox_t *mb = &s_mb[id];
+    /* 获取任务计算的题目号 */
     const uint32_t rseq     = mb->resp.seq;
-    /* 确保题号一致 */
-    if (rseq != seq) return false;
+    /* 题目不符 */
+    if (rseq != seq) return RESP_PENDING;
+
     /* 读到 resp.seq 后再读 value/status */
     mem_barrier();
-    const uint32_t got = mb->resp.value;
-    if (out_got) *out_got = got;
-
-    if (mb->resp.status != 0u) return false;
-    /* 判断答案是否一致 */
+    /* 获取任务计算的答案 */
+    const uint32_t got      = mb->resp.value;
+    /* 计算正确值 */
     const uint32_t expected = wdg_expected_calc(id, nonce, seq);
-    return (got == expected);
+    /* 将任务计算的答案返回出去 */
+    if (out_got) *out_got = got;
+    /* 将题目的正确答案 返回 */
+    if (out_expected) *out_expected = expected;
+
+    if (mb->resp.status != 0u) return RESP_BAD_STATUS;
+    /* 判断答案是否正确 */
+    if (got != expected) return RESP_WRONG_ANSWER;
+    return RESP_OK;
 }
 
 /**
- *
- * @return
+ * @brief 执行一轮 challenge 出题与统一判题
+ * @param seq 本轮挑战序号
+ * @param nonce 本轮挑战随机数
+ * @note 本轮所有 CHALLENGE 任务均答对后才返回；任一失败立即锁存
  */
-static ret_code_t supervisor_one_cycle(void) {
-    if (s_fail_latched) latch_fail_and_wait_reset();
-
-    /* 1、非宽限期检查心跳 */
-    /* 非上电宽限期 */
-    if (!in_boot_grace_window()) {
-        /* 检查是否心跳正确 */
-        if ((s_seen_hb_mask & s_required_hb_mask) != s_required_hb_mask) {
-            /* 获取哪些任务没有心跳 */
-            const uint32_t missing = (s_required_hb_mask & ~s_seen_hb_mask);
-            /* 记录缺心跳（id=0xFF 表示系统级） */
-            wdg_sup_fail_hook(0xFFu, s_seq, 0u, s_required_hb_mask, missing, WDG_FAIL_HB_MISSING);
-            /* 等待复位 */
-            latch_fail_and_wait_reset();
-        }
-    }
-    s_seen_hb_mask = 0; /* 清心跳收集 */
-
-    /* 2、 发题 */
-    s_seq++;
-    const uint32_t seq   = s_seq;
-
-    /* 每周期一个 随机数 */
-    const uint32_t nonce = prng_next() ^ hal_get_tick_ms() ^ (seq * 0x9E3779B9u);
-
-    /* 对所有 任务 发布挑战 */
+static void run_challenge_round(uint32_t seq, uint32_t nonce) {
+    /* 给注册挑战的任务 发送题目 */
     for (uint32_t i = 0; i < WDG_SUP_MAX_WATCH; i++) {
         if (s_watch[i].used && s_watch[i].type == WDG_WATCH_CHALLENGE) {
             publish_challenge((uint8_t)i, seq, nonce);
         }
     }
-    /* 3、等待所有任务在期限内 答题成功 */
-    const uint32_t start = hal_get_tick_ms();
-
     while (1) {
-        /* 判断是否已经被标记死亡 */
+        /* 判断是否锁存死亡 */
         if (s_fail_latched) latch_fail_and_wait_reset();
+
         bool all_ok = true;
         for (uint32_t i = 0; i < WDG_SUP_MAX_WATCH; i++) {
-            /* 去除不是挑战的任务id */
+            /* 剔除掉不是挑战的 id */
             if (!(s_required_ch_mask & (1u << i))) continue;
-            /* 记录时间 */
-            const uint32_t now     = hal_get_tick_ms();
-            const uint32_t elapsed = now - start;
 
-            /* 任务超时 */
-            if (elapsed > s_watch[i].deadline_ms) {
-                uint32_t got = 0;
-                /* 获取回复的答案 */
-                (void)check_one_response((uint8_t)i, seq, nonce, &got);
-                /* 计算答案 */
-                const uint32_t expected = wdg_expected_calc((uint8_t)i, nonce, seq);
-                /* 记录原因 */
-                wdg_sup_fail_hook((uint8_t)i, seq, nonce, expected, got, WDG_FAIL_TIMEOUT);
-                /* 等待复位 */
+            uint32_t got      = UINT32_MAX;
+            uint32_t expected = 0u;
+            /* 进行题目答案比对 */
+            const wdg_resp_result_t rs =
+                check_one_response((uint8_t)i, seq, nonce, &got, &expected);
+            /* 通过挑战 通过进行下一个id */
+            if (rs == RESP_OK) {
+                continue;
+            }
+            /* 未通过挑战 */
+            all_ok = false;
+            /* 有响应但错误：立即失败，不再继续等待 */
+            if (rs == RESP_BAD_STATUS || rs == RESP_WRONG_ANSWER) {
+                wdg_sup_fail_hook((uint8_t)i, seq, nonce, expected, got, WDG_SUP_FAIL_WRONG_ANSWER);
                 latch_fail_and_wait_reset();
             }
-            /* 没有超时 正常判断 */
-            uint32_t got  = 0;
-            const bool ok = check_one_response((uint8_t)i, seq, nonce, &got);
-            if (!ok) {
-                all_ok = false;
+
+            /* 尚未响应：按“本任务发布时间戳”独立判超时 */
+            const uint32_t now     = hal_get_tick_ms();
+            const uint32_t elapsed = now - s_watch[i].chal_tick_ms;
+            /* 判断是否是超时 */
+            if (elapsed > s_watch[i].deadline_ms) {
+                /* 挑战失败且超时 */
+                expected = wdg_expected_calc((uint8_t)i, nonce, seq);
+                wdg_sup_fail_hook((uint8_t)i, seq, nonce, expected, got, WDG_SUP_FAIL_TIMEOUT);
+                latch_fail_and_wait_reset();
             }
         }
+
         if (all_ok) break;
 #if defined(CFG_FEAT_OSAL_BACKEND_CMSIS_OS2) && (CFG_FEAT_OSAL_BACKEND_CMSIS_OS2 == 1)
         if (OSAL_kernel_is_running()) {
@@ -429,12 +484,41 @@ static ret_code_t supervisor_one_cycle(void) {
         __WFI();
 #endif
     }
+}
 
-    /* 4、喂狗 */
+/**
+ * @brief Supervisor 单周期执行
+ */
+static ret_code_t supervisor_one_cycle(void) {
+    /* 确保已经初始化 且 状态正常 */
+    if (s_fail_latched || s_state == WDG_SUP_STATE_FAIL_LATCHED) {
+        latch_fail_and_wait_reset();
+    }
+    const bool just_entered_run = update_runtime_state();
+    /*　判断是否是在run状态 且不是刚进入的 */
+    if (s_state == WDG_SUP_STATE_RUN && !just_entered_run) {
+        /* 检查 HEARTBEAT 任务是否超出允许缺失窗口 */
+        check_heartbeat_or_fail(s_seq);
+    } else {
+        /* WARMUP：仅保活，不做严格心跳判死 */
+        reset_heartbeat_windows();
+    }
+    /* 复位心跳掩码 */
+    s_seen_hb_mask = 0u;
+    uint32_t seq   = s_seq;
+    uint32_t nonce = 0u;
+    /*　判断是否是在run状态 且不是刚进入的 */
+    if (s_state == WDG_SUP_STATE_RUN && !just_entered_run && s_required_ch_mask != 0u) {
+        s_seq++;
+        seq   = s_seq;
+        nonce = prng_next() ^ hal_get_tick_ms() ^ (seq * 0x9E3779B9u);
+        /* 执行一轮 challenge 出题与统一判题 */
+        run_challenge_round(seq, nonce);
+    }
+    /* 喂狗 */
     const ret_code_t rc = hal_wdg_kick();
     if (ret_is_err(rc)) {
-        /* 硬件喂狗失败 */
-        wdg_sup_fail_hook(0xFEu, seq, nonce, 0u, (uint32_t)rc, WDG_FAIL_FRESH);
+        wdg_sup_fail_hook(WDG_SUP_ID_WDG_KICK, seq, nonce, 0u, (uint32_t)rc, WDG_SUP_FAIL_FRESH);
         latch_fail_and_wait_reset();
     }
 
@@ -486,7 +570,7 @@ ret_code_t wdg_sup_start(void) {
 #endif
 }
 /**
- * @brief 用于
+ * @brief 用于裸机看门狗周期任务
  * @return 32位状态码
  */
 ret_code_t wdg_sup_poll(void) {
@@ -501,6 +585,115 @@ ret_code_t wdg_sup_poll(void) {
         return supervisor_one_cycle();
     }
     return RET_OK;
+}
+
+/**
+ * @brief 设置 HEARTBEAT 任务允许缺失的周期窗口
+ * @param id HEARTBEAT 任务id
+ * @param miss_budget_cycles 允许连续缺失周期数（>=1）
+ * @return RET_OK:成功，其他:错误码
+ */
+ret_code_t wdg_sup_set_hb_miss_budget(uint8_t id, uint32_t miss_budget_cycles) {
+    /* 确保已经初始化 */
+    if (!s_inited) return RET_MAKE_STATE(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_NOT_READY);
+    /* 确保id 有效范围内 */
+    if (id >= WDG_SUP_MAX_WATCH)
+        return RET_MAKE_PARAM(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_RANGE_ERR);
+    /* 确保id 类型为心跳 */
+    if (!s_watch[id].used || s_watch[id].type != WDG_WATCH_HEARTBEAT)
+        return RET_MAKE_PARAM(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_RANGE_ERR);
+    /* 检查合法的缺失周期窗口 */
+    if (miss_budget_cycles == 0u)
+        return RET_MAKE_PARAM(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_RANGE_ERR);
+    /* 设置缺失周期数 */
+    s_watch[id].hb_miss_budget = miss_budget_cycles;
+    return RET_OK;
+}
+
+/**
+ * @brief 获取 HEARTBEAT 任务允许缺失的周期窗口
+ * @param id HEARTBEAT 任务id
+ * @return 允许缺失周期数；参数非法时返回0
+ */
+uint32_t wdg_sup_get_hb_miss_budget(uint8_t id) {
+    if (id >= WDG_SUP_MAX_WATCH) return 0u;
+    if (!s_watch[id].used || s_watch[id].type != WDG_WATCH_HEARTBEAT) return 0u;
+    return s_watch[id].hb_miss_budget;
+}
+
+/**
+ * @brief 计算 deadline 预算值（毫秒）
+ * @param service_ms 任务服务周期（通常取 2 倍任务周期）
+ * @param jitter_ms 调度抖动预算
+ * @param compute_ms 算法计算耗时预算
+ * @param margin_ms 安全余量
+ * @return 预算结果；溢出时饱和到 UINT32_MAX
+ */
+uint32_t wdg_sup_deadline_budget_ms(uint32_t service_ms, uint32_t jitter_ms, uint32_t compute_ms,
+                                    uint32_t margin_ms) {
+    const uint64_t sum =
+        (uint64_t)service_ms + (uint64_t)jitter_ms + (uint64_t)compute_ms + (uint64_t)margin_ms;
+    if (sum > UINT32_MAX) return UINT32_MAX;
+    return (uint32_t)sum;
+}
+
+/**
+ * @brief 调试辅助：按 id 获取监控对象名称
+ */
+const char *wdg_sup_get_name(uint8_t id) {
+    if (id == WDG_SUP_ID_SYSTEM_HEARTBEAT) return "system_heartbeat";
+    if (id == WDG_SUP_ID_WDG_KICK) return "wdg_kick";
+    if (id < WDG_SUP_MAX_WATCH && s_watch[id].used && s_watch[id].name != NULL) {
+        return s_watch[id].name;
+    }
+    return "unknown";
+}
+
+/**
+ * @brief 将失败原因码转换为可读字符串
+ * @param reason 失败原因码
+ * @return 原因字符串
+ */
+const char *wdg_sup_reason_str(uint32_t reason) {
+    switch (reason) {
+        case WDG_SUP_FAIL_TIMEOUT:
+            return "timeout";
+        case WDG_SUP_FAIL_WRONG_ANSWER:
+            return "wrong_answer";
+        case WDG_SUP_FAIL_HB_MISSING:
+            return "hb_missing";
+        case WDG_SUP_FAIL_FRESH:
+            return "kick_failed";
+        default:
+            return "unknown";
+    }
+}
+
+/**
+ * @brief 获取监督器当前状态值
+ * @return 监督器状态枚举
+ */
+wdg_sup_state_t wdg_sup_get_state(void) {
+    return s_state;
+}
+
+/**
+ * @brief 获取监督器当前状态名称
+ * @return 状态字符串
+ */
+const char *wdg_sup_get_state_name(void) {
+    switch (s_state) {
+        case WDG_SUP_STATE_INIT:
+            return "init";
+        case WDG_SUP_STATE_WARMUP:
+            return "warmup";
+        case WDG_SUP_STATE_RUN:
+            return "run";
+        case WDG_SUP_STATE_FAIL_LATCHED:
+            return "fail_latched";
+        default:
+            return "unknown";
+    }
 }
 
 #endif

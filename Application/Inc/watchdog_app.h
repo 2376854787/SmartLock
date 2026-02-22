@@ -8,7 +8,7 @@ extern "C" {
 #endif
 #define CFG_PARAM_WATCHDOG_APP_TIMEOUT_MS    8000u
 #define CFG_PARAM_WATCHDOG_APP_SUP_PERIOD_MS 200u
-#define CFG_PARAM_WATCHDOG_APP_BOOT_GRACE_MS 6000u
+#define CFG_PARAM_WATCHDOG_APP_BOOT_GRACE_MS 8000u
 
 ret_code_t Watchdog_AppInit(void);
 
