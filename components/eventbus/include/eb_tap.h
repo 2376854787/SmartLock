@@ -1,4 +1,4 @@
-#ifndef EB_TAP_H
+﻿#ifndef EB_TAP_H
 #define EB_TAP_H
 
 #include <stdbool.h>
@@ -7,7 +7,7 @@
 #include "eb_config.h"
 #include "eb_types.h"
 
-#if (EB_CFG_ENABLE_TAP == 1)
+#if (defined(EB_CFG_ENABLE_TAP) && (EB_CFG_ENABLE_TAP == 1))
 
 
 typedef struct {
@@ -30,3 +30,4 @@ void eb_tap_on_drop(const eb_event_t* ev, uint8_t drop_reason);
 
 #endif /* EB_CFG_ENABLE_TAP */
 #endif /* EB_TAP_H */
+

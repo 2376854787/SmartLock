@@ -8,7 +8,7 @@
 #else
 /* 无法判断就强制就在编译选项里定义 CORE_CPU_LITTLE_ENDIAN=1/0 */
 #if !defined(CORE_CPU_LITTLE_ENDIAN)
-#error "Define CORE_CPU_LITTLE_ENDIAN (1=little,0=big)"
+#error "请定义 CORE_CPU_LITTLE_ENDIAN（1=小端，0=大端）"
 #endif
 #define CORE_LITTLE_ENDIAN (CORE_CPU_LITTLE_ENDIAN)
 #endif

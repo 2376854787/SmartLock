@@ -1,4 +1,4 @@
-#ifndef EB_BUDGET_H
+﻿#ifndef EB_BUDGET_H
 #define EB_BUDGET_H
 
 #include <stdint.h>
@@ -6,7 +6,7 @@
 #include "eb_config.h"
 #include "eb_types.h"
 
-#if (EB_CFG_ENABLE_BUDGET == 1)
+#if (defined(EB_CFG_ENABLE_BUDGET) && (EB_CFG_ENABLE_BUDGET == 1))
 
 /* Budget Police：性能证据链（直方图）。
  * - 记录：dispatch 单次耗时（按 prio 聚合）+ 每轮 pump 总耗时。
@@ -49,3 +49,4 @@ uint32_t eb_budget_buckets(void);
 #endif /* EB_CFG_ENABLE_BUDGET */
 
 #endif /* EB_BUDGET_H */
+

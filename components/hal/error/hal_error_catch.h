@@ -1,0 +1,8 @@
+//
+// Created by yan on 2026/2/22.
+//
+
+#ifndef SMARTLOCK_HAL_ERROR_CATCH_H
+#define SMARTLOCK_HAL_ERROR_CATCH_H
+
+#endif  // SMARTLOCK_HAL_ERROR_CATCH_H

@@ -1,6 +1,6 @@
-#include "APP_config.h"
+﻿#include "APP_config.h"
 /* 全局配置开启宏 */
-#if defined(ENABLE_HFSM_SYSTEM)
+#if (defined(CFG_FEAT_HFSM_SYSTEM) && (CFG_FEAT_HFSM_SYSTEM == 1))
 #include <stddef.h>
 #include <stdio.h>  // 鐢ㄤ簬 printf 璋冭瘯
 
@@ -22,13 +22,13 @@
 
 /*
  * 逻辑说明：
- * 1. 优先级最高：如果 局部开关(LOG_ENABLE) 和 总开关(ENABLE_LOG_SYSTEM) 都开启 -> 使用日志系统
+ * 1. 优先级最高：如果 局部开关(LOG_ENABLE) 和 总开关(CFG_FEAT_LOG_SYSTEM) 都开启 -> 使用日志系统
  * (log.h)
  * 2. 优先级中等：如果 只有局部开关，但没有总开关 -> 回退使用 printf (方便调试)
  * 3. 优先级最低：如果 局部开关没开 -> 所有日志宏定义为空 (不占空间)
  */
 
-#if defined(ENABLE_LOG_SYSTEM) && defined(LOG_ENABLE)
+#if (defined(CFG_FEAT_LOG_SYSTEM) && (CFG_FEAT_LOG_SYSTEM == 1)) && defined(LOG_ENABLE)
 
 /* --- 情况一：双开关同时开启 -> 使用工程日志系统 --- */
 #include "log.h"
@@ -130,3 +130,5 @@ void HFSM_HandleEvent(StateMachine* fsm, const Event* event) {
 }
 
 #endif
+
+

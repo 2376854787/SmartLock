@@ -1,8 +1,8 @@
-#include "hal_gpio.h"
+﻿#include "hal_gpio.h"
 
 #include "APP_config.h"
 
-#if defined(ENABLE_HAL_GPIO)
+#if (defined(CFG_FEAT_HAL_GPIO) && (CFG_FEAT_HAL_GPIO == 1))
 
 /**
  * 平台接口
@@ -136,3 +136,5 @@ ret_code_t hal_gpio_unregister_irq(hal_gpio_t* h) {
     return RET_E_UNSUPPORTED;
 }
 #endif
+
+

@@ -1,6 +1,8 @@
 #include "KEY.h"
+
+#include "APP_config.h"
 /* 全局代码启用配置宏 */
-#if defined(ENABLE_KEYS)
+#if defined(CFG_FEAT_KEYS) && (CFG_FEAT_KEYS == 1)
 #include <stdint.h>
 #include <stdio.h>  // 用于 printf 调试
 

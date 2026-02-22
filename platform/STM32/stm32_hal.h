@@ -1,9 +1,9 @@
-#ifndef STM32_HAL_H
+﻿#ifndef STM32_HAL_H
 #define STM32_HAL_H
 
 #include "stm32_hal_config.h"
 /* hal抽象选择宏 */
-#if defined(USE_STM32_HAL)
+#if (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1))
 /* 保证有且只定义了一个平台的宏 */
 #if (defined(STM32C0XX) + defined(STM32F0XX) + defined(STM32F1XX) + defined(STM32F2XX) +     \
          defined(STM32F3XX) + defined(STM32F4XX) + defined(STM32F7XX) + defined(STM32H5XX) + \
@@ -11,7 +11,7 @@
          defined(STM32L1XX) + defined(STM32L4XX) + defined(STM32L5XX) + defined(STM32N6XX) + \
          defined(STM32U0XX) + defined(STM32U3XX) + defined(STM32U5XX) !=                     \
      1)
-#error "Select exactly one STM32 series macro"
+#error "STM32 系列宏必须且只能定义一个。"
 #endif
 
 /* stm32系列宏开关 */
@@ -93,3 +93,5 @@
 
 #endif
 #endif
+
+

@@ -1,6 +1,6 @@
-#include "eb_tap.h"
+﻿#include "eb_tap.h"
 
-#if (EB_CFG_ENABLE_TAP == 1)
+#if (defined(EB_CFG_ENABLE_TAP) && (EB_CFG_ENABLE_TAP == 1))
 
 #include <string.h>
 
@@ -77,3 +77,4 @@ void eb_tap_on_drop(const eb_event_t* ev, uint8_t drop_reason) {
 }
 
 #endif
+

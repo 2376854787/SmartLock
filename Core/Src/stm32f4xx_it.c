@@ -358,10 +358,11 @@ void DMA2_Stream7_IRQHandler(void)
 
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef* huart) {
     /* 串口回调 */
-#if (CFG_TARGET_PLATFORM_STM32_HAL == 1) && (CFG_FEAT_HAL_UART == 1)
+#if (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1)) && (defined(CFG_FEAT_HAL_UART) && (CFG_FEAT_HAL_UART == 1))
     hal_uart_txCp_case(huart);
 #endif
 }
 
 /* USER CODE END 1 */
+
 

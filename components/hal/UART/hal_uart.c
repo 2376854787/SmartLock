@@ -1,12 +1,12 @@
-#include "hal_uart.h"
-#include "hal_uart_port.h"
+﻿#include "hal_uart.h"
 
 #include <stddef.h>
 
 #include "APP_config.h"
+#include "hal_uart_port.h"
 #include "log.h"
 
-#if defined(ENABLE_HAL_UART)
+#if (defined(CFG_FEAT_HAL_UART) && (CFG_FEAT_HAL_UART == 1))
 
 #ifndef UART_HAL_RET
 #define UART_HAL_RET(cls_, reason_) \
@@ -153,7 +153,7 @@ ret_code_t hal_uart_set_evt_cb(hal_uart_t* h, hal_uart_evt_cb_t cb, void* user) 
     return RET_OK;
 }
 
-#else /* !ENABLE_HAL_UART */
+#else /* !CFG_FEAT_HAL_UART */
 
 #ifndef UART_HAL_RET
 #define UART_HAL_RET(cls_, reason_) \
@@ -214,4 +214,6 @@ ret_code_t hal_uart_set_evt_cb(hal_uart_t* h, hal_uart_evt_cb_t cb, void* user) 
     return UART_HAL_RET(RET_CLASS_PARAM, RET_R_UNSUPPORTED);
 }
 
-#endif /* ENABLE_HAL_UART */
+#endif /* CFG_FEAT_HAL_UART */
+
+

@@ -1,4 +1,4 @@
-#include <stddef.h>
+﻿#include <stddef.h>
 
 #include "assert_cus.h"
 #include "eb_api.h"
@@ -8,15 +8,15 @@
 #include "eb_storm.h"
 #include "eb_sub.h"
 
-#if (EB_CFG_ENABLE_TAP == 1)
+#if (defined(EB_CFG_ENABLE_TAP) && (EB_CFG_ENABLE_TAP == 1))
 #include "eb_tap.h"
 #endif
 
-#if (EB_CFG_ENABLE_BUDGET == 1)
+#if (defined(EB_CFG_ENABLE_BUDGET) && (EB_CFG_ENABLE_BUDGET == 1))
 #include "eb_budget.h"
 #endif
 
-#if (EB_CFG_ENABLE_TRACE == 1)
+#if (defined(EB_CFG_ENABLE_TRACE) && (EB_CFG_ENABLE_TRACE == 1))
 #include "eb_trace.h"
 #endif
 
@@ -214,15 +214,15 @@ void eb_init(void) {
     eb_eventdef_init();
     eb_sub_init();
 
-#if (EB_CFG_ENABLE_STORM == 1)
+#if (defined(EB_CFG_ENABLE_STORM) && (EB_CFG_ENABLE_STORM == 1))
     /* 启用风暴防护 限制投递频率 */
     eb_storm_init();
 #endif
-#if (EB_CFG_ENABLE_TRACE == 1)
+#if (defined(EB_CFG_ENABLE_TRACE) && (EB_CFG_ENABLE_TRACE == 1))
     /* 启用追踪 */
     eb_trace_init();
 #endif
-#if (EB_CFG_ENABLE_BUDGET == 1)
+#if (defined(EB_CFG_ENABLE_BUDGET) && (EB_CFG_ENABLE_BUDGET == 1))
     // TODO 添加注释
     eb_budget_init();
 #endif
@@ -260,26 +260,26 @@ eb_ret_t eb_publish(const eb_event_t* ev_in) {
         ev.type_tag = def->type_tag;
     }
 
-#if (EB_CFG_ENABLE_TAP == 1)
+#if (defined(EB_CFG_ENABLE_TAP) && (EB_CFG_ENABLE_TAP == 1))
     eb_tap_on_pub(&ev);
 #endif
 
-#if (EB_CFG_ENABLE_STORM == 1)
+#if (defined(EB_CFG_ENABLE_STORM) && (EB_CFG_ENABLE_STORM == 1))
     /* 检查投递频率 */
     if (!eb_storm_allow(def, ev.source_id, ev.ts)) {
         eb_state_update(STORM_DROP);
-#if (EB_CFG_ENABLE_TRACE == 1)
+#if (defined(EB_CFG_ENABLE_TRACE) && (EB_CFG_ENABLE_TRACE == 1))
         /* 记录 */
         eb_trace_record(EB_TRACE_STORM_DROP, &ev, (eb_drop_reason_t)EB_TAP_DROP_STORM);
 #endif
-#if (EB_CFG_ENABLE_TAP == 1)
+#if (defined(EB_CFG_ENABLE_TAP) && (EB_CFG_ENABLE_TAP == 1))
         eb_tap_on_drop(&ev, (uint8_t)EB_TAP_DROP_STORM);
 #endif
         return EB_OK; /* 限频丢弃视为成功 */
     }
 #endif
 
-#if (EB_CFG_ENABLE_TRACE == 1)
+#if (defined(EB_CFG_ENABLE_TRACE) && (EB_CFG_ENABLE_TRACE == 1))
     eb_trace_record(EB_TRACE_PUB, &ev, (eb_drop_reason_t)EB_TAP_DROP_NONE);
 #endif
 
@@ -306,7 +306,7 @@ eb_ret_t eb_publish(const eb_event_t* ev_in) {
             if (ok) {
                 eb_port_exit_critical(pm);
                 eb_state_update(OW_Q_HIT);
-#if (EB_CFG_ENABLE_TRACE == 1)
+#if (defined(EB_CFG_ENABLE_TRACE) && (EB_CFG_ENABLE_TRACE == 1))
                 eb_trace_record(EB_TRACE_ENQ, &ev, (eb_drop_reason_t)EB_TAP_DROP_NONE);
 #endif
                 return EB_OK;
@@ -321,10 +321,10 @@ eb_ret_t eb_publish(const eb_event_t* ev_in) {
         else
             eb_state_update(DROP_Q_L);
 
-#if (EB_CFG_ENABLE_TRACE == 1)
+#if (defined(EB_CFG_ENABLE_TRACE) && (EB_CFG_ENABLE_TRACE == 1))
         eb_trace_record(EB_TRACE_DROP, &ev, (eb_drop_reason_t)EB_TAP_DROP_BUSQ_FULL);
 #endif
-#if (EB_CFG_ENABLE_TAP == 1)
+#if (defined(EB_CFG_ENABLE_TAP) && (EB_CFG_ENABLE_TAP == 1))
         eb_tap_on_drop(&ev, (uint8_t)EB_TAP_DROP_BUSQ_FULL);
 #endif
         return EB_ERR_FULL;
@@ -333,7 +333,7 @@ eb_ret_t eb_publish(const eb_event_t* ev_in) {
     eb_state_update(PUB_TOTAL);
     eb_port_exit_critical(pm);
 
-#if (EB_CFG_ENABLE_TRACE == 1)
+#if (defined(EB_CFG_ENABLE_TRACE) && (EB_CFG_ENABLE_TRACE == 1))
     eb_trace_record(EB_TRACE_ENQ, &ev, (eb_drop_reason_t)EB_TAP_DROP_NONE);
 #endif
     return EB_OK;
@@ -349,7 +349,7 @@ const eb_stats_t* eb_get_stats(void) {
  * @brief 处理队列里面的事件
  */
 void eb_pump_once(void) {
-#if (EB_CFG_ENABLE_BUDGET == 1)
+#if (defined(EB_CFG_ENABLE_BUDGET) && (EB_CFG_ENABLE_BUDGET == 1))
     const uint32_t round_t0 = eb_port_timestamp_us();
 #endif
 
@@ -365,17 +365,17 @@ void eb_pump_once(void) {
 
         /* 分发出列事件 +1 */
         eb_state_update(DEQ_H);
-#if (EB_CFG_ENABLE_TRACE == 1)
+#if (defined(EB_CFG_ENABLE_TRACE) && (EB_CFG_ENABLE_TRACE == 1))
         eb_trace_record(EB_TRACE_DEQ, &ev, (eb_drop_reason_t)EB_TAP_DROP_NONE);
 #endif
 
-#if (EB_CFG_ENABLE_BUDGET == 1)
+#if (defined(EB_CFG_ENABLE_BUDGET) && (EB_CFG_ENABLE_BUDGET == 1))
         /* 记录分发事件 */
         const uint32_t t0 = eb_port_timestamp_us();
 #endif
         /* 分发事件 */
         eb_dispatch(&ev);
-#if (EB_CFG_ENABLE_BUDGET == 1)
+#if (defined(EB_CFG_ENABLE_BUDGET) && (EB_CFG_ENABLE_BUDGET == 1))
         const uint32_t t1 = eb_port_timestamp_us();
         eb_budget_record_event(ev.prio, (uint32_t)(t1 - t0));
 #endif
@@ -389,15 +389,15 @@ void eb_pump_once(void) {
         if (!ok) break;
 
         eb_state_update(DEQ_M);
-#if (EB_CFG_ENABLE_TRACE == 1)
+#if (defined(EB_CFG_ENABLE_TRACE) && (EB_CFG_ENABLE_TRACE == 1))
         eb_trace_record(EB_TRACE_DEQ, &ev, (eb_drop_reason_t)EB_TAP_DROP_NONE);
 #endif
 
-#if (EB_CFG_ENABLE_BUDGET == 1)
+#if (defined(EB_CFG_ENABLE_BUDGET) && (EB_CFG_ENABLE_BUDGET == 1))
         const uint32_t t0 = eb_port_timestamp_us();
 #endif
         eb_dispatch(&ev);
-#if (EB_CFG_ENABLE_BUDGET == 1)
+#if (defined(EB_CFG_ENABLE_BUDGET) && (EB_CFG_ENABLE_BUDGET == 1))
         const uint32_t t1 = eb_port_timestamp_us();
         eb_budget_record_event(ev.prio, (uint32_t)(t1 - t0));
 #endif
@@ -412,22 +412,23 @@ void eb_pump_once(void) {
         if (!ok) break;
 
         eb_state_update(DEQ_L);
-#if (EB_CFG_ENABLE_TRACE == 1)
+#if (defined(EB_CFG_ENABLE_TRACE) && (EB_CFG_ENABLE_TRACE == 1))
         eb_trace_record(EB_TRACE_DEQ, &ev, (eb_drop_reason_t)EB_TAP_DROP_NONE);
 #endif
 
-#if (EB_CFG_ENABLE_BUDGET == 1)
+#if (defined(EB_CFG_ENABLE_BUDGET) && (EB_CFG_ENABLE_BUDGET == 1))
         const uint32_t t0 = eb_port_timestamp_us();
 #endif
         eb_dispatch(&ev);
-#if (EB_CFG_ENABLE_BUDGET == 1)
+#if (defined(EB_CFG_ENABLE_BUDGET) && (EB_CFG_ENABLE_BUDGET == 1))
         const uint32_t t1 = eb_port_timestamp_us();
         eb_budget_record_event(ev.prio, (uint32_t)(t1 - t0));
 #endif
     }
 
-#if (EB_CFG_ENABLE_BUDGET == 1)
+#if (defined(EB_CFG_ENABLE_BUDGET) && (EB_CFG_ENABLE_BUDGET == 1))
     const uint32_t round_t1 = eb_port_timestamp_us();
     eb_budget_record_round((uint32_t)(round_t1 - round_t0));
 #endif
 }
+

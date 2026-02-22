@@ -1,4 +1,4 @@
-#ifndef SMARTLOCK_EB_STORM_H
+﻿#ifndef SMARTLOCK_EB_STORM_H
 #define SMARTLOCK_EB_STORM_H
 
 #include <stdbool.h>
@@ -7,7 +7,7 @@
 #include "eb_config.h"
 #include "eb_eventdef.h"
 
-#if (EB_CFG_ENABLE_STORM == 1)
+#if (defined(EB_CFG_ENABLE_STORM) && (EB_CFG_ENABLE_STORM == 1))
 
 void eb_storm_init(void);
 
@@ -23,3 +23,4 @@ static inline bool eb_storm_allow(const eb_eventdef_t* def, uint16_t source_id, 
 #endif
 
 #endif
+

@@ -1,4 +1,4 @@
-#ifndef SMARTLOCK_EB_API_H
+﻿#ifndef SMARTLOCK_EB_API_H
 #define SMARTLOCK_EB_API_H
 #include "eb_types.h"
 
@@ -113,16 +113,17 @@ void eb_state_update(eb_stats_event_t ev);
 /* ================= Top-Tier 扩展 API ================= */
 #include "eb_config.h"
 
-#if (EB_CFG_ENABLE_TRACE == 1)
+#if (defined(EB_CFG_ENABLE_TRACE) && (EB_CFG_ENABLE_TRACE == 1))
 #include "eb_trace.h"
 #endif
 
-#if (EB_CFG_ENABLE_BUDGET == 1)
+#if (defined(EB_CFG_ENABLE_BUDGET) && (EB_CFG_ENABLE_BUDGET == 1))
 #include "eb_budget.h"
 #endif
 
-#if (EB_CFG_ENABLE_TAP == 1)
+#if (defined(EB_CFG_ENABLE_TAP) && (EB_CFG_ENABLE_TAP == 1))
 #include "eb_tap.h"
 #endif
 
 #endif  // SMARTLOCK_EB_API_H
+

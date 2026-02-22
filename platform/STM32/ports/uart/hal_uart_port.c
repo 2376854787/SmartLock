@@ -1,7 +1,7 @@
-#include "APP_config.h"
+﻿#include "APP_config.h"
 #include "stm32_hal_config.h"
 /* hal抽象选择宏 */
-#if defined(USE_STM32_HAL) && defined(ENABLE_HAL_UART)
+#if (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1)) && (defined(CFG_FEAT_HAL_UART) && (CFG_FEAT_HAL_UART == 1))
 #include <stdio.h>
 #include <string.h>
 
@@ -193,7 +193,7 @@ void hal_uart_error_case(const UART_HandleTypeDef* huart) {
  * @param Size  接收到的大小
  * @note 注意 需要判断当前芯片是否有空闲中断后 定义 HAL_UARTEx_ReceiveToIdle_DMA 宏
  */
-#if defined(USE_HAL_UARTEx_ReceiveToIdle_DMA)
+#if (defined(CFG_PARAM_UART_RX_USE_DMA_IDLE) && (CFG_PARAM_UART_RX_USE_DMA_IDLE == 1))
 void hal_uart_rx_event_case(const UART_HandleTypeDef* huart, uint16_t Size) {
     (void)Size;
     for (int i = 0; i < (int)HAL_UART_ID_MAX; i++) {
@@ -368,13 +368,13 @@ ret_code_t hal_uart_port_rx_start(hal_uart_t* h) {
     if (!h) return UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     hal_uart_t* u = (hal_uart_t*)h;
 
-#if defined(USE_HAL_UARTEx_ReceiveToIdle_DMA)
+#if (defined(CFG_PARAM_UART_RX_USE_DMA_IDLE) && (CFG_PARAM_UART_RX_USE_DMA_IDLE == 1))
     /* DMA + IDLE 方式接收方式 */
     if (HAL_UARTEx_ReceiveToIdle_DMA(u->bsp.huart, u->bsp.rx_dma_buf,
                                      (uint16_t)u->bsp.rx_dma_len) != HAL_OK)
         return UART_RET(RET_CLASS_IO, RET_R_IO);
     /* 可选：关 HT 降低中断 */
-#if (DISABLE_DMA_IT_HT)
+#if (defined(CFG_PARAM_UART_DISABLE_DMA_IT_HT) && (CFG_PARAM_UART_DISABLE_DMA_IT_HT == 1))
     __HAL_DMA_DISABLE_IT(u->bsp.huart->hdmarx, DMA_IT_HT);
 #endif
 
@@ -502,3 +502,5 @@ hal_uart_id_t hal_uart_port_get_id(const hal_uart_t* h) {
 }
 
 #endif
+
+

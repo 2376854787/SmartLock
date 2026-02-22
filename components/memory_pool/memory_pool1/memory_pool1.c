@@ -1,5 +1,5 @@
-#include "APP_config.h"
-#if defined(ENABLE_MEMORY_POOL)
+﻿#include "APP_config.h"
+#if (defined(CFG_FEAT_MEMORY_POOL) && (CFG_FEAT_MEMORY_POOL == 1))
 #include <stdbool.h>
 #include <string.h>
 
@@ -427,3 +427,5 @@ ret_code_t mp_check_pool(mp_pool1_t *p) {
     return RET_OK;
 }
 #endif
+
+

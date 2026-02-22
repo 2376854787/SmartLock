@@ -1,6 +1,6 @@
-#include "stm32_hal_config.h"
+﻿#include "APP_config.h"
 /* hal抽象选择宏 */
-#if defined(USE_STM32_HAL)
+#if (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1))
 #include "assert_cus.h"
 #include "log.h"
 #include "stm32_hal.h"
@@ -20,3 +20,5 @@ void Assert_PlatformLog(const char* msg) {
     //会造成递归等待之后修复调用RAW  LOG_E("Assert", msg);
 }
 #endif
+
+

@@ -1,8 +1,10 @@
-#include "crc16.h"
+﻿#include "crc16.h"
+
 #include <stdint.h>
+
 #include "APP_config.h"
 #include "ret_code.h"
-#if defined(ENABLE_CRC16)
+#if (defined(CFG_FEAT_CRC16) && (CFG_FEAT_CRC16 == 1))
 #define RET_MOD_UTIL(clas_, err_) \
     RET_MAKE(RET_MOD_TOOLS, RET_SUB_TOOLS_CRC, RET_CODE_MAKE((clas_), (err_)))
 /* 用于 CRC-16/MODBUS 和 CRC-16/USB 的查表（poly=0xA001, refin/refout=true）*/
@@ -207,3 +209,5 @@ ret_code_t crc16_cal_default_table(crc16_config_default name, const uint8_t* dat
 }
 
 #endif
+
+

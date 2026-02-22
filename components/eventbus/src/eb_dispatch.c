@@ -1,14 +1,14 @@
-#include "eb_api.h"
+﻿#include "eb_api.h"
 #include "eb_config.h"
 #include "eb_eventdef.h"
 #include "eb_port.h"
 #include "eb_sub.h"
 
-#if (EB_CFG_ENABLE_TAP == 1)
+#if (defined(EB_CFG_ENABLE_TAP) && (EB_CFG_ENABLE_TAP == 1))
 #include "eb_tap.h"
 #endif
 
-#if (EB_CFG_ENABLE_TRACE == 1)
+#if (defined(EB_CFG_ENABLE_TRACE) && (EB_CFG_ENABLE_TRACE == 1))
 #include "eb_trace.h"
 #endif
 
@@ -39,7 +39,7 @@ static inline bool eb_filter_hit(const eb_event_t* ev, const eb_sub_t* s) {
  * @return 判断携带类型和期待的类型是否一致
  */
 static inline bool eb_type_ok(const eb_event_t* ev, const eb_sub_t* s) {
-#if (EB_CFG_ENABLE_TYPECHECK == 1)
+#if (defined(EB_CFG_ENABLE_TYPECHECK) && (EB_CFG_ENABLE_TYPECHECK == 1))
     if (s->expected_type_tag == 0u) return true;
     return (ev->type_tag == s->expected_type_tag);
 #else
@@ -72,7 +72,7 @@ static eb_ret_t dispatch_one(const eb_event_t* ev, const eb_sub_t* s) {
     /* 投递到邮箱 */
     if (eb_port_mailbox_push(s->mailbox, ev)) {
         eb_state_update(MB_OK);
-#if (EB_CFG_ENABLE_TRACE == 1)
+#if (defined(EB_CFG_ENABLE_TRACE) && (EB_CFG_ENABLE_TRACE == 1))
         eb_trace_record(EB_TRACE_MB_OK, ev, (eb_drop_reason_t)EB_TAP_DROP_NONE);
 #endif
         return EB_OK;
@@ -84,17 +84,17 @@ static eb_ret_t dispatch_one(const eb_event_t* ev, const eb_sub_t* s) {
         (def->drop_policy == EB_OVERWRITE || def->drop_policy == EB_COALESCE_LATEST) &&
         eb_port_mailbox_overwrite(s->mailbox, ev)) {
         eb_state_update(MB_OW_HIT);
-#if (EB_CFG_ENABLE_TRACE == 1)
+#if (defined(EB_CFG_ENABLE_TRACE) && (EB_CFG_ENABLE_TRACE == 1))
         eb_trace_record(EB_TRACE_MB_OW, ev, (eb_drop_reason_t)EB_TAP_DROP_NONE);
 #endif
         return EB_OK;
     }
     /* 投递失败 满且丢弃*/
     eb_state_update(MB_FULL_DROP);
-#if (EB_CFG_ENABLE_TRACE == 1)
+#if (defined(EB_CFG_ENABLE_TRACE) && (EB_CFG_ENABLE_TRACE == 1))
     eb_trace_record(EB_TRACE_MB_DROP, ev, (eb_drop_reason_t)EB_TAP_DROP_MB_FULL);
 #endif
-#if (EB_CFG_ENABLE_TAP == 1)
+#if (defined(EB_CFG_ENABLE_TAP) && (EB_CFG_ENABLE_TAP == 1))
     eb_tap_on_drop(ev, (uint8_t)EB_TAP_DROP_MB_FULL);
 #endif
     return EB_ERR_FULL;
@@ -104,10 +104,10 @@ static eb_ret_t dispatch_one(const eb_event_t* ev, const eb_sub_t* s) {
  * @param ev 事件
  */
 void eb_dispatch(const eb_event_t* ev) {
-#if (EB_CFG_ENABLE_TRACE == 1)
+#if (defined(EB_CFG_ENABLE_TRACE) && (EB_CFG_ENABLE_TRACE == 1))
     eb_trace_record(EB_TRACE_DISPATCH, ev, (eb_drop_reason_t)EB_TAP_DROP_NONE);
 #endif
-#if (EB_CFG_ENABLE_TAP == 1)
+#if (defined(EB_CFG_ENABLE_TAP) && (EB_CFG_ENABLE_TAP == 1))
     eb_tap_on_dispatch(ev);
 #endif
 
@@ -128,10 +128,10 @@ void eb_dispatch(const eb_event_t* ev) {
         /* 类型检查 */
         if (!eb_type_ok(ev, &list[i])) {
             eb_state_update(TYPE_MISMATCH);
-#if (EB_CFG_ENABLE_TRACE == 1)
+#if (defined(EB_CFG_ENABLE_TRACE) && (EB_CFG_ENABLE_TRACE == 1))
             eb_trace_record(EB_TRACE_TYPE_MISMATCH, ev, (eb_drop_reason_t)EB_TAP_DROP_TYPE);
 #endif
-#if (EB_CFG_ENABLE_TAP == 1)
+#if (defined(EB_CFG_ENABLE_TAP) && (EB_CFG_ENABLE_TAP == 1))
             eb_tap_on_drop(ev, (uint8_t)EB_TAP_DROP_TYPE);
 #endif
             continue;
@@ -140,3 +140,4 @@ void eb_dispatch(const eb_event_t* ev) {
         (void)dispatch_one(ev, &list[i]);
     }
 }
+

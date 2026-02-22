@@ -1,6 +1,6 @@
-#include "APP_config.h"
+﻿#include "APP_config.h"
 /* 全局配置宏开关 */
-#if defined(ENABLE_LOG_SYSTEM)
+#if (defined(CFG_FEAT_LOG_SYSTEM) && (CFG_FEAT_LOG_SYSTEM == 1))
 #include <stdarg.h> /* 用于处理可变参数 va_list */
 #include <stdio.h>  /* 用于 snprintf, vsnprintf */
 #include <string.h> /* 用于 strrchr, memcpy */
@@ -561,3 +561,5 @@ void Log_OnTxDoneISR(void) {
 }
 
 #endif
+
+

@@ -46,7 +46,6 @@
 #include "lv_port_indev.h"
 #include "lvgl.h"
 #include "vectortable_to_ram.h"
-#include "wifi_mqtt_task.h"
 
 /* USER CODE END Includes */
 
@@ -192,8 +191,9 @@ int main(void)
   MX_USART3_UART_Init();
   MX_ADC3_Init();
   MX_I2C1_Init();
-  MX_IWDG_Init();
-  MX_WWDG_Init();
+  /* Watchdog is initialized by Watchdog_AppInit() in MX_FREERTOS_Init(). */
+  /* MX_IWDG_Init(); */
+  /* MX_WWDG_Init(); */
   /* USER CODE BEGIN 2 */
     /* 直接寄存器发送测试（不依赖HAL超时） */
     // BB_Info_Printf(); /* 打印复位/崩溃信息 */

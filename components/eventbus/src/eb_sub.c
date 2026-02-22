@@ -1,4 +1,4 @@
-#include "eb_sub.h"
+﻿#include "eb_sub.h"
 
 #include <string.h>
 
@@ -16,7 +16,7 @@
  * - 当 EB_CFG_STATIC_FREEZE==0：支持运行期动态订阅，用 COW 双表。
  */
 
-#if (EB_CFG_STATIC_FREEZE == 1)
+#if (defined(EB_CFG_STATIC_FREEZE) && (EB_CFG_STATIC_FREEZE == 1))
 /* 事件订阅者桶 */
 typedef struct {
     eb_sub_t subs[EB_MAX_SUBS]; /* 同一事件订阅者配置信息 */
@@ -343,3 +343,4 @@ uint32_t eb_sub_find(uint32_t event_id, eb_sub_t* out_list, uint32_t max) {
 }
 
 #endif /* EB_CFG_STATIC_FREEZE */
+

@@ -1,6 +1,6 @@
-#include "APP_config.h"
+﻿#include "APP_config.h"
 /* 静态内存分配开启宏 */
-#if defined(ENABLE_STATIC_ALLOCATION)
+#if (defined(CFG_FEAT_STATIC_ALLOCATION) && (CFG_FEAT_STATIC_ALLOCATION == 1))
 #include <stdlib.h>
 
 #include "MemoryAllocation.h"
@@ -51,3 +51,4 @@ uint16_t query_remain_size(void) {
 }
 
 #endif
+

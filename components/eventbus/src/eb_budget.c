@@ -1,10 +1,10 @@
-/* TODO: Budget Police 直方图精度依赖 eb_port_timestamp_us() 的真实 µs 分辨率。
+﻿/* TODO: Budget Police 直方图精度依赖 eb_port_timestamp_us() 的真实 µs 分辨率。
  *       当前 weak 实现退化为 ms*1000，导致所有 <1ms 事件落入桶 0，p50/p95/p99 无意义。
  *       在平台层实现 DWT/TIM 级 µs 时间戳后，此模块数据才具备生产诊断价值。
  */
 #include "eb_budget.h"
 
-#if (EB_CFG_ENABLE_BUDGET == 1)
+#if (defined(EB_CFG_ENABLE_BUDGET) && (EB_CFG_ENABLE_BUDGET == 1))
 
 #include <string.h>
 
@@ -241,3 +241,4 @@ uint32_t eb_budget_buckets(void) {
 }
 
 #endif /* EB_CFG_ENABLE_BUDGET */
+

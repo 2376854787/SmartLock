@@ -1,5 +1,5 @@
-#include "APP_config.h"
-#if defined(ENABLE_AT_SYSTEM)
+﻿#include "APP_config.h"
+#if (defined(CFG_FEAT_AT_SYSTEM) && (CFG_FEAT_AT_SYSTEM == 1))
 
 #include <string.h>
 
@@ -142,3 +142,5 @@ static bool Uart_send(AT_Manager_t* mgr, const uint8_t* data, uint16_t len) {
 }
 
 #endif
+
+

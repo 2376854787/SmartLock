@@ -1,6 +1,6 @@
-#include "eb_eventmap.h"
+﻿#include "eb_eventmap.h"
 /* 检查是否启用了 事件映射 */
-#if (EB_CFG_ENABLE_EVENTMAP == 1)
+#if (defined(EB_CFG_ENABLE_EVENTMAP) && (EB_CFG_ENABLE_EVENTMAP == 1))
 #include <string.h>
 #ifndef EB_EVENTMAP_CAP
 #define EB_EVENTMAP_CAP 256 /* 建议>= 事件数*2  */
@@ -71,3 +71,4 @@ int eb_eventmap_lookup(uint32_t event_id) {
 }
 
 #endif
+

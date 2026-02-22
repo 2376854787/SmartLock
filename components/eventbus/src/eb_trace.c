@@ -1,6 +1,6 @@
-#include "eb_trace.h"
+﻿#include "eb_trace.h"
 
-#if (EB_CFG_ENABLE_TRACE == 1)
+#if (defined(EB_CFG_ENABLE_TRACE) && (EB_CFG_ENABLE_TRACE == 1))
 
 #include <string.h>
 
@@ -8,7 +8,7 @@
 #define EB_TRACE_MAGIC (0x45525442u)
 #endif
 
-#if (EB_CFG_TRACE_NOINIT == 1)
+#if (defined(EB_CFG_TRACE_NOINIT) && (EB_CFG_TRACE_NOINIT == 1))
 #define EB_NOINIT __attribute__((section(".noinit")))
 #else
 #define EB_NOINIT
@@ -107,3 +107,4 @@ const eb_trace_entry_t* eb_trace_entries(void) {
 }
 
 #endif /* EB_CFG_ENABLE_TRACE */
+

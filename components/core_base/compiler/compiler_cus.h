@@ -25,7 +25,7 @@ extern "C" {
 #elif defined(__GNUC__)
 #define COMPILER_GCC 1
 #else
-#error "Unsupported compiler"
+#error "不支持的编译器"
 #endif
 
 /* ================= Basic keywords ================= */

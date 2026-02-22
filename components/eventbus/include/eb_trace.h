@@ -1,4 +1,4 @@
-#ifndef SMARTLOCK_EB_TRACE_H
+﻿#ifndef SMARTLOCK_EB_TRACE_H
 #define SMARTLOCK_EB_TRACE_H
 
 #include <stdbool.h>
@@ -8,7 +8,7 @@
 #include "eb_port.h"
 #include "eb_types.h"
 
-#if (EB_CFG_ENABLE_TRACE == 1)
+#if (defined(EB_CFG_ENABLE_TRACE) && (EB_CFG_ENABLE_TRACE == 1))
 
 /* 链路追踪 */
 typedef enum {
@@ -75,3 +75,4 @@ const eb_trace_entry_t* eb_trace_entries(void);
 #endif /* EB_CFG_ENABLE_TRACE */
 
 #endif  // SMARTLOCK_EB_TRACE_H
+

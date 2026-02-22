@@ -1,6 +1,6 @@
-#include "eb_storm.h"
+﻿#include "eb_storm.h"
 
-#if (EB_CFG_ENABLE_STORM == 1)
+#if (defined(EB_CFG_ENABLE_STORM) && (EB_CFG_ENABLE_STORM == 1))
 
 #include <string.h>
 
@@ -169,3 +169,4 @@ bool eb_storm_allow(const eb_eventdef_t* def, uint16_t source_id, uint32_t now_m
 }
 
 #endif /* EB_CFG_ENABLE_STORM */
+

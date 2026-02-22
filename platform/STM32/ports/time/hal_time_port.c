@@ -1,7 +1,7 @@
-#include "APP_config.h"
+﻿#include "APP_config.h"
 #include "stm32_hal_config.h"
 /* hal抽象选择宏 */
-#if defined(USE_STM32_HAL) && defined(ENABLE_HAL_TIME)
+#if (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1)) && (defined(CFG_FEAT_HAL_TIME) && (CFG_FEAT_HAL_TIME == 1))
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -182,7 +182,7 @@ uint64_t hal_get_tick_us64(void) {
 }
 
 void hal_time_delay_ms(uint32_t ms) {
-#if defined(OSAL_BACKEND_CMSIS_OS2)
+#if (defined(CFG_FEAT_OSAL_BACKEND_CMSIS_OS2) && (CFG_FEAT_OSAL_BACKEND_CMSIS_OS2 == 1))
     OSAL_delay_ms(ms);
 #else
     return HAL_Delay(ms);
@@ -280,3 +280,5 @@ void hal_time_delay_us(uint32_t us) {
 }
 
 #endif
+
+

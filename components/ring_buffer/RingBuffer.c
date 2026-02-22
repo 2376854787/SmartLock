@@ -1,6 +1,6 @@
-#include "APP_config.h"
+﻿#include "APP_config.h"
 
-#if defined(ENABLE_RINGBUFFER_SYSTEM)
+#if (defined(CFG_FEAT_RINGBUFFER_SYSTEM) && (CFG_FEAT_RINGBUFFER_SYSTEM == 1))
 #include <stdbool.h>
 #include <string.h>
 
@@ -1101,3 +1101,5 @@ bool RingBuffer_SPSC_OverwriteIfExists(RingBuffer* rb, const uint8_t* item, uint
     return false;
 }
 #endif
+
+

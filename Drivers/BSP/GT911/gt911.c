@@ -22,7 +22,7 @@
 
 #include "APP_config.h"
 
-#if defined(ENABLE_GT911)
+#if defined(CFG_FEAT_GT911) && (CFG_FEAT_GT911==1)
 
 #include <string.h>
 

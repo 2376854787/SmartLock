@@ -1,10 +1,10 @@
-#include <stm32f4xx_hal.h> /* 确保包含完整 HAL 定义 (IRQn_Type 等) */
+﻿#include <stm32f4xx_hal.h> /* 确保包含完整 HAL 定义 (IRQn_Type 等) */
 
 #include "APP_config.h"
 #include "stm32_hal_config.h"
 
 /* hal抽象选择宏 */
-#if defined(USE_STM32_HAL) && defined(ENABLE_HAL_GPIO)
+#if (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1)) && (defined(CFG_FEAT_HAL_GPIO) && (CFG_FEAT_HAL_GPIO == 1))
 #include <stdint.h>
 #include <string.h>
 
@@ -523,3 +523,5 @@ void EXTI15_10_IRQHandler(void) {
 }
 
 #endif
+
+

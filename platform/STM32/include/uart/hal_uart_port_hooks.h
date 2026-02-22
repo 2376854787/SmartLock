@@ -1,9 +1,9 @@
-#ifndef HAL_UART_PORT_HOOKS_H
+﻿#ifndef HAL_UART_PORT_HOOKS_H
 #define HAL_UART_PORT_HOOKS_H
 #include "APP_config.h"
 #include "stm32_hal_config.h"
 /* hal抽象选择宏 */
-#if defined(USE_STM32_HAL) && defined(ENABLE_HAL_UART)
+#if (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1)) && (defined(CFG_FEAT_HAL_UART) && (CFG_FEAT_HAL_UART == 1))
 #include "hal_uart.h"
 #include "stm32_hal.h"
 
@@ -22,7 +22,7 @@ void hal_uart_txCp_case(const UART_HandleTypeDef* huart);
 /* 放到 `HAL_UART_ErrorCallback()` 中调用：通知 HAL_UART_EVT_ERROR */
 void hal_uart_error_case(const UART_HandleTypeDef* huart);
 
-/* 放到 `HAL_UARTEx_RxEventCallback()` 中调用（启用 `USE_HAL_UARTEx_ReceiveToIdle_DMA` 时）：提交 RX
+/* 放到 `HAL_UARTEx_RxEventCallback()` 中调用（启用 `CFG_PARAM_UART_RX_USE_DMA_IDLE` 时）：提交 RX
  * 增量并通知 HAL_UART_EVT_RX */
 void hal_uart_rx_event_case(const UART_HandleTypeDef* huart, uint16_t Size);
 void hal_uart_rx_dma_progress_case(const UART_HandleTypeDef* huart);
@@ -35,3 +35,5 @@ void stm32_uart_irq_dma_tx(hal_uart_id_t id);
 #endif
 
 #endif
+
+

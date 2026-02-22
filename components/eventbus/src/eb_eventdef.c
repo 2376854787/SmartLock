@@ -1,9 +1,9 @@
-#include "eb_eventdef.h"
+﻿#include "eb_eventdef.h"
 
 #include "eb_config.h"
 #include "eb_event_id.h"
 
-#if (EB_CFG_ENABLE_EVENTMAP == 1)
+#if (defined(EB_CFG_ENABLE_EVENTMAP) && (EB_CFG_ENABLE_EVENTMAP == 1))
 #include "eb_eventmap.h"
 #endif
 
@@ -54,7 +54,7 @@ uint32_t eb_eventdef_count(void) {
     return (uint32_t)(sizeof(g_defs) / sizeof(g_defs[0]));
 }
 /* 启动了O1 哈希查找 */
-#if (EB_CFG_ENABLE_EVENTMAP == 1)
+#if (defined(EB_CFG_ENABLE_EVENTMAP) && (EB_CFG_ENABLE_EVENTMAP == 1))
 /**
  * @brief 将当前建立的事件建立哈希表映射
  */
@@ -99,3 +99,4 @@ const eb_eventdef_t* eb_eventdef_get(uint32_t event_id) {
     if (idx < 0 || idx >= (int32_t)eb_eventdef_count()) return 0;
     return &g_defs[idx];
 }
+

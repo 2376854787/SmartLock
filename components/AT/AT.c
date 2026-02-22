@@ -1,5 +1,5 @@
-#include "APP_config.h"
-#if defined(ENABLE_AT_SYSTEM)
+﻿#include "APP_config.h"
+#if (defined(CFG_FEAT_AT_SYSTEM) && (CFG_FEAT_AT_SYSTEM == 1))
 #include <stdio.h>
 #include <string.h>
 
@@ -741,3 +741,5 @@ void AT_SetTxMode(AT_Manager_t* mgr, AT_TxMode mode) {
 }
 
 #endif
+
+

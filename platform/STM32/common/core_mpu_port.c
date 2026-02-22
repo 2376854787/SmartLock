@@ -1,6 +1,6 @@
-#include "stm32_hal_config.h"
+﻿#include "APP_config.h"
 /* hal抽象选择宏 */
-#if defined(USE_STM32_HAL)
+#if defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1)
 #include "core_mpu.h"
 
 extern uint32_t __flash_start__, __flash_end__;
@@ -18,3 +18,5 @@ bool core_mpu_port_get_map(core_mpu_map_t* out) {
     return true;
 }
 #endif
+
+

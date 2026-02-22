@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file    soft_i2c.c
  * @brief   软件 I2C  实现
  *
@@ -23,7 +23,7 @@
 
 #include "APP_config.h"
 
-#if defined(ENABLE_SOFT_I2C) && defined(ENABLE_HAL_GPIO)
+#if (defined(CFG_FEAT_SOFT_I2C) && (CFG_FEAT_SOFT_I2C == 1)) && (defined(CFG_FEAT_HAL_GPIO) && (CFG_FEAT_HAL_GPIO == 1))
 
 #include "assert_cus.h"
 #include "hal_time.h"
@@ -460,7 +460,7 @@ ret_code_t soft_i2c_read_reg16(soft_i2c_t* bus, uint8_t dev_addr, uint16_t reg, 
     return RET_OK;
 }
 
-#else /* !ENABLE_SOFT_I2C */
+#else /* !CFG_FEAT_SOFT_I2C */
 
 /* 功能未启用时提供空壳实现 */
 ret_code_t soft_i2c_init(soft_i2c_t* bus, const soft_i2c_cfg_t* cfg) {
@@ -505,4 +505,6 @@ ret_code_t soft_i2c_read_reg16(soft_i2c_t* bus, uint8_t dev_addr, uint16_t reg, 
     return RET_MAKE_PARAM(RET_MOD_HAL, RET_SUB_HAL_I2C, RET_R_UNSUPPORTED);
 }
 
-#endif /* ENABLE_SOFT_I2C */
+#endif /* CFG_FEAT_SOFT_I2C */
+
+

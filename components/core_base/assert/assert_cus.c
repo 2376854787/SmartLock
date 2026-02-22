@@ -1,7 +1,7 @@
-#include "APP_config.h"
+﻿#include "APP_config.h"
 
 /* 全局配置开启宏 */
-#if defined(ENABLE_ASSERT_SYSTEM)
+#if (defined(CFG_FEAT_ASSERT_SYSTEM) && (CFG_FEAT_ASSERT_SYSTEM == 1))
 #include <stdio.h>
 #include <string.h>
 
@@ -261,4 +261,6 @@ void Assert_OnFailEx(assert_level_t level, const char* expr, const char* file, c
     }
 }
 
-#endif /* ENABLE_ASSERT_SYSTEM */
+#endif /* CFG_FEAT_ASSERT_SYSTEM */
+
+

@@ -1,8 +1,8 @@
-#include "APP_config.h"
+﻿#include "APP_config.h"
 #include "osal.h"
 #include "osal_config.h"
 
-#if defined(OSAL_BACKEND_CMSIS_OS2)
+#if (defined(CFG_FEAT_OSAL_BACKEND_CMSIS_OS2) && (CFG_FEAT_OSAL_BACKEND_CMSIS_OS2 == 1))
 #include "blackbox_record.h"
 #include "cmsis_gcc.h" /* */
 #include "cmsis_os.h"
@@ -31,10 +31,10 @@ static inline uint32_t read_lr_return_addr(void) {
 /* ==============最大关中断时间记录 =================*/
 /* ============ 断言 =============*/
 /* 断言系统全局配置 */
-#if defined(ENABLE_ASSERT_SYSTEM)
+#if (defined(CFG_FEAT_ASSERT_SYSTEM) && (CFG_FEAT_ASSERT_SYSTEM == 1))
 #include "assert_cus.h"
 #endif
-#if defined(ENABLE_ASSERT_SYSTEM)
+#if (defined(CFG_FEAT_ASSERT_SYSTEM) && (CFG_FEAT_ASSERT_SYSTEM == 1))
 #define OSAL_ASSERT(expr) ASSERT_PARAM(expr)
 #define OSAL_FAULT(expr)  ASSERT_FATAL(expr)
 #else
@@ -49,7 +49,7 @@ static inline uint32_t read_lr_return_addr(void) {
 #endif
 /* ============ 断言 =============*/
 
-#if defined(OSAL_CRITICAL_IMPL_FREERTOS)
+#if (defined(CFG_FEAT_OSAL_CRITICAL_FREERTOS) && (CFG_FEAT_OSAL_CRITICAL_FREERTOS == 1))
 #include "FreeRTOS.h"
 #include "task.h"
 #endif
@@ -250,7 +250,7 @@ void OSAL_enter_critical(void) {
     OSAL_FAULT(!OSAL_in_isr());
     /* 先取调用点 PC（此时还没关中断，取 return address 才是调用者） */
     const uint32_t enter_pc = read_lr_return_addr();
-#if defined(OSAL_CRITICAL_IMPL_FREERTOS)
+#if (defined(CFG_FEAT_OSAL_CRITICAL_FREERTOS) && (CFG_FEAT_OSAL_CRITICAL_FREERTOS == 1))
     if (OSAL_kernel_is_running()) {
         taskENTER_CRITICAL();         /* 先真正屏蔽 */
         OSAL_CritMon_Enter(enter_pc); /* 再开始计时：避免被 SysTick 抢占导致 ~1000us 假峰值 */
@@ -275,7 +275,7 @@ void OSAL_exit_critical(void) {
     OSAL_FAULT(!OSAL_in_isr());
     uint32_t dur_us   = 0u;
     uint32_t enter_pc = 0u;
-#if defined(OSAL_CRITICAL_IMPL_FREERTOS)
+#if (defined(CFG_FEAT_OSAL_CRITICAL_FREERTOS) && (CFG_FEAT_OSAL_CRITICAL_FREERTOS == 1))
     if (OSAL_kernel_is_running()) {
         OSAL_CritMon_Exit(&dur_us, &enter_pc);
         taskEXIT_CRITICAL();
@@ -309,7 +309,7 @@ void OSAL_exit_critical(void) {
 void OSAL_enter_critical_ex(osal_crit_state_t* state) {
     if (!state) return;
     const uint32_t enter_pc = read_lr_return_addr();
-#if defined(OSAL_CRITICAL_IMPL_FREERTOS)
+#if (defined(CFG_FEAT_OSAL_CRITICAL_FREERTOS) && (CFG_FEAT_OSAL_CRITICAL_FREERTOS == 1))
     if (OSAL_in_isr()) {
         if (OSAL_kernel_is_running()) {
             const UBaseType_t s = taskENTER_CRITICAL_FROM_ISR();
@@ -345,7 +345,7 @@ void OSAL_exit_critical_ex(osal_crit_state_t state) {
     const uint32_t mode = ((uint32_t)state) & OSAL_CRIT_MODE_MASK;
     uint32_t dur_us     = 0u;
     uint32_t enter_pc   = 0u;
-#if defined(OSAL_CRITICAL_IMPL_FREERTOS)
+#if (defined(CFG_FEAT_OSAL_CRITICAL_FREERTOS) && (CFG_FEAT_OSAL_CRITICAL_FREERTOS == 1))
     if (mode == OSAL_CRIT_MODE_RTOS_ISR) {
         const UBaseType_t s = (UBaseType_t)(((uint32_t)state) & OSAL_CRIT_PAYLOAD_MASK);
         OSAL_CritMon_Exit(&dur_us, &enter_pc);
@@ -390,7 +390,7 @@ void OSAL_exit_critical_ex(osal_crit_state_t state) {
 void OSAL_enter_critical_from_isr(osal_crit_state_t* state) {
     if (!state) return;
     const uint32_t enter_pc = read_lr_return_addr();
-#if defined(OSAL_CRITICAL_IMPL_FREERTOS)
+#if (defined(CFG_FEAT_OSAL_CRITICAL_FREERTOS) && (CFG_FEAT_OSAL_CRITICAL_FREERTOS == 1))
     if (OSAL_kernel_is_running()) {
         const UBaseType_t s = taskENTER_CRITICAL_FROM_ISR();
         *state              = (osal_crit_state_t)s;
@@ -415,7 +415,7 @@ void OSAL_enter_critical_from_isr(osal_crit_state_t* state) {
 void OSAL_exit_critical_from_isr(osal_crit_state_t state) {
     uint32_t dur_us   = 0u;
     uint32_t enter_pc = 0u;
-#if defined(OSAL_CRITICAL_IMPL_FREERTOS)
+#if (defined(CFG_FEAT_OSAL_CRITICAL_FREERTOS) && (CFG_FEAT_OSAL_CRITICAL_FREERTOS == 1))
     if (OSAL_kernel_is_running()) {
         OSAL_CritMon_Exit(&dur_us, &enter_pc);
         taskEXIT_CRITICAL_FROM_ISR((UBaseType_t)state);
@@ -736,3 +736,5 @@ osal_flags_t OSAL_thread_flags_wait(osal_flags_t flags, osal_flags_wait_t mode,
     return (osal_flags_t)r;
 }
 #endif
+
+

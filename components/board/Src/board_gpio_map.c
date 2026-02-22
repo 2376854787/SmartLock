@@ -1,4 +1,4 @@
-#include "board_gpio_map.h"
+﻿#include "board_gpio_map.h"
 
 #include <stdint.h>
 
@@ -6,7 +6,7 @@
 #include "board_gpio_ids.h"
 #include "platform_config.h"
 
-#if defined(USE_STM32_HAL) && defined(ENABLE_HAL_GPIO)
+#if (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1)) && (defined(CFG_FEAT_HAL_GPIO) && (CFG_FEAT_HAL_GPIO == 1))
 #include "stm32_hal.h"
 #define PORT_RET(clas_, err_) \
     RET_MAKE(RET_MOD_PORT, RET_SUB_PORT_STM32, RET_CODE_MAKE((clas_), (err_)))
@@ -46,3 +46,5 @@ ret_code_t board_gpio_lookup(uint32_t id, board_gpio_hw_t* out) {
     return RET_E_UNSUPPORTED;
 }
 #endif
+
+
