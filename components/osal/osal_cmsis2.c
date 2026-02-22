@@ -8,7 +8,6 @@
 #include "cmsis_os.h"
 #include "cmsis_os2.h"
 #include "hal_time.h"
-#include "log.h"
 #include "stddef.h"
 /* ==============最大关中断时间记录 =================*/
 #ifndef OSAL_CRITMON_THRESHOLD_US
