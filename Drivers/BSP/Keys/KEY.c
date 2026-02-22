@@ -135,7 +135,7 @@ static const uint8_t MAX_REGISTERED_KEYS     = sizeof(registered_keys) / sizeof(
 /**
  * @brief 向指定引脚写入电平
  */
-static void KEY_Pin_Write(const KeyInfo* pin, bool state) {
+CORE_USED static void KEY_Pin_Write(const KeyInfo* pin, bool state) {
 #ifdef USE_HAL_DRIVER
     HAL_GPIO_WritePin(pin->GPIOx, pin->GPIO_Pin, state ? GPIO_PIN_SET : GPIO_PIN_RESET);
 #else  // 使用标准库 SPL
