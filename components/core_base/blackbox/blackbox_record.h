@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #define BLACK_BOX_MAGIC   0xB10C1B00u
-#define BLACK_BOX_VERSION 0x00010001u
+#define BLACK_BOX_VERSION 0x00010002u
 /* 重启原因枚举 */
 typedef enum {
     BB_RESET_UNKNOW = 0,
@@ -29,6 +29,18 @@ typedef enum {
     BB_CRASH_BUSFAULT,   /* 总线错误 */
     BB_CRASH_USAGEFAULT, /* 用法错误 */
 } bb_crash_type_t;
+
+/* 看门狗失败快照 */
+typedef struct {
+    uint32_t valid;    /* 1=有效 */
+    uint32_t task_id;  /* 任务 id */
+    uint32_t reason;   /* 失败原因（timeout/wrong/hb/fresh） */
+    uint32_t seq;      /* 题号 */
+    uint32_t nonce;    /* 随机数 */
+    uint32_t expected; /* 期望值 */
+    uint32_t got;      /* 实际值 */
+    uint32_t tick_ms;  /* 记录时系统 tick */
+} bb_wdg_fail_record_t;
 
 typedef struct {
     uint32_t magic;
@@ -62,11 +74,15 @@ typedef struct {
 
     /* 追溯 */
     uint32_t build_id; /* git commit 哈希前4字节 */
+
+    /* 看门狗失败快照（由 wdg_sup_fail_hook 写入） */
+    bb_wdg_fail_record_t wdg;
 } blackbox_record_t;
 
 const blackbox_record_t* BB_Get(void);
 void BB_Clear(void);
 void BB_ClearCrashInfo(void); /* 仅清除崩溃信息，上报日志后调用 */
+void BB_ClearWdgInfo(void);
 /* 启动调用 读取并清除 MCU reset flags,写入 reset_reason */
 void BB_OnBootUpdateResetReason(void);
 /* Assert/Fault 调用 写入crash 上下文 */
@@ -79,6 +95,8 @@ void BB_RecordFsm(uint32_t fsm_ptr, uint32_t state_ptr);
 /* 中断时间/栈剩余字节数 */
 void BB_UpdateMaxCriUs(uint32_t us);
 void BB_UpdateMinStackFree(uint32_t bytes);
+void BB_RecordWdgFail(const bb_wdg_fail_record_t *record);
+void BB_ClearWdgFail(void);
 void BB_Info_Printf();
 
 

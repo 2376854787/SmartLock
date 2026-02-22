@@ -1,10 +1,12 @@
 #include "blackbox_record.h"
+
 #include "compiler_cus.h"
 
 #ifndef CORE_BUILD_ID
 #define CORE_BUILD_ID 0u
 #endif
 #include <stdio.h>
+
 #include "assert_cus.h"
 /* 配置宏：定义此宏使用备份SRAM (0x40024000)，否则使用 .noinit 段 (SRAM1/2) */
 #define CONFIG_BLACKBOX_USE_BKPSRAM 1
@@ -31,9 +33,8 @@ CORE_WEAK bb_reset_reason_t BB_Port_ReadResetReasonAndClearFlags(void) {
 }
 #if defined(CONFIG_BLACKBOX_USE_BKPSRAM) && (CONFIG_BLACKBOX_USE_BKPSRAM == 1)
 /* =================================================================================
- * 模式 A: STM32F4 Backup SRAM
+ *  Backup SRAM
  * 地址：0x4002 4000 (4KB)
- * 特性：掉电/复位不丢失
  * ================================================================================= */
 #define BKPSRAM_BASE 0x40024000UL
 
@@ -49,9 +50,8 @@ CORE_WEAK void BB_EnableAccess(void) {
 }
 #else
 /* =================================================================================
- * 模式 B: .noinit 段 (SRAM)
+ *  .noinit 段
  * 特性：仅在由于 NVIC_SystemReset() 等非断电/非调试器复位时保留
- * 注意：调试器下载或复位通常会清除此区域
  * ================================================================================= */
 CORE_SECTION(".noinit.blackbox")
 static volatile blackbox_record_t g_bb_instance;
@@ -110,7 +110,20 @@ void BB_ClearCrashInfo(void) {
     g_bb.afsr        = 0;
     g_bb.max_crit_us = 0;
 }
-
+/**
+ * @brief 清除看门狗异常黑盒信息
+ */
+void BB_ClearWdgInfo(void) {
+    BB_EnableAccess();
+    g_bb.wdg.valid    = 0u;
+    g_bb.wdg.task_id  = 0u;
+    g_bb.wdg.reason   = 0u;
+    g_bb.wdg.seq      = 0u;
+    g_bb.wdg.nonce    = 0u;
+    g_bb.wdg.expected = 0u;
+    g_bb.wdg.got      = 0u;
+    g_bb.wdg.tick_ms  = 0u;
+}
 /**
  * @brief 更新 Reset原因以及清除标志位
  * @note  App 全权负责 blackbox 数据读写
@@ -126,6 +139,14 @@ void BB_OnBootUpdateResetReason(void) {
         g_bb.max_crit_us    = 0u;
         g_bb.min_stack_free = UINT32_MAX;
         g_bb.crash_type     = BB_CRASH_NONE;
+        g_bb.wdg.valid      = 0u;
+        g_bb.wdg.task_id    = 0u;
+        g_bb.wdg.reason     = 0u;
+        g_bb.wdg.seq        = 0u;
+        g_bb.wdg.nonce      = 0u;
+        g_bb.wdg.expected   = 0u;
+        g_bb.wdg.got        = 0u;
+        g_bb.wdg.tick_ms    = 0u;
     }
     /* 始终读取 reset_reason 并清除 CSR flags */
     g_bb.reset_reason = (uint32_t)BB_Port_ReadResetReasonAndClearFlags();
@@ -150,7 +171,7 @@ void BB_RecordAssert(uint32_t pc, uint32_t lr, uint32_t sp, uint32_t psr) {
 }
 
 /**
- *
+ * @brief 记录错误的环境信息以及原因
  * @param type 崩溃类型
  * @param pc pc寄存器值
  * @param lr lr寄存器值
@@ -206,6 +227,35 @@ void BB_UpdateMinStackFree(uint32_t bytes) {
 }
 
 /**
+ * @brief 记录看门狗失败快照（复位前调用）
+ */
+void BB_RecordWdgFail(const bb_wdg_fail_record_t* record) {
+    if (record == NULL) return;
+    g_bb.wdg.valid    = record->valid;
+    g_bb.wdg.task_id  = record->task_id;
+    g_bb.wdg.reason   = record->reason;
+    g_bb.wdg.seq      = record->seq;
+    g_bb.wdg.nonce    = record->nonce;
+    g_bb.wdg.expected = record->expected;
+    g_bb.wdg.got      = record->got;
+    g_bb.wdg.tick_ms  = record->tick_ms;
+}
+
+/**
+ * @brief 清除看门狗失败快照
+ */
+void BB_ClearWdgFail(void) {
+    g_bb.wdg.valid    = 0u;
+    g_bb.wdg.task_id  = 0u;
+    g_bb.wdg.reason   = 0u;
+    g_bb.wdg.seq      = 0u;
+    g_bb.wdg.nonce    = 0u;
+    g_bb.wdg.expected = 0u;
+    g_bb.wdg.got      = 0u;
+    g_bb.wdg.tick_ms  = 0u;
+}
+
+/**
  * @brief 上电打印可能会有的错误信息
  */
 void BB_Info_Printf() {
@@ -213,7 +263,14 @@ void BB_Info_Printf() {
     printf(
         "复位原因: 0x%08X,  崩溃原因: %d\r\n"
         "PC: 0x%08X, LR: 0x%08X\r\n"
-        "SP: 0x%08X, PSR: 0x%08X\r\n",
+        "SP: 0x%08X, PSR: 0x%08X\r\n"
+        "WDG有效: %lu, id: %lu, reason: %lu\r\n"
+        "WDG seq: 0x%08lX, nonce: 0x%08lX\r\n"
+        "WDG expected: 0x%08lX, got: 0x%08lX, tick: %lu\r\n",
         (unsigned int)g_bb.reset_reason, (unsigned int)g_bb.crash_type, (unsigned int)g_bb.pc,
-        (unsigned int)g_bb.lr, (unsigned int)g_bb.sp, (unsigned int)g_bb.psr);
+        (unsigned int)g_bb.lr, (unsigned int)g_bb.sp, (unsigned int)g_bb.psr,
+        (unsigned long)g_bb.wdg.valid, (unsigned long)g_bb.wdg.task_id,
+        (unsigned long)g_bb.wdg.reason, (unsigned long)g_bb.wdg.seq, (unsigned long)g_bb.wdg.nonce,
+        (unsigned long)g_bb.wdg.expected, (unsigned long)g_bb.wdg.got,
+        (unsigned long)g_bb.wdg.tick_ms);
 }
