@@ -27,6 +27,8 @@
 #define CFG_FEAT_HAL_TIME       1 /* 启动time */
 #define CFG_FEAT_SOFT_I2C       1 /* 软件 I2C && CFG_FEAT_HAL_GPIO */
 #define CFG_FEAT_GT911          1 /* GT911 电容触控驱动 */
+#define CFG_FEAT_HAL_SPI        1 /* 启动SPI抽象 */
+#define CFG_FEAT_HAL_I2C        1 /* 启动 I2C 抽象 */
 
 /* 协议标准配置宏  取消注释即开启整个项目的RTOS执行标准 */
 /* 启动CMSIS v2 标准 */
