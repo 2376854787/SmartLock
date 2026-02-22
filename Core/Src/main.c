@@ -79,6 +79,7 @@ void keyCallback(KEY_TypedefHandle* key, KEY_ActionType action) {
         case KEY_ACTION_TRIPLE_CLICK:
             LOG_I("key1", "三击回调函数触发");
             BB_ClearCrashInfo();
+            BB_ClearWdgInfo();
             break;
         case KEY_ACTION_LONG_PRESS:
             LOG_I("key1", "长按回调函数触发");
