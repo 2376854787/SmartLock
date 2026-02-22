@@ -5,6 +5,7 @@
 #include "APP_config.h"
 #include "hal_uart_port.h"
 #include "log.h"
+#include <stdio.h>
 
 #if (defined(CFG_FEAT_HAL_UART) && (CFG_FEAT_HAL_UART == 1))
 
@@ -21,7 +22,7 @@ __attribute__((weak)) void hal_uart_on_port_error(ret_code_t rc_port, const char
     (void)id;
     (void)arg0;
     (void)arg1;
-    LOG_E("port", "port:%d, api:%s, uart_id:%d", rc_port, api, id);
+    printf("port:%08lX, api:%s, uart_id:%d", rc_port, api, id);
 }
 
 static inline ret_code_t uart_map_port_to_hal(ret_code_t rc_port, const char* api, hal_uart_id_t id,
@@ -31,6 +32,8 @@ static inline ret_code_t uart_map_port_to_hal(ret_code_t rc_port, const char* ap
     if (ret_is_class(rc_port, RET_CLASS_PARAM)) {
         if (ret_is_reason(rc_port, RET_R_UNSUPPORTED))
             return UART_HAL_RET(RET_CLASS_PARAM, RET_R_UNSUPPORTED);
+        if (ret_is_reason(rc_port, RET_R_RANGE_ERR))
+            return UART_HAL_RET(RET_CLASS_PARAM, RET_R_RANGE_ERR);
         return UART_HAL_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     }
 

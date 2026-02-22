@@ -1,9 +1,9 @@
 ﻿#include "APP_config.h"
 #include "stm32_hal_config.h"
 /* hal抽象选择宏 */
-#if (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1)) && (defined(CFG_FEAT_HAL_UART) && (CFG_FEAT_HAL_UART == 1))
+#if (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1)) && \
+    (defined(CFG_FEAT_HAL_UART) && (CFG_FEAT_HAL_UART == 1))
 #include <stdio.h>
-#include <string.h>
 
 #include "RingBuffer.h"
 #include "hal_uart.h"
@@ -23,7 +23,10 @@ struct hal_uart {
     void* cb_user;            /* 用户上下文 */
     hal_uart_id_t id;         /* 串口内部id*/
     stm32_uart_bsp_t bsp;     /* 串口映射配置 */
+    char rb_name[32];         /* 软件 RB 名称 */
     RingBuffer rb;            /* 软件 RB：用于上层 read */
+    bool rb_ready;            /* 软件 RB 是否已初始化 */
+    bool opened;              /* 端口是否已打开 */
     uint32_t rx_last_pos;     /* 上次处理的 DMA 写指针 */
     volatile uint8_t tx_busy; /* 0/1 */
     uint32_t last_tx_len;     /* 上次DMA的位置 */
@@ -73,6 +76,45 @@ static inline void emit_evt(const hal_uart_t* u, const hal_uart_event_t* evt) {
     if (u->cb) u->cb(u->cb_user, evt);
 }
 /**
+ * @brief 装填错误事件以及flags
+ * @param u 串口句柄
+ * @param flags 传递的消息 接收到的字节数、
+ */
+static inline void emit_err_evt(const hal_uart_t* u, uint32_t flags) {
+    hal_uart_event_t evt = {.type = HAL_UART_EVT_ERROR};
+    evt.err.flags        = flags;
+    emit_evt(u, &evt);
+}
+/**
+ * @brief 将stm32的hal错误转换为自定义的错误类型
+ * @param hal_err stm32hal返回的错误
+ * @return
+ */
+static ret_code_t uart_map_hal_error(uint32_t hal_err) {
+#if defined(HAL_UART_ERROR_ORE)
+    if ((hal_err & HAL_UART_ERROR_ORE) != 0u) {
+        return UART_RET(RET_CLASS_DATA, RET_R_DATA_OVERFLOW);
+    }
+#endif
+    (void)hal_err;
+    return UART_RET(RET_CLASS_IO, RET_R_IO);
+}
+/**
+ * @brief 获取接收的长度 并 清除busy 标志位（临界区保护）、将DMA上次接收的索引改为0
+ * @param u 串口句柄
+ * @return 接收到的长度
+ */
+static inline uint32_t uart_take_tx_len_and_clear_busy(hal_uart_t* u) {
+    osal_crit_state_t cs = 0u;
+    uint32_t tx_len      = 0u;
+    OSAL_enter_critical_ex(&cs);
+    tx_len         = u->last_tx_len;
+    u->last_tx_len = 0u;
+    u->tx_busy     = 0u;
+    OSAL_exit_critical_ex(cs);
+    return tx_len;
+}
+/**
  * @beief 返回当前串口DMA接收指针的具体位置
  * @param u 串口句柄
  * @return
@@ -120,10 +162,8 @@ static void rx_commit_delta(hal_uart_t* u) {
 
     /* 严格模式：空间不足全丢 */
     if (!u->isCompatible && ret_is_err(rc)) {
-        u->rx_last_pos     = pos;
-        hal_uart_event_t e = {.type = HAL_UART_EVT_ERROR};
-        e.err.flags        = UART_RET(RET_CLASS_RESOURCE, RET_R_BUFFER_FULL);
-        emit_evt(u, &e);
+        u->rx_last_pos = pos;
+        emit_err_evt(u, UART_RET(RET_CLASS_RESOURCE, RET_R_BUFFER_FULL));
         return;
     }
 
@@ -140,16 +180,12 @@ static void rx_commit_delta(hal_uart_t* u) {
             evt.rx.bytes         = to_write;
             emit_evt(u, &evt);
         } else {
-            hal_uart_event_t e = {.type = HAL_UART_EVT_ERROR};
-            e.err.flags        = UART_RET(RET_CLASS_RESOURCE, RET_R_BUFFER_FULL);
-            emit_evt(u, &e);
+            emit_err_evt(u, UART_RET(RET_CLASS_RESOURCE, RET_R_BUFFER_FULL));
         }
     }
     u->rx_last_pos = pos;
     if (dropped > 0u) {
-        hal_uart_event_t e = {.type = HAL_UART_EVT_ERROR};
-        e.err.flags        = UART_RET(RET_CLASS_RESOURCE, RET_R_BUFFER_FULL);
-        emit_evt(u, &e);
+        emit_err_evt(u, UART_RET(RET_CLASS_RESOURCE, RET_R_BUFFER_FULL));
     }
 }
 
@@ -160,10 +196,10 @@ static void rx_commit_delta(hal_uart_t* u) {
 void hal_uart_txCp_case(const UART_HandleTypeDef* huart) {
     for (int i = 0; i < (int)HAL_UART_ID_MAX; i++) {
         hal_uart_t* u = &g_uarts[i];
-        if (u->bsp.huart == huart) {
-            u->tx_busy           = 0;
+        if (u->opened && u->bsp.huart == huart) {
             hal_uart_event_t evt = {.type = HAL_UART_EVT_TX_DONE};
-            evt.tx.bytes         = u->last_tx_len;
+            /* 接收完成 获取长度清理busy 以及dma 位置更新为 0*/
+            evt.tx.bytes         = uart_take_tx_len_and_clear_busy(u);
             emit_evt(u, &evt);
             return;
         }
@@ -173,15 +209,14 @@ void hal_uart_txCp_case(const UART_HandleTypeDef* huart) {
 /**
  * @brief 放在 HAL_UART_ErrorCallback 中利用事件回调通知上层
  * @param huart 串口句柄
- * @note  evt.err.flags 上层需要自己映射
+ * @note  evt.err.flags 统一返回 ret_code 语义（非裸 HAL ErrorCode）
  */
 void hal_uart_error_case(const UART_HandleTypeDef* huart) {
     for (int i = 0; i < (int)HAL_UART_ID_MAX; i++) {
-        const hal_uart_t* u = &g_uarts[i];
-        if (u->bsp.huart == huart) {
-            hal_uart_event_t evt = {.type = HAL_UART_EVT_ERROR};
-            evt.err.flags        = (uint32_t)huart->ErrorCode;
-            emit_evt(u, &evt);
+        hal_uart_t* u = &g_uarts[i];
+        if (u->opened && u->bsp.huart == huart) {
+            (void)uart_take_tx_len_and_clear_busy(u);
+            emit_err_evt(u, uart_map_hal_error((uint32_t)huart->ErrorCode));
             return;
         }
     }
@@ -198,18 +233,21 @@ void hal_uart_rx_event_case(const UART_HandleTypeDef* huart, uint16_t Size) {
     (void)Size;
     for (int i = 0; i < (int)HAL_UART_ID_MAX; i++) {
         hal_uart_t* u = &g_uarts[i];
-        if (u->bsp.huart == huart) {
+        if (u->opened && u->bsp.huart == huart) {
             rx_commit_delta(u);
             return;
         }
     }
 }
 #endif
-
+/**
+ * @brief 放置于 DMA中断 用于 半满全满触发搬运 + 递增 +通知上层
+ * @param huart 串口句柄
+ */
 void hal_uart_rx_dma_progress_case(const UART_HandleTypeDef* huart) {
     for (int i = 0; i < (int)HAL_UART_ID_MAX; i++) {
         hal_uart_t* u = &g_uarts[i];
-        if (u->bsp.huart == huart) {
+        if (u->opened && u->bsp.huart == huart) {
             rx_commit_delta(u);
             return;
         }
@@ -236,7 +274,7 @@ static void handle_idle_irq(hal_uart_t* u) {
 void stm32_uart_irq_usart(hal_uart_id_t id) {
     if (id >= HAL_UART_ID_MAX) return;
     hal_uart_t* u = &g_uarts[id];
-    if (!u->bsp.huart) return;
+    if (!u->opened || !u->bsp.huart) return;
 
     HAL_UART_IRQHandler(u->bsp.huart);
     handle_idle_irq(u);
@@ -249,6 +287,7 @@ void stm32_uart_irq_usart(hal_uart_id_t id) {
 void stm32_uart_irq_dma_rx(hal_uart_id_t id) {
     if (id >= HAL_UART_ID_MAX) return;
     const hal_uart_t* u = &g_uarts[id];
+    if (!u->opened) return;
     if (u->bsp.hdma_rx) HAL_DMA_IRQHandler(u->bsp.hdma_rx);
 }
 
@@ -259,6 +298,7 @@ void stm32_uart_irq_dma_rx(hal_uart_id_t id) {
 void stm32_uart_irq_dma_tx(hal_uart_id_t id) {
     if (id >= HAL_UART_ID_MAX) return;
     const hal_uart_t* u = &g_uarts[id];
+    if (!u->opened) return;
     if (u->bsp.hdma_tx) HAL_DMA_IRQHandler(u->bsp.hdma_tx);
 }
 
@@ -271,43 +311,54 @@ void stm32_uart_irq_dma_tx(hal_uart_id_t id) {
  */
 ret_code_t hal_uart_port_open(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_uart_t** out) {
     /* 参数错误检查 */
-    if (!out) return UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    if (!cfg || !out) return UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     if (id >= HAL_UART_ID_MAX) return UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
 
     /* 获取到该id 对应的静态数组地址 */
     hal_uart_t* u = &g_uarts[id];
-    /* 初始填充 0 */
-    memset(u, 0, sizeof(*u));
-    /* 填充id */
-    u->id         = id;
+    if (u->opened) return UART_RET(RET_CLASS_STATE, RET_R_BUSY);
+    u->id                = id;
+
+    stm32_uart_bsp_t bsp = {0};
     /* 将静态池成员对应地址传输过去 填充实现的bsp 参数 */
-    ret_code_t rc = stm32_uart_bsp_get(id, &u->bsp);
+    ret_code_t rc        = stm32_uart_bsp_get(id, &bsp);
     if (ret_is_err(rc)) return rc;
 
     /* 参数检查传输的 指针是否有效, DMA长度是否是2的幂次大小 */
-    if (!u->bsp.huart || !u->bsp.hdma_rx || !u->bsp.hdma_tx || !u->bsp.rx_dma_buf ||
-        u->bsp.rx_dma_len < 2u || !isPowerOfTwo_Size(u->bsp.rx_dma_len) || u->bsp.sw_rb_len < 2u) {
+    if (!bsp.huart || !bsp.hdma_rx || !bsp.hdma_tx || !bsp.rx_dma_buf || bsp.rx_dma_len < 2u ||
+        !isPowerOfTwo_Size(bsp.rx_dma_len) || bsp.sw_rb_len < 2u) {
         return UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     }
 
-    /* 兼容模式（cfg 没有就默认 false=严格） */
-    u->isCompatible = (cfg ? cfg->isCompatible : false);
-    char name[32]   = {0};
-    sprintf(name, "stm32_port_uart_RB%d", id);
-    rc = CreateRingBuffer(&u->rb, name, u->bsp.sw_rb_len);
-    if (ret_is_err(rc)) return rc;
+    if (!u->rb_ready) {
+        (void)snprintf(u->rb_name, sizeof(u->rb_name), "stm32_port_uart_RB%d", id);
+        rc = CreateRingBuffer(&u->rb, u->rb_name, bsp.sw_rb_len);
+        if (ret_is_err(rc)) return rc;
+        u->rb_ready = true;
+    } else {
+        if (u->rb.size != bsp.sw_rb_len) {
+            return UART_RET(RET_CLASS_STATE, RET_R_STATE_ERR);
+        }
+        rc = ResetRingBuffer(&u->rb);
+        if (ret_is_err(rc)) return rc;
+    }
+
+    u->bsp                       = bsp;
+    u->isCompatible              = cfg->isCompatible;
+    u->cb                        = NULL;
+    u->cb_user                   = NULL;
+    u->tx_busy                   = 0u;
+    u->last_tx_len               = 0u;
+    u->rx_last_pos               = 0u;
+    u->opened                    = false;
 
     /* 串口参数配置 */
-    if (cfg) {
-        u->bsp.huart->Init.BaudRate = cfg->baud;
-        u->bsp.huart->Init.HwFlowCtl =
-            cfg->flow_ctrl ? UART_HWCONTROL_RTS_CTS : UART_HWCONTROL_NONE;
-        u->bsp.huart->Init.Parity = cfg->parity;
-        u->bsp.huart->Init.StopBits =
-            cfg->stop_bits == STOPBITS_1 ? UART_STOPBITS_1 : UART_STOPBITS_2;
-        u->bsp.huart->Init.WordLength =
-            cfg->data_bits == WORDLENGTH_8B ? UART_WORDLENGTH_8B : UART_WORDLENGTH_9B;
-    }
+    u->bsp.huart->Init.BaudRate  = cfg->baud;
+    u->bsp.huart->Init.HwFlowCtl = cfg->flow_ctrl ? UART_HWCONTROL_RTS_CTS : UART_HWCONTROL_NONE;
+    u->bsp.huart->Init.Parity    = cfg->parity;
+    u->bsp.huart->Init.StopBits  = cfg->stop_bits == STOPBITS_1 ? UART_STOPBITS_1 : UART_STOPBITS_2;
+    u->bsp.huart->Init.WordLength =
+        cfg->data_bits == WORDLENGTH_8B ? UART_WORDLENGTH_8B : UART_WORDLENGTH_9B;
 
     /* 串口初始化 */
     if (HAL_UART_Init(u->bsp.huart) != HAL_OK) return UART_RET(RET_CLASS_IO, RET_R_IO);
@@ -326,9 +377,10 @@ ret_code_t hal_uart_port_open(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_u
         HAL_NVIC_EnableIRQ(u->bsp.dma_tx_irq);
     }
 
-    u->rx_last_pos = 0;
-    u->tx_busy     = 0;
-    u->last_tx_len = 0;
+    u->rx_last_pos = 0u;
+    u->tx_busy     = 0u;
+    u->last_tx_len = 0u;
+    u->opened      = true;
 
     *out           = (hal_uart_t*)u;
     return RET_OK;
@@ -340,8 +392,21 @@ ret_code_t hal_uart_port_open(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_u
  */
 ret_code_t hal_uart_port_close(hal_uart_t* h) {
     if (!h) return UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
-    const hal_uart_t* u = (hal_uart_t*)h;
+    hal_uart_t* u = (hal_uart_t*)h;
+    if (!u->opened) return UART_RET(RET_CLASS_STATE, RET_R_NOT_READY);
+
+    (void)HAL_UART_DMAStop(u->bsp.huart);
     if (HAL_UART_DeInit(u->bsp.huart) != HAL_OK) return UART_RET(RET_CLASS_IO, RET_R_IO);
+
+    u->opened      = false;
+    u->cb          = NULL;
+    u->cb_user     = NULL;
+    u->tx_busy     = 0u;
+    u->last_tx_len = 0u;
+    u->rx_last_pos = 0u;
+    if (u->rb_ready) {
+        (void)ResetRingBuffer(&u->rb);
+    }
     return RET_OK;
 }
 
@@ -354,8 +419,9 @@ ret_code_t hal_uart_port_close(hal_uart_t* h) {
 ret_code_t hal_uart_port_set_evt_cb(hal_uart_t* h, hal_uart_evt_cb_t cb, void* user) {
     if (!h) return UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     hal_uart_t* u = (hal_uart_t*)h;
-    u->cb         = cb;
-    u->cb_user    = user;
+    if (!u->opened) return UART_RET(RET_CLASS_STATE, RET_R_NOT_READY);
+    u->cb      = cb;
+    u->cb_user = user;
     return RET_OK;
 }
 
@@ -367,6 +433,7 @@ ret_code_t hal_uart_port_set_evt_cb(hal_uart_t* h, hal_uart_evt_cb_t cb, void* u
 ret_code_t hal_uart_port_rx_start(hal_uart_t* h) {
     if (!h) return UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     hal_uart_t* u = (hal_uart_t*)h;
+    if (!u->opened) return UART_RET(RET_CLASS_STATE, RET_R_NOT_READY);
 
 #if (defined(CFG_PARAM_UART_RX_USE_DMA_IDLE) && (CFG_PARAM_UART_RX_USE_DMA_IDLE == 1))
     /* DMA + IDLE 方式接收方式 */
@@ -403,17 +470,25 @@ ret_code_t hal_uart_port_rx_start(hal_uart_t* h) {
 ret_code_t hal_uart_port_send_async(hal_uart_t* h, const uint8_t* buf, uint32_t len) {
     if (!h || !buf || len == 0u) return UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     hal_uart_t* u = (hal_uart_t*)h;
+    if (!u->opened) return UART_RET(RET_CLASS_STATE, RET_R_NOT_READY);
+    if (len > (uint32_t)UINT16_MAX) return UART_RET(RET_CLASS_PARAM, RET_R_RANGE_ERR);
 
-    if (u->tx_busy) return UART_RET(RET_CLASS_STATE, RET_R_BUSY);
-    u->tx_busy     = 1;
+    osal_crit_state_t cs = 0u;
+    OSAL_enter_critical_ex(&cs);
+    if (u->tx_busy) {
+        OSAL_exit_critical_ex(cs);
+        return UART_RET(RET_CLASS_STATE, RET_R_BUSY);
+    }
+    u->tx_busy     = 1u;
     u->last_tx_len = len;
+    OSAL_exit_critical_ex(cs);
 
     /** H7/F7 缓存处理 */
     stm32_uart_dma_tx_clean(buf, len);
 
     if (HAL_UART_Transmit_DMA(u->bsp.huart, (uint8_t*)buf, (uint16_t)len) != HAL_OK) {
         /* 状态回滚 */
-        u->tx_busy = 0;
+        (void)uart_take_tx_len_and_clear_busy(u);
         return UART_RET(RET_CLASS_IO, RET_R_IO);
     }
     return RET_OK;
@@ -430,13 +505,15 @@ ret_code_t hal_uart_port_send_async(hal_uart_t* h, const uint8_t* buf, uint32_t 
  */
 ret_code_t hal_uart_port_read(hal_uart_t* h, uint8_t* out, uint32_t want, uint32_t* nread) {
     if (!h || !out || want == 0u || !nread) return UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    hal_uart_t* u = (hal_uart_t*)h;
+    if (!u->opened) return UART_RET(RET_CLASS_STATE, RET_R_NOT_READY);
     hal_uart_read_span_t span = {0};
     uint32_t granted          = 0u;
-    ret_code_t rc             = hal_uart_port_read_reserve(h, want, &span, &granted);
+    ret_code_t rc             = hal_uart_port_read_reserve(u, want, &span, &granted);
     if (ret_is_err(rc)) return rc;
 
     RingBuffer_SpanReadToLinear(&span, out, granted);
-    rc     = hal_uart_port_read_commit(h, granted);
+    rc     = hal_uart_port_read_commit(u, granted);
     *nread = granted;
     return rc;
 }
@@ -453,7 +530,8 @@ ret_code_t hal_uart_port_read_reserve(hal_uart_t* h, uint32_t want, hal_uart_rea
                                       uint32_t* nread) {
     if (nread) *nread = 0u;
     if (!h || !out || !nread) return UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
-    hal_uart_t* u       = (hal_uart_t*)h;
+    hal_uart_t* u = (hal_uart_t*)h;
+    if (!u->opened) return UART_RET(RET_CLASS_STATE, RET_R_NOT_READY);
 
     uint32_t want_local = want;
     if (want_local == 0u) {
@@ -493,6 +571,7 @@ ret_code_t hal_uart_port_read_commit(hal_uart_t* h, uint32_t nread) {
     if (nread == 0u) return RET_OK;
 
     hal_uart_t* u = (hal_uart_t*)h;
+    if (!u->opened) return UART_RET(RET_CLASS_STATE, RET_R_NOT_READY);
     return RingBuffer_ReadCommit_SPSC(&u->rb, nread);
 }
 
@@ -502,5 +581,3 @@ hal_uart_id_t hal_uart_port_get_id(const hal_uart_t* h) {
 }
 
 #endif
-
-

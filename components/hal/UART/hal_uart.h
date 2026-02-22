@@ -3,7 +3,6 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-
 #include "RingBuffer.h"
 #include "ret_code.h"
 
@@ -13,15 +12,10 @@ typedef enum {
     HAL_UART_ID_1,
     HAL_UART_ID_2,
     HAL_UART_ID_3,
-    HAL_UART_ID_6,
-    HAL_UART_ID_7,
-    HAL_UART_ID_8,
-    HAL_UART_ID_9,
+    HAL_UART_ID_4,
     HAL_UART_ID_MAX  // 大小会影响后面实现静态串口数组的大小
 } hal_uart_id_t;
 
-/* 句柄定义：应用层只持有指针 */
-typedef void* hal_uart_handle_t;
 
 /* UART 事件类型 */
 typedef enum {
