@@ -1,6 +1,7 @@
 ﻿#include "APP_config.h"
 
-#if (defined(CFG_FEAT_HAL_WDG) && (CFG_FEAT_HAL_WDG == 1)) && (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1))
+#if (defined(CFG_FEAT_HAL_WDG) && (CFG_FEAT_HAL_WDG == 1)) && \
+    (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1))
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -12,8 +13,8 @@ static IWDG_HandleTypeDef s_hiwdg;
 static volatile bool s_hw_inited = false;
 
 /**
- * @brief 假设使用 LSI 32k hz 时钟进行64 分频将计算出所需的值输出
- * @param timeout_ms 需要设置的独立看门狗超时时间
+ * @brief 假设使用 LSI 32k hz 时钟进行256 分频将计算出所需的值输出
+ * @param timeout_ms 需要设置的独立看门狗超时时间 最大32s
  * @param out_presc  输出设置的分频系数
  * @param out_reload 输出计算出的重载值
  * @return 32位状态码
@@ -24,7 +25,7 @@ static ret_code_t iwdg_calc(uint32_t timeout_ms, uint32_t *out_presc, uint32_t *
         return RET_MAKE_PARAM(RET_MOD_PORT, RET_SUB_PORT_STM32, RET_R_NULL_PTR);
     }
     const uint32_t lsi_hz  = 32000u;
-    const uint32_t presc   = IWDG_PRESCALER_64; /* tick ≈ 500Hz */
+    const uint32_t presc   = IWDG_PRESCALER_256; /* tick ≈ 500Hz */
     const uint32_t tick_hz = lsi_hz / 64u;
 
     uint32_t reload        = (timeout_ms * tick_hz) / 1000u;
@@ -98,4 +99,3 @@ ret_code_t hal_wdg_port_kick(void) {
 }
 
 #endif
-
