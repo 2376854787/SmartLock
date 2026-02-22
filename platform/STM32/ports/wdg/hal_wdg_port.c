@@ -58,7 +58,7 @@ static void wdg_debug_freeze_apply(bool enable) {
 #endif
 }
 /**
- * @brief 配置看门狗
+ * @brief 配置硬件看门狗
  * @param cfg 看门狗配置
  * @return 32位状态码
  */

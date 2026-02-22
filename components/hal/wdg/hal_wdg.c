@@ -29,7 +29,7 @@ bool hal_wdg_is_inited(void) {
     return s_inited;
 }
 /**
- * @brief 初始化
+ * @brief 初始化硬件看门狗配置
  * @param cfg 配置
  * @return
  */

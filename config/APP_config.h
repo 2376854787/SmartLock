@@ -13,7 +13,8 @@
 #include "product/product.h"
 /* L3: 平台层（平台端口参数） */
 #include "stm32_hal_config.h"
-
+/* 实际的 hal 按需替换*/
+#include "stm32_hal.h"
 
 /* ------------------- 编译期一致性检查 ------------------- */
 
