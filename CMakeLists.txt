@@ -87,6 +87,7 @@ file(GLOB_RECURSE AUTO_HEADER_FILES CONFIGURE_DEPENDS
         "Application/*.h"
         "platform/*.h"
         "Middlewares_cus/LVGL/port/*.h"
+        "config/*.h"
 )
 # 2. 准备一个空的小篮子，用来装目录
 set(AUTO_INCLUDE_DIRS "")

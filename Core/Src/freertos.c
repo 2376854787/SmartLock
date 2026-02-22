@@ -1,4 +1,4 @@
-﻿/* USER CODE BEGIN Header */
+/* USER CODE BEGIN Header */
 /**
  ******************************************************************************
  * File Name          : freertos.c
@@ -427,6 +427,4 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef* huart) {
 #endif
 }
 /* USER CODE END Application */
-
-
 
