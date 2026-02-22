@@ -25,8 +25,8 @@ static ret_code_t iwdg_calc(uint32_t timeout_ms, uint32_t *out_presc, uint32_t *
         return RET_MAKE_PARAM(RET_MOD_PORT, RET_SUB_PORT_STM32, RET_R_NULL_PTR);
     }
     const uint32_t lsi_hz  = 32000u;
-    const uint32_t presc   = IWDG_PRESCALER_256; /* tick ≈ 500Hz */
-    const uint32_t tick_hz = lsi_hz / 64u;
+    const uint32_t presc   = IWDG_PRESCALER_256; /* tick ≈ 125Hz */
+    const uint32_t tick_hz = lsi_hz / 256u;
 
     uint32_t reload        = (timeout_ms * tick_hz) / 1000u;
     if (reload == 0u) reload = 1u;
