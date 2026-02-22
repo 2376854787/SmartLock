@@ -1,7 +1,6 @@
 #ifndef __KEY_H__
 #define __KEY_H__
 #include "HFSM.h"
-#include "config_cus.h"
 #include "log.h"
 #include "main.h"
 /* 默认 TAG，可以按需改 */
