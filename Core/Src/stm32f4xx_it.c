@@ -363,6 +363,40 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef* huart) {
 #endif
 }
 
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef* huart, uint16_t Size) {
+#if (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1)) && (defined(CFG_FEAT_HAL_UART) && (CFG_FEAT_HAL_UART == 1))
+    hal_uart_rx_event_case(huart, Size);
+#endif
+}
+void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef* huart) {
+#if (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1)) && (defined(CFG_FEAT_HAL_UART) && (CFG_FEAT_HAL_UART == 1))
+    hal_uart_rx_dma_progress_case(huart);
+#else
+    (void)huart;
+#endif
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef* huart) {
+#if (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1)) && (defined(CFG_FEAT_HAL_UART) && (CFG_FEAT_HAL_UART == 1))
+    hal_uart_rx_dma_progress_case(huart);
+#else
+    (void)huart;
+#endif
+}
+
+void HAL_UART_ErrorCallback(UART_HandleTypeDef* huart) {
+#if (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1)) && (defined(CFG_FEAT_HAL_UART) && (CFG_FEAT_HAL_UART == 1))
+    hal_uart_error_case(huart);
+#else
+    if (huart->Instance == USART1) {
+        __HAL_UART_CLEAR_OREFLAG(huart);
+        __HAL_UART_CLEAR_FEFLAG(huart);
+        HAL_UART_DMAStop(huart);
+        MX_USART1_UART_Init();
+        HAL_UART_Receive_DMA(huart, DmaBuffer, DMA_BUFFER_SIZE);
+    }
+#endif
+}
 /* USER CODE END 1 */
 
 

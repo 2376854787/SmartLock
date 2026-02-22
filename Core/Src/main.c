@@ -23,9 +23,9 @@
 #include "dma.h"
 #include "i2c.h"
 #include "iwdg.h"
+#include "spi.h"
 #include "tim.h"
 #include "usart.h"
-#include "wwdg.h"
 #include "gpio.h"
 #include "fsmc.h"
 
@@ -193,7 +193,7 @@ int main(void)
   MX_ADC3_Init();
   MX_I2C1_Init();
   // MX_IWDG_Init();
-  // MX_WWDG_Init();
+  MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
     /* 直接寄存器发送测试（不依赖HAL超时） */
     // BB_Info_Printf(); /* 打印复位/崩溃信息 */
