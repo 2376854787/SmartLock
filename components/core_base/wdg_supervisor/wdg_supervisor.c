@@ -5,6 +5,7 @@
 #include <limits.h>
 #include <string.h>
 
+#include "assert_cus.h"
 #include "barrier.h"
 #include "hal_time.h"
 #include "hal_wdg.h"
@@ -153,7 +154,8 @@ static void latch_fail_and_wait_reset(void) {
  * @return RET_OK:成功，其他:错误码
  */
 ret_code_t wdg_sup_init(uint32_t period_ms, uint32_t boot_grace_ms) {
-    if (period_ms == 0u) return RET_MAKE_PARAM(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_RANGE_ERR);
+    ASSERT_PARAM(period_ms != 0u);
+    REQUIRE_RET(period_ms != 0u, RET_MAKE_PARAM(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_RANGE_ERR));
     /* 初始化监督表、任务邮箱 、每个任务最后做的题号*/
     memset(s_watch, 0, sizeof(s_watch));
     memset(s_mb, 0, sizeof(s_mb));
@@ -199,8 +201,9 @@ ret_code_t wdg_sup_init(uint32_t period_ms, uint32_t boot_grace_ms) {
 ret_code_t wdg_sup_register(uint8_t *out_id, const char *name, wdg_watch_type_t type,
                             wdg_algo_t algo, uint32_t key, uint32_t param, uint32_t deadline_ms) {
     /* 参数检查 */
+    ASSERT_PARAM(out_id != NULL);
     if (!s_inited) return RET_MAKE_STATE(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_NOT_READY);
-    if (out_id == NULL) return RET_MAKE_PARAM(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_NULL_PTR);
+    REQUIRE_RET(out_id != NULL, RET_MAKE_PARAM(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_NULL_PTR));
     /* 遍历找到一个没有被使用的位置用于存储当前 任务的注册 */
     for (uint32_t i = 0; i < WDG_SUP_MAX_WATCH; i++) {
         if (!s_watch[i].used) {
@@ -219,8 +222,8 @@ ret_code_t wdg_sup_register(uint8_t *out_id, const char *name, wdg_watch_type_t 
                 s_required_hb_mask |= (1u << i);
             } else {
                 /* 做题挑战 */
-                if (deadline_ms == 0u)
-                    return RET_MAKE_PARAM(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_RANGE_ERR);
+                REQUIRE_RET(deadline_ms != 0u,
+                            RET_MAKE_PARAM(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_RANGE_ERR));
                 s_required_ch_mask |= (1u << i);
             }
             /* 返回id */
@@ -239,11 +242,11 @@ ret_code_t wdg_sup_heartbeat(uint8_t id) {
     /* 确保已经初始化 */
     if (!s_inited) return RET_MAKE_STATE(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_NOT_READY);
     /* 确保有效id */
-    if (id >= WDG_SUP_MAX_WATCH)
-        return RET_MAKE_PARAM(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_RANGE_ERR);
+    REQUIRE_RET(id < WDG_SUP_MAX_WATCH,
+                RET_MAKE_PARAM(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_RANGE_ERR));
     /* 确保该id 已经初始化 且监控类型为心跳*/
-    if (!s_watch[id].used || s_watch[id].type != WDG_WATCH_HEARTBEAT)
-        return RET_MAKE_PARAM(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_RANGE_ERR);
+    REQUIRE_RET(s_watch[id].used && (s_watch[id].type == WDG_WATCH_HEARTBEAT),
+                RET_MAKE_PARAM(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_RANGE_ERR));
 
 #if (defined(CFG_FEAT_OSAL_BACKEND_CMSIS_OS2) && (CFG_FEAT_OSAL_BACKEND_CMSIS_OS2 == 1))
     /* 临界区变量 */
@@ -264,17 +267,13 @@ ret_code_t wdg_sup_heartbeat(uint8_t id) {
  */
 ret_code_t wdg_sup_task_service(uint8_t id) {
     /* 确保已经初始化 */
-    if (!s_inited) {
-        return RET_MAKE_STATE(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_NOT_READY);
-    }
+    if (!s_inited) return RET_MAKE_STATE(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_NOT_READY);
     /* 确保id 在有效范围内 */
-    if (id >= WDG_SUP_MAX_WATCH) {
-        return RET_MAKE_PARAM(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_RANGE_ERR);
-    }
+    REQUIRE_RET(id < WDG_SUP_MAX_WATCH,
+                RET_MAKE_PARAM(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_RANGE_ERR));
     /* 确保该id已经注册 且类型为 挑战 */
-    if (!s_watch[id].used || s_watch[id].type != WDG_WATCH_CHALLENGE) {
-        return RET_MAKE_PARAM(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_RANGE_ERR);
-    }
+    REQUIRE_RET(s_watch[id].used && (s_watch[id].type == WDG_WATCH_CHALLENGE),
+                RET_MAKE_PARAM(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_RANGE_ERR));
     /* 获取邮箱地址 */
     wdg_mailbox_t *mb  = &s_mb[id];
     /* 获取挑战题号 */
@@ -597,14 +596,14 @@ ret_code_t wdg_sup_set_hb_miss_budget(uint8_t id, uint32_t miss_budget_cycles) {
     /* 确保已经初始化 */
     if (!s_inited) return RET_MAKE_STATE(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_NOT_READY);
     /* 确保id 有效范围内 */
-    if (id >= WDG_SUP_MAX_WATCH)
-        return RET_MAKE_PARAM(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_RANGE_ERR);
+    REQUIRE_RET(id < WDG_SUP_MAX_WATCH,
+                RET_MAKE_PARAM(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_RANGE_ERR));
     /* 确保id 类型为心跳 */
-    if (!s_watch[id].used || s_watch[id].type != WDG_WATCH_HEARTBEAT)
-        return RET_MAKE_PARAM(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_RANGE_ERR);
+    REQUIRE_RET(s_watch[id].used && (s_watch[id].type == WDG_WATCH_HEARTBEAT),
+                RET_MAKE_PARAM(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_RANGE_ERR));
     /* 检查合法的缺失周期窗口 */
-    if (miss_budget_cycles == 0u)
-        return RET_MAKE_PARAM(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_RANGE_ERR);
+    REQUIRE_RET(miss_budget_cycles != 0u,
+                RET_MAKE_PARAM(RET_MOD_SYS, RET_SUB_SYS_WDG, RET_R_RANGE_ERR));
     /* 设置缺失周期数 */
     s_watch[id].hb_miss_budget = miss_budget_cycles;
     return RET_OK;

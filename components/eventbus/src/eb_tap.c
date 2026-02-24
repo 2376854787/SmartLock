@@ -4,6 +4,17 @@
 
 #include <string.h>
 
+#include "assert_cus.h"
+
+#if EB_ENABLE_ASSERT
+#define EB_ASSERT_PARAM(x) ASSERT_PARAM((x))
+#else
+#define EB_ASSERT_PARAM(x) \
+    do {                   \
+        (void)sizeof(x);   \
+    } while (0)
+#endif
+
 static eb_tap_cfg_t g_cfg;
 static eb_tap_sink_fn g_sink;
 static uint32_t g_sample_ctr;
@@ -47,6 +58,8 @@ void eb_tap_init(const eb_tap_cfg_t* cfg, eb_tap_sink_fn sink) {
  * @param ev 事件
  */
 void eb_tap_on_pub(const eb_event_t* ev) {
+    EB_ASSERT_PARAM(ev != NULL);
+    if (ev == NULL) return;
     if (!g_sink) return;
     if ((g_cfg.enable_mask & 0x1u) == 0u) return;
     if (!pass_filter(ev)) return;
@@ -58,6 +71,8 @@ void eb_tap_on_pub(const eb_event_t* ev) {
  * @param ev 事件
  */
 void eb_tap_on_dispatch(const eb_event_t* ev) {
+    EB_ASSERT_PARAM(ev != NULL);
+    if (ev == NULL) return;
     if (!g_sink) return;
     if ((g_cfg.enable_mask & 0x2u) == 0u) return;
     if (!pass_filter(ev)) return;
@@ -69,6 +84,8 @@ void eb_tap_on_dispatch(const eb_event_t* ev) {
  * @param ev 事件
  */
 void eb_tap_on_drop(const eb_event_t* ev, uint8_t drop_reason) {
+    EB_ASSERT_PARAM(ev != NULL);
+    if (ev == NULL) return;
     if (!g_sink) return;
     if ((g_cfg.enable_mask & 0x4u) == 0u) return;
     if (!pass_filter(ev)) return;

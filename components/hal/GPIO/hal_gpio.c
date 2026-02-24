@@ -1,6 +1,9 @@
 ﻿#include "hal_gpio.h"
 
 #include "APP_config.h"
+#include "assert_cus.h"
+
+#define GPIO_HAL_PARAM(reason_) RET_MAKE_PARAM(RET_MOD_HAL, RET_SUB_HAL_GPIO, (reason_))
 
 #if (defined(CFG_FEAT_HAL_GPIO) && (CFG_FEAT_HAL_GPIO == 1))
 
@@ -30,6 +33,8 @@ ret_code_t hal_gpio_port_unregister_irq(hal_gpio_t* h);
  * @return
  */
 ret_code_t hal_gpio_open(hal_gpio_t** out, uint32_t id) {
+    ASSERT_PARAM(out != NULL);
+    REQUIRE_RET(out != NULL, GPIO_HAL_PARAM(RET_R_NULL_PTR));
     return hal_gpio_port_open(out, id);
 }
 
@@ -40,6 +45,8 @@ ret_code_t hal_gpio_open(hal_gpio_t** out, uint32_t id) {
  * @return 运行状态
  */
 ret_code_t hal_gpio_config(hal_gpio_t* h, const hal_gpio_cfg_t* cfg) {
+    ASSERT_PARAM((h != NULL) && (cfg != NULL));
+    REQUIRE_RET((h != NULL) && (cfg != NULL), GPIO_HAL_PARAM(RET_R_INVALID_ARG));
     return hal_gpio_port_config(h, cfg);
 }
 
@@ -49,6 +56,8 @@ ret_code_t hal_gpio_config(hal_gpio_t* h, const hal_gpio_cfg_t* cfg) {
  * @return
  */
 ret_code_t hal_gpio_close(hal_gpio_t* h) {
+    ASSERT_PARAM(h != NULL);
+    REQUIRE_RET(h != NULL, GPIO_HAL_PARAM(RET_R_INVALID_ARG));
     return hal_gpio_port_close(h);
 }
 
@@ -58,6 +67,8 @@ ret_code_t hal_gpio_close(hal_gpio_t* h) {
  * @param level 电平
  */
 void hal_gpio_write(hal_gpio_t* h, hal_gpio_level_t level) {
+    ASSERT_PARAM(h != NULL);
+    REQUIRE_RET_VOID(h != NULL);
     hal_gpio_port_write(h, level);
 }
 
@@ -67,6 +78,8 @@ void hal_gpio_write(hal_gpio_t* h, hal_gpio_level_t level) {
  * @return
  */
 hal_gpio_level_t hal_gpio_read(hal_gpio_t* h) {
+    ASSERT_PARAM(h != NULL);
+    REQUIRE_RET(h != NULL, HAL_GPIO_LEVEL_LOW);
     return hal_gpio_port_read(h);
 }
 
@@ -75,6 +88,8 @@ hal_gpio_level_t hal_gpio_read(hal_gpio_t* h) {
  * @param h
  */
 void hal_gpio_toggle(hal_gpio_t* h) {
+    ASSERT_PARAM(h != NULL);
+    REQUIRE_RET_VOID(h != NULL);
     hal_gpio_port_toggle(h);
 }
 
@@ -82,6 +97,8 @@ void hal_gpio_toggle(hal_gpio_t* h) {
  * @brief  注册 GPIO 中断回调
  */
 ret_code_t hal_gpio_register_irq(hal_gpio_t* h, hal_gpio_irq_cb_t cb, void* user_data) {
+    ASSERT_PARAM((h != NULL) && (cb != NULL));
+    REQUIRE_RET((h != NULL) && (cb != NULL), GPIO_HAL_PARAM(RET_R_INVALID_ARG));
     return hal_gpio_port_register_irq(h, cb, user_data);
 }
 
@@ -89,6 +106,8 @@ ret_code_t hal_gpio_register_irq(hal_gpio_t* h, hal_gpio_irq_cb_t cb, void* user
  * @brief  注销 GPIO 中断回调
  */
 ret_code_t hal_gpio_unregister_irq(hal_gpio_t* h) {
+    ASSERT_PARAM(h != NULL);
+    REQUIRE_RET(h != NULL, GPIO_HAL_PARAM(RET_R_INVALID_ARG));
     return hal_gpio_port_unregister_irq(h);
 }
 #else
@@ -135,5 +154,3 @@ ret_code_t hal_gpio_unregister_irq(hal_gpio_t* h) {
     return RET_E_UNSUPPORTED;
 }
 #endif
-
-

@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include "assert_cus.h"
 #include "compiler_cus.h"
 #include "memory_pool1.h"
 #include "osal.h"
@@ -78,6 +79,8 @@ CORE_INLINE uint8_t *payload_to_blk(const mp_pool1_t *p, void *payload) {
  * @note invalidate 函数需要自己实现
  */
 void mp_dma_sync_for_cpu(const mp_pool1_t *p, void *payload) {
+    ASSERT_PARAM((p != NULL) && (payload != NULL));
+    if ((p == NULL) || (payload == NULL)) return;
     if (p->cache_ops.invalidate) {
         uint8_t *blk = payload_to_blk(p, payload);
         p->cache_ops.invalidate(blk, p->blk_total_size);
@@ -91,6 +94,8 @@ void mp_dma_sync_for_cpu(const mp_pool1_t *p, void *payload) {
  * @note clean函数需要自己实现
  */
 void mp_dma_sync_for_device(const mp_pool1_t *p, void *payload) {
+    ASSERT_PARAM((p != NULL) && (payload != NULL));
+    if ((p == NULL) || (payload == NULL)) return;
     if (p->cache_ops.clean) {
         uint8_t *blk = payload_to_blk(p, payload);
         p->cache_ops.clean(blk, p->blk_total_size);
@@ -194,18 +199,18 @@ CORE_INLINE bool q_pop_one_to_freelist(mp_pool1_t *p) {
  */
 ret_code_t mp_init(mp_pool1_t *p, const mp_config_t *cfg) {
     /* 1. 基础指针校验 */
-    if (!p || !cfg || !cfg->pool_mem || !cfg->free_stack || !cfg->alloc_bm) {
-        return RET_MEM_CODE(RET_CLASS_PARAM, RET_R_NULL_PTR);
-    }
+    ASSERT_PARAM((p != NULL) && (cfg != NULL) && (cfg->pool_mem != NULL) &&
+                 (cfg->free_stack != NULL) && (cfg->alloc_bm != NULL));
+    REQUIRE_RET((p != NULL) && (cfg != NULL) && (cfg->pool_mem != NULL) &&
+                    (cfg->free_stack != NULL) && (cfg->alloc_bm != NULL),
+                RET_MEM_CODE(RET_CLASS_PARAM, RET_R_NULL_PTR));
 #if MP_CFG_QUARANTINE
     /* 隔离队列地址错误 但是隔离间数量大于 0*/
-    if (cfg->quarantine_cap > 0 && !cfg->quarantine_buf) {
-        return RET_MEM_CODE(RET_CLASS_PARAM, RET_R_NULL_PTR);
-    }
+    REQUIRE_RET((cfg->quarantine_cap == 0u) || (cfg->quarantine_buf != NULL),
+                RET_MEM_CODE(RET_CLASS_PARAM, RET_R_NULL_PTR));
 #endif
-    if (cfg->n_blks == 0 || cfg->payload_size == 0 || cfg->pool_size == 0) {
-        return RET_MEM_CODE(RET_CLASS_PARAM, RET_R_INVALID_ARG);
-    }
+    REQUIRE_RET((cfg->n_blks != 0u) && (cfg->payload_size != 0u) && (cfg->pool_size != 0u),
+                RET_MEM_CODE(RET_CLASS_PARAM, RET_R_INVALID_ARG));
     /* 内存池基地址 */
     const uintptr_t raw_addr     = (uintptr_t)cfg->pool_mem;
     const uintptr_t aligned_addr = MP_ALIGN_UP(raw_addr, MP_CACHE_LINE_SIZE);
@@ -295,9 +300,8 @@ ret_code_t mp_init(mp_pool1_t *p, const mp_config_t *cfg) {
  * @note 返回值可能为NULL 需要检查
  */
 void *mp_alloc(mp_pool1_t *p) {
-    if (!p) {
-        return NULL;
-    }
+    ASSERT_PARAM(p != NULL);
+    if (!p) return NULL;
     /* 上锁 */
     MP_ASSERT(p->lock.unlock && p->lock.handle && p->lock.lock);
     uint32_t flags = 0;
@@ -360,9 +364,8 @@ CORE_INLINE bool ptr_in_pool(const mp_pool1_t *p, const uint8_t *blk) {
  * @note 极致性能必须块数量 等于2的幂次
  */
 ret_code_t mp_free(mp_pool1_t *p, void *payload_ptr) {
-    if (!p || !payload_ptr) {
-        return RET_MEM_CODE(RET_CLASS_PARAM, RET_R_NULL_PTR);
-    }
+    ASSERT_PARAM((p != NULL) && (payload_ptr != NULL));
+    REQUIRE_RET((p != NULL) && (payload_ptr != NULL), RET_MEM_CODE(RET_CLASS_PARAM, RET_R_NULL_PTR));
     /* 上锁 */
     MP_ASSERT(p->lock.unlock && p->lock.handle && p->lock.lock);
     uint32_t flags = 0;
@@ -414,9 +417,8 @@ ret_code_t mp_free(mp_pool1_t *p, void *payload_ptr) {
  * @return 内存池是否安全
  */
 ret_code_t mp_check_pool(mp_pool1_t *p) {
-    if (!p) {
-        return RET_MEM_CODE(RET_CLASS_PARAM, RET_R_NULL_PTR);
-    }
+    ASSERT_PARAM(p != NULL);
+    REQUIRE_RET(p != NULL, RET_MEM_CODE(RET_CLASS_PARAM, RET_R_NULL_PTR));
 #if MP_CFG_CANARY
     for (uint16_t i = 0; i < p->n_blks; i++) {
         if (check_canary(p, blk_ptr(p, i)) != RET_OK) {

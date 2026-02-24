@@ -1,5 +1,9 @@
 #include "auto_init.h"
 
+#include <stddef.h>
+
+#include "assert_cus.h"
+
 extern const auto_init_item_t __auto_init_early_start[];
 extern const auto_init_item_t __auto_init_early_end[];
 extern const auto_init_item_t __auto_init_init_start[];
@@ -43,6 +47,8 @@ DECL_RANGE(late, 5);
 DECL_RANGE(late, 6);
 DECL_RANGE(late, 7);
 static void run_bucket_sorted(const auto_init_item_t *begin, const auto_init_item_t *end) {
+    ASSERT_PARAM((begin != NULL) && (end != NULL) && (end >= begin));
+    if ((begin == NULL) || (end == NULL) || (end < begin)) return;
     const uintptr_t n = (uintptr_t)(end - begin);
     if (n == 0u) return;
 
@@ -114,6 +120,8 @@ static void run_level_late(void) {
 }
 
 void auto_init_run_level(auto_init_level_t level) {
+    ASSERT_PARAM(level <= AUTO_INIT_LATE);
+    if (level > AUTO_INIT_LATE) return;
     switch (level) {
         case AUTO_INIT_EARLY:
             run_level_early();

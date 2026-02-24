@@ -1,5 +1,6 @@
 #include <stdbool.h>
 
+#include "assert_cus.h"
 #include "stm32_hal.h"
 #include "blackbox_record.h"
 /**
@@ -10,6 +11,7 @@ void BB_EnableAccess(void) {
     HAL_PWR_EnableBkUpAccess();
     __HAL_RCC_BKPSRAM_CLK_ENABLE();
     HAL_PWREx_EnableBkUpReg();
+    ASSERT_FATAL(__HAL_RCC_BKPSRAM_IS_CLK_ENABLED() != 0u);
 }
 
 /**

@@ -10,6 +10,7 @@
 /* 引入 CMSIS-OS2 和 RingBuffer */
 #include "MemoryAllocation.h"
 #include "RingBuffer.h"
+#include "assert_cus.h"
 #include "osal.h"
 #include "ret_code.h"
 #include "hal_time.h"
@@ -84,10 +85,10 @@ static inline const log_backend_t* Log_GetBackend(void) {
 }
 
 static ret_code_t Log_SendChunkWait(const log_backend_t* b, const uint8_t* data, uint32_t len) {
-    if (!b || !b->send_async || !data || len == 0u) {
-        return RET_MAKE(RET_MOD_LOG, RET_SUB_LOG_CORE,
-                        RET_CODE_MAKE(RET_CLASS_PARAM, RET_R_INVALID_ARG));
-    }
+    ASSERT_PARAM((b != NULL) && (b->send_async != NULL) && (data != NULL) && (len != 0u));
+    REQUIRE_RET((b != NULL) && (b->send_async != NULL) && (data != NULL) && (len != 0u),
+                RET_MAKE(RET_MOD_LOG, RET_SUB_LOG_CORE,
+                         RET_CODE_MAKE(RET_CLASS_PARAM, RET_R_INVALID_ARG)));
 
     ret_code_t rc;
     do {
@@ -186,6 +187,8 @@ void Log_Init(void) {
  */
 void Log_Printf(LogLevel_t level, const char* file, int line, const char* tag, const char* fmt,
                 ...) {
+    ASSERT_PARAM((file != NULL) && (tag != NULL) && (fmt != NULL));
+    if ((file == NULL) || (tag == NULL) || (fmt == NULL)) return;
     /* 1. 过滤低等级日志 */
     if (level > LOG_CURRENT_LEVEL) return;
 
@@ -345,6 +348,8 @@ void Log_Printf(LogLevel_t level, const char* file, int line, const char* tag, c
  * @param len  数据长度
  */
 static void Log_PushBytes_NoBlock(const uint8_t* data, uint16_t len) {
+    ASSERT_PARAM((data != NULL) && (len != 0u));
+    if ((data == NULL) || (len == 0u)) return;
 #if LOG_ASYNC_ENABLE
     if (OSAL_kernel_is_running()) {
         uint32_t write_len = (uint32_t)len;
@@ -372,6 +377,8 @@ static void Log_PushBytes_NoBlock(const uint8_t* data, uint16_t len) {
  */
 void Log_Hexdump(LogLevel_t level, const char* file, int line, const char* tag, const void* buf,
                  uint32_t len) {
+    ASSERT_PARAM((file != NULL) && (tag != NULL) && ((buf != NULL) || (len == 0u)));
+    if ((file == NULL) || (tag == NULL)) return;
     /* 1、检查日志等级 */
     if (level > LOG_CURRENT_LEVEL) return;
 

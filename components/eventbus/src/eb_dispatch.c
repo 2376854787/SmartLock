@@ -1,4 +1,7 @@
-﻿#include "eb_api.h"
+﻿#include <stddef.h>
+
+#include "assert_cus.h"
+#include "eb_api.h"
 #include "eb_config.h"
 #include "eb_eventdef.h"
 #include "eb_port.h"
@@ -14,6 +17,15 @@
 
 #ifndef EB_MAX_MATCH
 #define EB_MAX_MATCH 16u
+#endif
+
+#if EB_ENABLE_ASSERT
+#define EB_ASSERT_PARAM(x) ASSERT_PARAM((x))
+#else
+#define EB_ASSERT_PARAM(x) \
+    do {                   \
+        (void)sizeof(x);   \
+    } while (0)
 #endif
 
 /* 与 eb_core.c 保持一致的 TAP drop reason 编码 */
@@ -55,6 +67,8 @@ static inline bool eb_type_ok(const eb_event_t* ev, const eb_sub_t* s) {
  * @return 32位状态码
  */
 static eb_ret_t dispatch_one(const eb_event_t* ev, const eb_sub_t* s) {
+    EB_ASSERT_PARAM((ev != NULL) && (s != NULL));
+    if ((ev == NULL) || (s == NULL)) return EB_ERR_BADARG;
     if (s->delivery == EB_DELIVERY_CALLBACK) {
 #if (EB_CFG_ENABLE_CALLBACK == 0)
         return EB_ERR_BADSTATE;
@@ -104,6 +118,8 @@ static eb_ret_t dispatch_one(const eb_event_t* ev, const eb_sub_t* s) {
  * @param ev 事件
  */
 void eb_dispatch(const eb_event_t* ev) {
+    EB_ASSERT_PARAM(ev != NULL);
+    if (ev == NULL) return;
 #if (defined(EB_CFG_ENABLE_TRACE) && (EB_CFG_ENABLE_TRACE == 1))
     eb_trace_record(EB_TRACE_DISPATCH, ev, (eb_drop_reason_t)EB_TAP_DROP_NONE);
 #endif

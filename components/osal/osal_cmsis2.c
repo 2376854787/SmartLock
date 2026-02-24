@@ -222,6 +222,7 @@ static inline void OSAL_CritMon_Enter(uint32_t enter_pc) {
  * @param out_enter_pc
  */
 static inline void OSAL_CritMon_Exit(uint32_t* out_dur_us, uint32_t* out_enter_pc) {
+    OSAL_ASSERT((out_dur_us != NULL) && (out_enter_pc != NULL));
     if (!out_dur_us || !out_enter_pc) return;
     /* 初始化为0防止垃圾信息 */
     *out_dur_us   = 0u;
@@ -310,6 +311,7 @@ void OSAL_exit_critical(void) {
  * @param state 保存进入前状态/模式
  */
 void OSAL_enter_critical_ex(osal_crit_state_t* state) {
+    OSAL_ASSERT(state != NULL);
     if (!state) return;
     const uint32_t enter_pc = read_lr_return_addr();
 #if (defined(CFG_FEAT_OSAL_CRITICAL_FREERTOS) && (CFG_FEAT_OSAL_CRITICAL_FREERTOS == 1))
@@ -391,6 +393,7 @@ void OSAL_exit_critical_ex(osal_crit_state_t state) {
  * @param state 进入中断的变量
  */
 void OSAL_enter_critical_from_isr(osal_crit_state_t* state) {
+    OSAL_ASSERT(state != NULL);
     if (!state) return;
     const uint32_t enter_pc = read_lr_return_addr();
 #if (defined(CFG_FEAT_OSAL_CRITICAL_FREERTOS) && (CFG_FEAT_OSAL_CRITICAL_FREERTOS == 1))
@@ -451,6 +454,7 @@ void OSAL_exit_critical_from_isr(osal_crit_state_t state) {
  */
 ret_code_t OSAL_mutex_create(osal_mutex_t* out, const char* name, bool recursive,
                              bool prio_inherit) {
+    OSAL_ASSERT(out != NULL);
     if (!out) return OSAL_MUTEX_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
 
     osMutexAttr_t attr;
@@ -472,6 +476,7 @@ ret_code_t OSAL_mutex_create(osal_mutex_t* out, const char* name, bool recursive
  * @return 返回删除结果
  */
 ret_code_t OSAL_mutex_delete(osal_mutex_t mutex) {
+    OSAL_ASSERT(mutex != NULL);
     if (!mutex) return OSAL_MUTEX_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     const osStatus_t status = osMutexDelete((osMutexId_t)mutex);
     if (status == osOK) return RET_OK;
@@ -486,6 +491,7 @@ ret_code_t OSAL_mutex_delete(osal_mutex_t mutex) {
  * @return 锁是否获取成功
  */
 ret_code_t OSAL_mutex_lock(osal_mutex_t mutex, uint32_t timeout_ms) {
+    OSAL_ASSERT(mutex != NULL);
     if (!mutex) return OSAL_MUTEX_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     const uint32_t to   = OSAL_timeout_ms_to_kernel_ticks(timeout_ms);
     const osStatus_t st = osMutexAcquire((osMutexId_t)mutex, to);
@@ -500,6 +506,7 @@ ret_code_t OSAL_mutex_lock(osal_mutex_t mutex, uint32_t timeout_ms) {
  * @return 锁是否释放成功
  */
 ret_code_t OSAL_mutex_unlock(osal_mutex_t mutex) {
+    OSAL_ASSERT(mutex != NULL);
     if (!mutex) return OSAL_MUTEX_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     const osStatus_t st = osMutexRelease((osMutexId_t)mutex);
     return (st == osOK) ? RET_OK : OSAL_MUTEX_RET(RET_CLASS_FATAL, RET_R_PANIC);
@@ -517,6 +524,7 @@ ret_code_t OSAL_mutex_unlock(osal_mutex_t mutex) {
  */
 ret_code_t OSAL_sem_create(osal_sem_t* out, const char* name, uint32_t initial_count,
                            uint32_t max_count) {
+    OSAL_ASSERT((out != NULL) && (max_count != 0u));
     if (!out || max_count == 0) return OSAL_SEM_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     osSemaphoreAttr_t attr;
     attr.name          = name;
@@ -535,6 +543,7 @@ ret_code_t OSAL_sem_create(osal_sem_t* out, const char* name, uint32_t initial_c
  * @return 返回删除结果
  */
 ret_code_t OSAL_sem_delete(osal_sem_t sem) {
+    OSAL_ASSERT(sem != NULL);
     if (!sem) return OSAL_SEM_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     const osStatus_t status = osSemaphoreDelete((osSemaphoreId_t)sem);
     return (status == osOK) ? RET_OK : OSAL_SEM_RET(RET_CLASS_FATAL, RET_R_PANIC);
@@ -548,6 +557,7 @@ ret_code_t OSAL_sem_delete(osal_sem_t sem) {
  * @note 中断中可以使用
  */
 ret_code_t OSAL_sem_take(osal_sem_t sem, uint32_t timeout_ms) {
+    OSAL_ASSERT(sem != NULL);
     if (!sem) return OSAL_SEM_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     const uint32_t to   = OSAL_timeout_ms_to_kernel_ticks(timeout_ms);
     const osStatus_t st = osSemaphoreAcquire((osSemaphoreId_t)sem, to);
@@ -563,6 +573,7 @@ ret_code_t OSAL_sem_take(osal_sem_t sem, uint32_t timeout_ms) {
  * @note 中断中可以使用
  */
 ret_code_t OSAL_sem_give(osal_sem_t sem) {
+    OSAL_ASSERT(sem != NULL);
     if (!sem) return OSAL_SEM_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     const osStatus_t st = osSemaphoreRelease((osSemaphoreId_t)sem);
     if (st == osOK) return RET_OK;
@@ -592,6 +603,7 @@ ret_code_t OSAL_sem_give_from_isr(osal_sem_t sem) {
  */
 ret_code_t OSAL_msgq_create(osal_msgq_t* out, const char* name, uint32_t item_size,
                             uint32_t item_count) {
+    OSAL_ASSERT((out != NULL) && (item_count != 0u) && (item_size != 0u));
     if (!out || item_count == 0 || item_size == 0)
         return OSAL_QUEUE_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     osMessageQueueAttr_t attr;
@@ -614,6 +626,7 @@ ret_code_t OSAL_msgq_create(osal_msgq_t* out, const char* name, uint32_t item_si
  * @note IS_ISR 不可使用
  */
 ret_code_t OSAL_msgq_delete(osal_msgq_t msgq) {
+    OSAL_ASSERT(msgq != NULL);
     if (!msgq) return OSAL_QUEUE_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     const osStatus_t st = osMessageQueueDelete((osMessageQueueId_t)msgq);
     if (st == osOK) return RET_OK;
@@ -631,6 +644,7 @@ ret_code_t OSAL_msgq_delete(osal_msgq_t msgq) {
  * @note 可以中断使用
  */
 ret_code_t OSAL_msgq_put(osal_msgq_t msgq, void* msg, uint32_t timeout_ms) {
+    OSAL_ASSERT((msgq != NULL) && (msg != NULL));
     if (!msgq || !msg) return OSAL_QUEUE_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     const uint32_t to   = OSAL_timeout_ms_to_kernel_ticks(timeout_ms);
     const osStatus_t st = osMessageQueuePut((osMessageQueueId_t)msgq, msg, 0, to);
@@ -657,6 +671,7 @@ ret_code_t OSAL_msgq_put(osal_msgq_t msgq, void* msg, uint32_t timeout_ms) {
  * @note CMSIS-RTOS2 底层可从ISR执行
  */
 ret_code_t OSAL_msgq_get(osal_msgq_t msgq, void* msg, uint32_t timeout_ms) {
+    OSAL_ASSERT((msgq != NULL) && (msg != NULL));
     if (!msgq || !msg) return OSAL_QUEUE_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     const uint32_t to   = OSAL_timeout_ms_to_kernel_ticks(timeout_ms);
     const osStatus_t st = osMessageQueueGet((osMessageQueueId_t)msgq, msg, NULL, to);
@@ -686,6 +701,7 @@ ret_code_t OSAL_msgq_get(osal_msgq_t msgq, void* msg, uint32_t timeout_ms) {
  */
 ret_code_t OSAL_thread_create(osal_thread_t* out, osal_thread_fn_t fn, void* arg,
                               const osal_thread_attr_t* attr) {
+    OSAL_ASSERT((out != NULL) && (fn != NULL) && (attr != NULL));
     if (!out || !fn || !attr) return OSAL_TASK_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     osThreadAttr_t a;
     a.attr_bits     = 0;
@@ -718,6 +734,7 @@ osal_thread_t OSAL_thread_self(void) {
  * @return 是否设置成功
  */
 ret_code_t OSAL_thread_flags_set(osal_thread_t t, osal_flags_t flags) {
+    OSAL_ASSERT(t != NULL);
     if (!t) return OSAL_TASK_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     const uint32_t r = osThreadFlagsSet((osThreadId_t)t, (uint32_t)flags);
     return ((r & 0x80000000u) == 0u) ? RET_OK : OSAL_TASK_RET(RET_CLASS_FATAL, RET_R_PANIC);

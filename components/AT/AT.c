@@ -5,6 +5,7 @@
 
 #include "AT.h"
 #include "MemoryAllocation.h"
+#include "assert_cus.h"
 #include "log.h"
 #include "ret_code.h"
 
@@ -29,8 +30,9 @@ static void AT_UartEvtCb(void* user, const hal_uart_event_t* evt);
 static ret_code_t AT_RbWriteSpscFromIsr(RingBuffer* rb, const uint8_t* src, uint32_t want,
                                         bool isCompatible, uint32_t* written) {
     if (written) *written = 0u;
-    if (!rb || !src || want == 0u || !written)
-        return AT_UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    ASSERT_PARAM((rb != NULL) && (src != NULL) && (want != 0u) && (written != NULL));
+    REQUIRE_RET((rb != NULL) && (src != NULL) && (want != 0u) && (written != NULL),
+                AT_UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
 
     RingBufferSpan span = {0};
     uint32_t granted    = 0u;
@@ -106,7 +108,9 @@ static void AT_ConsumeRxBlockFromIsr(AT_Manager_t* at_manager, const uint8_t* sr
  */
 static ret_code_t AT_StartHalUart(AT_Manager_t* at_device, hal_uart_id_t id,
                                   const hal_uart_cfg_t* cfg) {
-    if (!at_device || !cfg) return AT_UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    ASSERT_PARAM((at_device != NULL) && (cfg != NULL));
+    REQUIRE_RET((at_device != NULL) && (cfg != NULL),
+                AT_UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
     /* 配置串口参数 */
 
     if (at_device->uart_hal) {
@@ -405,6 +409,7 @@ AT_Resp_t AT_SendCmd(AT_Manager_t* mgr, const char* cmd, const char* expect, uin
 #if !AT_RTOS_ENABLE
     return AT_RESP_ERROR;
 #else
+    ASSERT_PARAM((mgr != NULL) && (cmd != NULL));
 
     AT_Command_t* h = AT_Submit(mgr, cmd, expect, timeout_ms);
     if (!h) return AT_RESP_BUSY;
@@ -437,6 +442,7 @@ AT_Resp_t AT_SendCmd(AT_Manager_t* mgr, const char* cmd, const char* expect, uin
  * @param line 返回的语句
  */
 static void AT_OnLine(AT_Manager_t* mgr, const char* line) {
+    ASSERT_PARAM((mgr != NULL) && (line != NULL));
     if (!mgr || !line) return;
 
     /* 有正在执行的命令：优先作为响应处理 */
@@ -491,6 +497,7 @@ static void AT_OnLine(AT_Manager_t* mgr, const char* line) {
  * @return 返回空闲命令对象
  */
 static AT_Command_t* AT_CmdAlloc(AT_Manager_t* mgr) {
+    ASSERT_PARAM(mgr != NULL);
     if (!mgr) return NULL;
 #if AT_RTOS_ENABLE
     /* 获取锁 */
@@ -522,6 +529,7 @@ static AT_Command_t* AT_CmdAlloc(AT_Manager_t* mgr) {
  */
 static void AT_CmdFree(AT_Manager_t* mgr, AT_Command_t* c) {
 #if AT_RTOS_ENABLE
+    ASSERT_PARAM((mgr != NULL) && (c != NULL));
     if (!mgr || !c) return;
     /* 判断指针范围是否在池中 */
     if (c < mgr->cmd_pool || c >= &mgr->cmd_pool[AT_MAX_PENDING]) {
@@ -567,6 +575,7 @@ static void AT_CmdFree(AT_Manager_t* mgr, AT_Command_t* c) {
  */
 void AT_SemDrain(osal_sem_t sem) {
 #if AT_RTOS_ENABLE
+    ASSERT_PARAM(sem != NULL);
     if (!sem) return;
     while (OSAL_sem_take(sem, 0) == RET_OK) {
         /* drain */
@@ -592,6 +601,7 @@ AT_Command_t* AT_Submit(AT_Manager_t* mgr, const char* cmd, const char* expect,
     return NULL;
 #else
     /* 1、防止空指针 */
+    ASSERT_PARAM((mgr != NULL) && (cmd != NULL));
     if (!mgr || !cmd) return NULL;
     /* 2、设置默认超时时间 */
     if (timeout_ms == 0) timeout_ms = AT_CMD_TIMEOUT_DEF;
@@ -648,6 +658,7 @@ AT_Resp_t AT_Wait(AT_Command_t* h, const uint32_t wait_ms) {
     (void)wait_ms;
     return AT_RESP_ERROR;
 #else
+    ASSERT_PARAM(h != NULL);
     if (!h) return AT_RESP_ERROR;
 
     /* 非阻塞等待 */
@@ -670,6 +681,7 @@ AT_Resp_t AT_Wait(AT_Command_t* h, const uint32_t wait_ms) {
  */
 void AT_CmdRelease(AT_Manager_t* mgr, AT_Command_t* h) {
 #if AT_RTOS_ENABLE
+    ASSERT_PARAM((mgr != NULL) && (h != NULL));
     if (!mgr || !h) return;
     if (mgr->curr_cmd == h) {
         LOG_E("AT", "CmdRelease denied: command still owned by core");
@@ -688,6 +700,7 @@ void AT_CmdRelease(AT_Manager_t* mgr, AT_Command_t* h) {
  * @return 对象的进度状态
  */
 AT_Resp_t AT_Poll(AT_Command_t* h) {
+    ASSERT_PARAM(h != NULL);
     if (!h) return AT_RESP_ERROR;
     return h->result;
 }
@@ -699,6 +712,8 @@ AT_Resp_t AT_Poll(AT_Command_t* h) {
  * @param user 传递的上下文
  */
 void AT_SetUrcHandler(AT_Manager_t* mgr, const AT_UrcCb cb, void* user) {
+    ASSERT_PARAM(mgr != NULL);
+    if (!mgr) return;
     mgr->urc_cb   = cb;
     mgr->urc_user = user;
 }
@@ -737,6 +752,8 @@ uint32_t AT_TxTimeoutMs(AT_Manager_t* mgr, uint16_t len) {
  * @param mode 设定的模式
  */
 void AT_SetTxMode(AT_Manager_t* mgr, AT_TxMode mode) {
+    ASSERT_PARAM(mgr != NULL);
+    if (!mgr) return;
     mgr->tx_mode = mode;
 }
 

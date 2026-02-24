@@ -9,6 +9,7 @@
 #include "cmsis_os2.h"
 #include "log.h"
 #include "osal.h"
+#include "assert_cus.h"
 #include "stm32f4xx.h"
 #include "stm32f4xx_hal.h"
 #include "utils_def.h"
@@ -254,7 +255,10 @@ uint32_t hal_get_cycles_per_us(void) {
  * @note 使用前必须确保 DWT 初始化成功
  */
 uint32_t hal_cycles_to_us(uint32_t cyc) {
-    return (uint32_t)(cyc + (uint64_t)hal_get_cycles_per_us() - 1) / hal_get_cycles_per_us();
+    const uint32_t cpu_per_us = hal_get_cycles_per_us();
+    ASSERT_PARAM(cpu_per_us != 0u);
+    REQUIRE_RET(cpu_per_us != 0u, cyc);
+    return (uint32_t)(cyc + (uint64_t)cpu_per_us - 1u) / cpu_per_us;
 }
 #else
 #include <stdint.h>

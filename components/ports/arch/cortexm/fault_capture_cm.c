@@ -1,5 +1,6 @@
 #include "fault_capture_cm.h"
 
+#include "assert_cus.h"
 #include "fault_capture.h"
 
 /* 确保能访问 SCB：一般 stm32xxxx.h 已经包含 core_cm*.h */
@@ -26,6 +27,11 @@
 #define STACK_FRAME_PSR 7
 
 void FaultCapture_FromStack_cm(uint32_t* sp, bb_crash_type_t type) {
+    ASSERT_FATAL(sp != NULL);
+    if (sp == NULL) {
+        while (1) {
+        }
+    }
     /* 直接从栈指针偏移读取，避免结构体对齐问题 */
     fault_ctx_t ctx;
     ctx.pc    = sp[STACK_FRAME_PC];

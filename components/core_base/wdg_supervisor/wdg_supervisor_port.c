@@ -4,6 +4,7 @@
 
 #include <stdio.h>
 
+#include "assert_cus.h"
 #include "blackbox_record.h"
 #include "hal_time.h"
 #include "wdg_supervisor.h"
@@ -28,6 +29,10 @@ void wdg_sup_fail_hook(uint8_t id, uint32_t seq, uint32_t nonce, uint32_t expect
     const char *name       = wdg_sup_get_name(id);
     const char *reason_txt = wdg_sup_reason_str(reason);
     const char *state_txt  = wdg_sup_get_state_name();
+    ASSERT_PARAM((name != NULL) && (reason_txt != NULL) && (state_txt != NULL));
+    if (name == NULL) name = "unknown";
+    if (reason_txt == NULL) reason_txt = "unknown";
+    if (state_txt == NULL) state_txt = "unknown";
     const bb_wdg_fail_record_t rec = {
         .valid    = 1u,
         .task_id  = (uint32_t)id,

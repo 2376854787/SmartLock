@@ -5,6 +5,7 @@
 #include <stdio.h>  // 鐢ㄤ簬 printf 璋冭瘯
 
 #include "HFSM.h"
+#include "assert_cus.h"
 #include "blackbox_record.h"
 #include "log.h"
 
@@ -63,6 +64,7 @@
  * @param initial_state 指向初始状态的指针
  */
 void HFSM_Init(StateMachine* fsm, const State* initial_state) {
+    ASSERT_PARAM((fsm != NULL) && (initial_state != NULL));
     if (fsm == NULL || initial_state == NULL) {
         HFSM_LOGI("HFSM_Init: Invalid parameters");
         return;
@@ -77,6 +79,7 @@ void HFSM_Init(StateMachine* fsm, const State* initial_state) {
  * @param new_state 指向新的状态的指针
  */
 void HFSM_Transition(StateMachine* fsm, const State* new_state) {
+    ASSERT_PARAM((fsm != NULL) && (new_state != NULL));
     if (fsm == NULL || new_state == NULL) return;
     HFSM_LOGD("HFSM_Transition: Transitioning from %s to %s",
               fsm->current_state ? fsm->current_state->state_name : "NULL", new_state->state_name);
@@ -105,6 +108,8 @@ void HFSM_Transition(StateMachine* fsm, const State* new_state) {
  * @param event 指向事件的指针
  */
 void HFSM_HandleEvent(StateMachine* fsm, const Event* event) {
+    ASSERT_PARAM((fsm != NULL) && (event != NULL));
+    if ((fsm == NULL) || (event == NULL)) return;
     HFSM_LOGD("\n>>> Handling event: %d...", event->event_id);
     const State* s = fsm->current_state;
 

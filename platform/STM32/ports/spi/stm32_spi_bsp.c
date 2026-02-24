@@ -2,15 +2,15 @@
 #if defined(CFG_TARGET_PLATFORM_STM32_HAL) && defined(CFG_FEAT_HAL_SPI) && (CFG_FEAT_HAL_SPI == 1)
 #include <string.h>
 
+#include "assert_cus.h"
 #include "hal_spi.h"
 #include "stm32_spi_bsp.h"
 extern DMA_HandleTypeDef hdma_spi1_rx;
 extern DMA_HandleTypeDef hdma_spi1_tx;
 extern SPI_HandleTypeDef hspi1;
 ret_code_t stm32_spi_bsp_get(uint8_t bus_id, stm32_spi_bsp_t *out) {
-    if (!out) {
-        return RET_MAKE_PARAM(RET_MOD_PORT, RET_SUB_PORT_SPI, RET_R_NULL_PTR);
-    }
+    ASSERT_PARAM(out != NULL);
+    REQUIRE_RET(out != NULL, RET_MAKE_PARAM(RET_MOD_PORT, RET_SUB_PORT_SPI, RET_R_NULL_PTR));
     memset(out, 0, sizeof(*out));
 
     switch (bus_id) {
@@ -29,7 +29,8 @@ ret_code_t stm32_spi_bsp_get(uint8_t bus_id, stm32_spi_bsp_t *out) {
 }
 
 uint32_t stm32_spi_busclk_hz(const SPI_HandleTypeDef *hspi) {
-    if (!hspi) return 48000000u;
+    ASSERT_PARAM(hspi != NULL);
+    REQUIRE_RET(hspi != NULL, 48000000u);
     if (hspi->Instance == SPI1) {
         return 84000000u;
     }

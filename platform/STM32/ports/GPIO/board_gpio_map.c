@@ -7,6 +7,7 @@
 
 #if (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1)) && \
     (defined(CFG_FEAT_HAL_GPIO) && (CFG_FEAT_HAL_GPIO == 1))
+#include "assert_cus.h"
 #include "stm32_hal.h"
 
 #define PORT_RET(clas_, err_) \
@@ -27,7 +28,8 @@ static const board_gpio_map_entry_t s_map[] = {
 };
 
 ret_code_t board_gpio_lookup(uint32_t id, board_gpio_hw_t* out) {
-    if (!out) return PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    ASSERT_PARAM(out != NULL);
+    REQUIRE_RET(out != NULL, PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
     for (uint32_t i = 0; i < (uint32_t)(sizeof(s_map) / sizeof(s_map[0])); ++i) {
         if (s_map[i].id == id) {
             if (!s_map[i].hw.port || s_map[i].hw.pin >= 16u)

@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "board_gpio_map.h"
+#include "assert_cus.h"
 #include "compiler_cus.h"
 #include "hal_gpio.h"
 #include "ret_code.h"
@@ -17,25 +18,8 @@
 #define PORT_RET(clas_, err_) \
     RET_MAKE(RET_MOD_PORT, RET_SUB_PORT_GPIO, RET_CODE_MAKE((clas_), (err_)))
 /* ---------------- 断言（热路径用） ---------------- */
-
-__WEAK NORETURN void hal_gpio_assert_failed(const char* file, int line) {
-    (void)file;
-    (void)line;
-    __disable_irq();
-    while (1) {
-        /* fail-stop */
-    }
-}
-
 #ifndef HAL_GPIO_ASSERT
-#ifdef DEBUG_MODE
-#define HAL_GPIO_ASSERT(x)                                    \
-    do {                                                      \
-        if (!(x)) hal_gpio_assert_failed(__FILE__, __LINE__); \
-    } while (0)
-#else
-#define HAL_GPIO_ASSERT(x)
-#endif
+#define HAL_GPIO_ASSERT(x) CORE_ASSERT(x)
 #endif
 
 #ifndef HAL_GPIO_IRQ_PRIO
@@ -108,7 +92,8 @@ static ret_code_t gpio_enable_clock(const GPIO_TypeDef* GPIOx) {
  * @return 被映射的平台上下拉枚举
  */
 static ret_code_t map_pull(hal_gpio_pull_t p, uint32_t* out) {
-    if (!out) return PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    ASSERT_PARAM(out != NULL);
+    REQUIRE_RET(out != NULL, PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
     switch (p) {
         case HAL_GPIO_PULL_NONE:
             *out = GPIO_NOPULL;
@@ -131,7 +116,8 @@ static ret_code_t map_pull(hal_gpio_pull_t p, uint32_t* out) {
  * @return
  */
 static ret_code_t map_speed(hal_gpio_speed_t s, uint32_t* out) {
-    if (!out) return PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    ASSERT_PARAM(out != NULL);
+    REQUIRE_RET(out != NULL, PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
     switch (s) {
         case HAL_GPIO_SPEED_LOW:
             *out = GPIO_SPEED_FREQ_LOW;
@@ -157,7 +143,8 @@ static ret_code_t map_speed(hal_gpio_speed_t s, uint32_t* out) {
  * @return ret_code_t
  */
 static ret_code_t map_alternate(uint32_t in_af, uint32_t* out_af) {
-    if (!out_af) return PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    ASSERT_PARAM(out_af != NULL);
+    REQUIRE_RET(out_af != NULL, PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
 
 #ifdef IS_GPIO_AF
     if (IS_GPIO_AF(in_af)) {
@@ -180,12 +167,14 @@ static ret_code_t map_alternate(uint32_t in_af, uint32_t* out_af) {
  * @note 调用后必须 调用 hal_gpio_port_config 初始化
  */
 ret_code_t hal_gpio_port_open(hal_gpio_t** out, uint32_t id) {
-    if (!out) return PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    ASSERT_PARAM(out != NULL);
+    REQUIRE_RET(out != NULL, PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
     board_gpio_hw_t hw;
     /* 返回 port & Pin */
     const ret_code_t rc = board_gpio_lookup(id, &hw);
     if (rc != RET_OK) return rc;
-    if (!hw.port || hw.pin >= 16u) return PORT_RET(RET_CLASS_STATE, RET_R_NOT_READY);
+    if ((hw.port == NULL) || (hw.pin >= 16u))
+        return PORT_RET(RET_CLASS_STATE, RET_R_NOT_READY);
 
     static hal_gpio_t handles[BOARD_GPIO_MAP_MAX]; /* 简化静态池*/
     static uint8_t used[BOARD_GPIO_MAP_MAX] = {0}; /* 标记使用过的GPIO */
@@ -222,14 +211,15 @@ ret_code_t hal_gpio_port_open(hal_gpio_t** out, uint32_t id) {
  */
 ret_code_t hal_gpio_port_config(hal_gpio_t* h, const hal_gpio_cfg_t* cfg) {
     /* 检查非空指针 */
-    if (!h || !cfg) return PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    ASSERT_PARAM((h != NULL) && (cfg != NULL));
+    REQUIRE_RET((h != NULL) && (cfg != NULL), PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
     /* 检查合法参数 */
-    if (h->pin >= 16u) return PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
-    if (cfg->dir >= HAL_GPIO_DIR_MAX || cfg->pull >= HAL_GPIO_PULL_MAX ||
-        cfg->speed >= HAL_GPIO_SPEED_MAX || cfg->irq >= HAL_GPIO_IRQ_MAX ||
-        cfg->out_type >= HAL_GPIO_OUT_MAX || cfg->default_level >= HAL_GPIO_LEVEL_MAX) {
-        return PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
-    }
+    REQUIRE_RET(h->pin < 16u, PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
+    REQUIRE_RET((cfg->dir < HAL_GPIO_DIR_MAX) && (cfg->pull < HAL_GPIO_PULL_MAX) &&
+                    (cfg->speed < HAL_GPIO_SPEED_MAX) && (cfg->irq < HAL_GPIO_IRQ_MAX) &&
+                    (cfg->out_type < HAL_GPIO_OUT_MAX) &&
+                    (cfg->default_level < HAL_GPIO_LEVEL_MAX),
+                PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
 
     /* 开启时钟 */
     ret_code_t rc = gpio_enable_clock(h->port);
@@ -409,8 +399,9 @@ static bool any_line_uses_irqn(IRQn_Type irqn) {
  * @return
  */
 ret_code_t hal_gpio_port_register_irq(hal_gpio_t* h, hal_gpio_irq_cb_t cb, void* user_data) {
-    if (!h || !cb) return PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
-    if (h->pin >= 16u) return PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    ASSERT_PARAM((h != NULL) && (cb != NULL));
+    REQUIRE_RET((h != NULL) && (cb != NULL), PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
+    REQUIRE_RET(h->pin < 16u, PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
 
     const uint32_t primask = __get_PRIMASK();
     __disable_irq();
@@ -441,8 +432,9 @@ ret_code_t hal_gpio_port_register_irq(hal_gpio_t* h, hal_gpio_irq_cb_t cb, void*
  * @note  暂未实现 Disable IRQ
  */
 ret_code_t hal_gpio_port_unregister_irq(hal_gpio_t* h) {
-    if (!h) return PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
-    if (h->pin >= 16u) return PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    ASSERT_PARAM(h != NULL);
+    REQUIRE_RET(h != NULL, PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
+    REQUIRE_RET(h->pin < 16u, PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
     /* 获取中断 */
     const IRQn_Type irqn   = get_pin_irqn(h->pin);
     const uint32_t primask = __get_PRIMASK();

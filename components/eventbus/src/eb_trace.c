@@ -4,6 +4,17 @@
 
 #include <string.h>
 
+#include "assert_cus.h"
+
+#if EB_ENABLE_ASSERT
+#define EB_ASSERT_PARAM(x) ASSERT_PARAM((x))
+#else
+#define EB_ASSERT_PARAM(x) \
+    do {                   \
+        (void)sizeof(x);   \
+    } while (0)
+#endif
+
 #ifndef EB_TRACE_MAGIC
 #define EB_TRACE_MAGIC (0x45525442u)
 #endif
@@ -58,6 +69,7 @@ void eb_trace_clear(void) {
  * @param reason 丢弃原因
  */
 void eb_trace_record(eb_trace_phase_t phase, const eb_event_t* ev, eb_drop_reason_t reason) {
+    EB_ASSERT_PARAM(ev != NULL);
     if (!ev) return;
     /* 验证header有效性 没有初始化或者被破坏 */
     if (g_hdr.magic != EB_TRACE_MAGIC || g_hdr.depth != EB_TRACE_DEPTH ||

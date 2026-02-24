@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "AT_Core_Task.h"
+#include "assert_cus.h"
 
 osal_thread_t AT_Core_Task_Handle = NULL;
 AT_Manager_t g_at_manager;
@@ -16,6 +17,7 @@ static void AT_FinishCurrCmd(AT_Manager_t* mgr, AT_Resp_t result);
  * @param result 返回结果
  */
 static void AT_FinishCurrCmd(AT_Manager_t* mgr, const AT_Resp_t result) {
+    ASSERT_PARAM(mgr != NULL);
     if (!mgr || !mgr->curr_cmd) return;
     AT_Command_t* c = mgr->curr_cmd;
     c->result       = result;
@@ -28,6 +30,8 @@ static void AT_FinishCurrCmd(AT_Manager_t* mgr, const AT_Resp_t result) {
 
 void AT_Core_Task(void* argument) {
     AT_Manager_t* mgr = (AT_Manager_t*)argument;
+    ASSERT_PARAM(mgr != NULL);
+    if (mgr == NULL) return;
     for (;;) {
         const uint32_t flags = OSAL_thread_flags_wait(AT_FLAG_RX | AT_FLAG_TX | AT_FLAG_TXDONE,
                                                       OSAL_FLAGS_WAIT_ANY, 10);
@@ -89,6 +93,8 @@ void AT_Core_Task(void* argument) {
 }
 
 void at_core_task_init(AT_Manager_t* at) {
+    ASSERT_PARAM(at != NULL);
+    if (at == NULL) return;
     const osal_thread_attr_t at_attr = {
         .name       = "AT_Core_Task",
         .stack_size = 256 * 6,
@@ -119,6 +125,7 @@ void at_core_task_init(AT_Manager_t* at) {
  */
 static bool Uart_send(AT_Manager_t* mgr, const uint8_t* data, uint16_t len) {
     /* 参数检查 */
+    ASSERT_PARAM((mgr != NULL) && (mgr->uart_hal != NULL) && (data != NULL) && (len != 0u));
     if (!mgr || !mgr->uart_hal || !data || len == 0) return false;
     if (mgr->tx_busy) return false;
     /* 更新为忙状态 */

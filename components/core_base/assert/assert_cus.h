@@ -30,6 +30,27 @@ extern "C" {
 #define CORE_ASSERT_ENABLE_LOG 1
 #endif
 
+/* 断言分类开关（默认全开，参数断言默认跟随 DEBUG/ASSERT_PARAM_ENABLE） */
+#ifndef CORE_ASSERT_ENABLE_NORMAL
+#define CORE_ASSERT_ENABLE_NORMAL 1
+#endif
+
+#ifndef CORE_ASSERT_ENABLE_FATAL
+#define CORE_ASSERT_ENABLE_FATAL 1
+#endif
+
+#ifndef CORE_ASSERT_ENABLE_RECOVER
+#define CORE_ASSERT_ENABLE_RECOVER 1
+#endif
+
+#ifndef CORE_ASSERT_ENABLE_PARAM
+#if defined(DEBUG_MODE) || defined(ASSERT_PARAM_ENABLE)
+#define CORE_ASSERT_ENABLE_PARAM 1
+#else
+#define CORE_ASSERT_ENABLE_PARAM 0
+#endif
+#endif
+
 /* 默认动作：DEBUG -> HALT+BKPT；RELEASE -> RESET */
 typedef enum {
     ASSERT_ACTION_HALT = 0, /* 关中断死循环 */
@@ -108,6 +129,7 @@ void Assert_PlatformHalt(void);
 #endif
 
 #if (CORE_ASSERT_ENABLE == 1)
+#if (CORE_ASSERT_ENABLE_NORMAL == 1)
 /* 常规断言：DEBUG/RELEASE 都存在 */
 #define CORE_ASSERT(expr)                                                                      \
     do {                                                                                       \
@@ -115,9 +137,15 @@ void Assert_PlatformHalt(void);
             Assert_OnFailEx(ASSERT_LVL_NORMAL, #expr, __FILE__, __func__, (uint32_t)__LINE__); \
         }                                                                                      \
     } while (0)
+#else
+#define CORE_ASSERT(expr)   \
+    do {                    \
+        (void)sizeof(expr); \
+    } while (0)
+#endif
 
-/* 参数断言：仅 DEBUG 或显式开启 */
-#if defined(DEBUG_MODE) || defined(ASSERT_PARAM_ENABLE)
+/* 参数断言：默认仅 DEBUG，可通过 CORE_ASSERT_ENABLE_PARAM 强制开启 */
+#if (CORE_ASSERT_ENABLE_PARAM == 1)
 #define ASSERT_PARAM(expr)                                                                    \
     do {                                                                                      \
         if (CORE_UNLIKELY(!(expr))) {                                                         \
@@ -131,13 +159,20 @@ void Assert_PlatformHalt(void);
     } while (0)
 #endif
 
-/* 致命断言：始终在线（用于不可恢复错误） */
+/* 致命断言：默认在线（用于不可恢复错误） */
+#if (CORE_ASSERT_ENABLE_FATAL == 1)
 #define ASSERT_FATAL(expr)                                                                    \
     do {                                                                                      \
         if (CORE_UNLIKELY(!(expr))) {                                                         \
             Assert_OnFailEx(ASSERT_LVL_FATAL, #expr, __FILE__, __func__, (uint32_t)__LINE__); \
         }                                                                                     \
     } while (0)
+#else
+#define ASSERT_FATAL(expr)  \
+    do {                    \
+        (void)sizeof(expr); \
+    } while (0)
+#endif
 
 #else
 
@@ -159,13 +194,22 @@ void Assert_PlatformHalt(void);
 /* ===================== Commercial Require/Ensure ===================== */
 /* 这类宏用于可恢复错误，RELEASE 下不会直接 reset */
 /* 断言失败 返回状态码 */
-#if (CORE_ASSERT_ENABLE == 1)
+#if (CORE_ASSERT_ENABLE == 1) && (CORE_ASSERT_ENABLE_RECOVER == 1)
 #define REQUIRE_RET(expr, retcode)                                                              \
     do {                                                                                        \
         if (CORE_UNLIKELY(!(expr))) {                                                           \
             Assert_OnFailEx(ASSERT_LVL_RECOVER, #expr, __FILE__, __func__, (uint32_t)__LINE__); \
             return (retcode);                                                                   \
         }                                                                                       \
+    } while (0)
+
+/* 断言失败直接返回（void 函数） */
+#define REQUIRE_RET_VOID(expr)                                                                   \
+    do {                                                                                         \
+        if (CORE_UNLIKELY(!(expr))) {                                                            \
+            Assert_OnFailEx(ASSERT_LVL_RECOVER, #expr, __FILE__, __func__, (uint32_t)__LINE__); \
+            return;                                                                              \
+        }                                                                                        \
     } while (0)
 
 /* 断言失败就 goto 跳转 */
@@ -180,6 +224,11 @@ void Assert_PlatformHalt(void);
 #define REQUIRE_RET(expr, retcode) \
     do {                           \
         if (!(expr)) return retcode; \
+    } while (0)
+
+#define REQUIRE_RET_VOID(expr) \
+    do {                       \
+        if (!(expr)) return;   \
     } while (0)
 
 #define REQUIRE_GOTO(expr, label) \

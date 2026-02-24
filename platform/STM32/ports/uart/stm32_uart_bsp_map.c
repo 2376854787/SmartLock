@@ -5,6 +5,7 @@
 
 #include "main.h"
 #include "stm32_uart_bsp.h"
+#include "assert_cus.h"
 
 /* 根据当前所属模块id 与返回状态生成32位状态码 */
 #define UART_MAP_RET(clas_, errno_) \
@@ -31,7 +32,8 @@ static uint8_t g_uart3_rx_dma[512];
 #endif
 
 ret_code_t stm32_uart_bsp_get(hal_uart_id_t id, stm32_uart_bsp_t* out) {
-    if (!out) return UART_MAP_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    ASSERT_PARAM(out != NULL);
+    REQUIRE_RET(out != NULL, UART_MAP_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
     switch (id) {
         case HAL_UART_ID_1:
             out->huart        = &huart1;

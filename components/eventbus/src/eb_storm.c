@@ -4,6 +4,18 @@
 
 #include <string.h>
 
+#include "assert_cus.h"
+#include "eb_config.h"
+
+#if EB_ENABLE_ASSERT
+#define EB_ASSERT_PARAM(x) ASSERT_PARAM((x))
+#else
+#define EB_ASSERT_PARAM(x) \
+    do {                   \
+        (void)sizeof(x);   \
+    } while (0)
+#endif
+
 typedef struct {
     uint32_t hkey;           /* 哈希值 判断事件id 和 源id是否一致 */
     uint32_t last_ms;        /* 上次放行时间 */
@@ -23,6 +35,8 @@ static eb_storm_slot_t g_slots[EB_STORM_SLOTS];
  * @return
  */
 static inline bool try_lock_u32(volatile uint32_t* lock_word) {
+    EB_ASSERT_PARAM(lock_word != NULL);
+    if (lock_word == NULL) return false;
     /* Never spin here (ISR-safe). If contended, just fail and degrade. */
     const uint32_t prev = __atomic_exchange_n((uint32_t*)lock_word, 1u, __ATOMIC_ACQUIRE);
     return (prev == 0u);
@@ -32,6 +46,8 @@ static inline bool try_lock_u32(volatile uint32_t* lock_word) {
  * @param lock_word 锁字段
  */
 static inline void unlock_u32(volatile uint32_t* lock_word) {
+    EB_ASSERT_PARAM(lock_word != NULL);
+    if (lock_word == NULL) return;
     __atomic_store_n((uint32_t*)lock_word, 0u, __ATOMIC_RELEASE);
 }
 /**

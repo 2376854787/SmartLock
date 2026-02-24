@@ -1,5 +1,6 @@
 #include "stack_monitor.h"
 
+#include "assert_cus.h"
 #include "stack_monitor_port.h"
 
 static inline uintptr_t read_sp(void) {
@@ -13,7 +14,8 @@ static inline uintptr_t read_sp(void) {
 }
 
 void StackMonitor_Init(const stack_range_t* stack_range) {
-    if (!stack_range || stack_range->stack_bottom >= stack_range->stack_top) return;
+    ASSERT_PARAM((stack_range != NULL) && (stack_range->stack_bottom < stack_range->stack_top));
+    REQUIRE_RET_VOID((stack_range != NULL) && (stack_range->stack_bottom < stack_range->stack_top));
 
     const uintptr_t sp       = read_sp();
     const uintptr_t safe_top = (sp > 64u) ? (sp - 64u) : sp;
@@ -31,7 +33,8 @@ void StackMonitor_Init(const stack_range_t* stack_range) {
 }
 
 size_t StackMonitor_GetMinFreeSize(const stack_range_t* r) {
-    if (!r || r->stack_bottom >= r->stack_top) return 0;
+    ASSERT_PARAM((r != NULL) && (r->stack_bottom < r->stack_top));
+    REQUIRE_RET((r != NULL) && (r->stack_bottom < r->stack_top), 0u);
 
     const uintptr_t start = (r->stack_bottom + 3u) & ~((uintptr_t)3u);
     const uintptr_t end   = (r->stack_top) & ~((uintptr_t)3u);
@@ -45,9 +48,10 @@ size_t StackMonitor_GetMinFreeSize(const stack_range_t* r) {
 }
 
 uint32_t StackMonitor_GetMinFreePerMill(const stack_range_t* r) {
+    ASSERT_PARAM((r != NULL) && (r->stack_top > r->stack_bottom));
+    REQUIRE_RET((r != NULL) && (r->stack_top > r->stack_bottom), 0u);
     const size_t free_size  = StackMonitor_GetMinFreeSize(r);
-    const size_t total_size =
-        (r && r->stack_top > r->stack_bottom) ? (r->stack_top - r->stack_bottom) : 0u;
+    const size_t total_size = (r->stack_top - r->stack_bottom);
 
     if (total_size == 0u) return 0u;
     return (uint32_t)((free_size * 1000u) / total_size);

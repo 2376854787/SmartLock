@@ -1,5 +1,6 @@
 #include "vectortable_to_ram.h"
 
+#include "assert_cus.h"
 #include "stm32_hal.h"
 
 /* 向量表大小 字*/
@@ -14,6 +15,7 @@ extern const uint32_t g_pfnVectors[];
 #include <string.h>  // for memcpy
 
 void Move_Vector_Table_To_RAM(void) {
+    ASSERT_FATAL((((uintptr_t)g_ram_vector_table) & 0x1FFu) == 0u);
     /*１.关闭中断　*/
     __disable_irq();
     /*2. 拷贝数据  */

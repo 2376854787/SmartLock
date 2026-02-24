@@ -6,6 +6,7 @@
 
 #include "hal_spi_port.h"
 #include "osal.h"
+#include "assert_cus.h"
 #include "stm32_spi_series.h"
 
 /* 状态码 */
@@ -114,6 +115,7 @@ static hal_spi_port_ctx_t *find_ctx_by_hspi(const SPI_HandleTypeDef *hspi) {
  * @param ctx port 句柄
  */
 static inline void clear_xfer_ctx(hal_spi_port_ctx_t *ctx) {
+    CORE_ASSERT(ctx != NULL);
     if (!ctx) return;
     ctx->xfer_busy        = 0u;
     ctx->req_type         = HAL_SPI_PORT_REQ_NONE;
@@ -165,33 +167,34 @@ static bool is_dma_circular_cfg(const DMA_HandleTypeDef *hdma) {
 static ret_code_t validate_xfer_runtime(const hal_spi_port_ctx_t *ctx, const hal_spi_xfer_t *xfer,
                                         const SPI_HandleTypeDef *hspi,
                                         hal_spi_port_req_t req_type) {
-    if (!ctx || !xfer || !hspi) return SPI_PORT_PARAM(RET_R_NULL_PTR);
+    REQUIRE_RET((ctx != NULL) && (xfer != NULL) && (hspi != NULL), SPI_PORT_PARAM(RET_R_NULL_PTR));
 
     const uint32_t mode = hspi->Init.Mode;
     const uint32_t dir  = hspi->Init.Direction;
     /* ============= 模式组合合法性 检查 =========== */
     /* 发送接收地址不能都为空 */
-    if (req_type == HAL_SPI_PORT_REQ_NONE) return SPI_PORT_PARAM(RET_R_INVALID_ARG);
+    REQUIRE_RET(req_type != HAL_SPI_PORT_REQ_NONE, SPI_PORT_PARAM(RET_R_INVALID_ARG));
 
     /* 单线/双线仅接收模式不支持 TxRx API 组合。 */
-    if ((req_type == HAL_SPI_PORT_REQ_TXRX) && (dir != SPI_DIRECTION_2LINES))
-        return SPI_PORT_PARAM(RET_R_UNSUPPORTED);
+    REQUIRE_RET((req_type != HAL_SPI_PORT_REQ_TXRX) || (dir == SPI_DIRECTION_2LINES),
+                SPI_PORT_PARAM(RET_R_UNSUPPORTED));
     /* 仅接收方向禁止仅发送。 */
-    if ((req_type == HAL_SPI_PORT_REQ_TX) && (dir == SPI_DIRECTION_2LINES_RXONLY))
-        return SPI_PORT_PARAM(RET_R_UNSUPPORTED);
+    REQUIRE_RET((req_type != HAL_SPI_PORT_REQ_TX) || (dir != SPI_DIRECTION_2LINES_RXONLY),
+                SPI_PORT_PARAM(RET_R_UNSUPPORTED));
 
     /* DMA 检查 */
     if (ctx->use_dma) {
         /* 必须初始化对应的 DMA通道 */
         switch (req_type) {
             case HAL_SPI_PORT_REQ_TXRX:
-                if (!ctx->bsp.hdma_tx || !ctx->bsp.hdma_rx) return SPI_PORT_STATE(RET_R_NOT_READY);
+                if ((ctx->bsp.hdma_tx == NULL) || (ctx->bsp.hdma_rx == NULL))
+                    return SPI_PORT_STATE(RET_R_NOT_READY);
                 break;
             case HAL_SPI_PORT_REQ_TX:
-                if (!ctx->bsp.hdma_tx) return SPI_PORT_STATE(RET_R_NOT_READY);
+                if (ctx->bsp.hdma_tx == NULL) return SPI_PORT_STATE(RET_R_NOT_READY);
                 break;
             case HAL_SPI_PORT_REQ_RX:
-                if (!ctx->bsp.hdma_rx) return SPI_PORT_STATE(RET_R_NOT_READY);
+                if (ctx->bsp.hdma_rx == NULL) return SPI_PORT_STATE(RET_R_NOT_READY);
                 /*
                  * F4 HAL 在 Master+2LINES+RxOnly 下会走 TxRx DMA 以产生时钟，
                  * 因此这里要求同时具备 TX DMA，避免运行期断言失败。
@@ -212,7 +215,7 @@ static ret_code_t validate_xfer_runtime(const hal_spi_port_ctx_t *ctx, const hal
     const bool stream_last = (xfer->flags & HAL_SPI_XFER_STREAM_END) != 0u;
     const bool hw_stream   = (xfer->flags & HAL_SPI_XFER_HW_STREAM) != 0u;
 
-    if (stream_last && !is_stream) return SPI_PORT_PARAM(RET_R_INVALID_ARG);
+    REQUIRE_RET(!stream_last || is_stream, SPI_PORT_PARAM(RET_R_INVALID_ARG));
     if (hw_stream && !ctx->use_dma) return SPI_PORT_PARAM(RET_R_UNSUPPORTED);
 
     if (hw_stream && ctx->use_dma) {
@@ -260,18 +263,18 @@ static ret_code_t validate_xfer_runtime(const hal_spi_port_ctx_t *ctx, const hal
  */
 static ret_code_t calc_xfer_frame_meta(const SPI_HandleTypeDef *h, const hal_spi_xfer_t *xfer,
                                        const uint8_t *tx, uint8_t *rx, uint16_t *out_frame_count) {
-    if (!h || !xfer || !out_frame_count) return SPI_PORT_PARAM(RET_R_NULL_PTR);
+    REQUIRE_RET((h != NULL) && (xfer != NULL) && (out_frame_count != NULL),
+                SPI_PORT_PARAM(RET_R_NULL_PTR));
 
     uint32_t frame_bytes = 1u;
 #if defined(SPI_DATASIZE_16BIT)
     if (h->Init.DataSize == SPI_DATASIZE_16BIT) frame_bytes = 2u;
 #endif
-    if ((xfer->len % frame_bytes) != 0u) return SPI_PORT_PARAM(RET_R_RANGE_ERR);
+    REQUIRE_RET((xfer->len % frame_bytes) == 0u, SPI_PORT_PARAM(RET_R_RANGE_ERR));
 
     const uint32_t frame_count = xfer->len / frame_bytes;
-    if (frame_count == 0u || frame_count > (uint32_t)UINT16_MAX) {
-        return SPI_PORT_PARAM(RET_R_RANGE_ERR);
-    }
+    REQUIRE_RET((frame_count != 0u) && (frame_count <= (uint32_t)UINT16_MAX),
+                SPI_PORT_PARAM(RET_R_RANGE_ERR));
 
     /* 16bit 帧时要求地址按 half-word 对齐，避免 DMA/外设访问异常 */
     if (frame_bytes == 2u) {
@@ -331,7 +334,7 @@ static void emit_port_evt(hal_spi_port_ctx_t *ctx, hal_spi_port_evt_type_t type,
  * @note DMA / IRQ 开关由 cfg 控制
  */
 ret_code_t hal_spi_port_open(const hal_spi_bus_cfg_t *cfg, hal_spi_port_ctx_t *out) {
-    if (!cfg || !out) return SPI_PORT_PARAM(RET_R_NULL_PTR);
+    REQUIRE_RET((cfg != NULL) && (out != NULL), SPI_PORT_PARAM(RET_R_NULL_PTR));
     memset(out, 0, sizeof(*out));
 
     /* 至少选择一种异步能力 */
@@ -347,7 +350,8 @@ ret_code_t hal_spi_port_open(const hal_spi_bus_cfg_t *cfg, hal_spi_port_ctx_t *o
 
     /* 若启用 DMA，仅做句柄关联（DMA init 由外部 BSP/Cube 完成） */
     if (out->use_dma) {
-        if (!out->bsp.hdma_tx && !out->bsp.hdma_rx) return SPI_PORT_STATE(RET_R_NOT_READY);
+        REQUIRE_RET((out->bsp.hdma_tx != NULL) || (out->bsp.hdma_rx != NULL),
+                    SPI_PORT_STATE(RET_R_NOT_READY));
         if (out->bsp.hdma_tx && !out->bsp.hspi->hdmatx) {
             out->bsp.hspi->hdmatx    = out->bsp.hdma_tx;
             out->bsp.hdma_tx->Parent = out->bsp.hspi;
@@ -382,7 +386,7 @@ ret_code_t hal_spi_port_open(const hal_spi_bus_cfg_t *cfg, hal_spi_port_ctx_t *o
  */
 ret_code_t hal_spi_port_close(hal_spi_port_ctx_t *ctx) {
     /* 参数检查 */
-    if (!ctx) return SPI_PORT_PARAM(RET_R_NULL_PTR);
+    REQUIRE_RET(ctx != NULL, SPI_PORT_PARAM(RET_R_NULL_PTR));
     if (!ctx->opened) return SPI_PORT_STATE(RET_R_NOT_READY);
     if (ctx->xfer_busy) return SPI_PORT_STATE(RET_R_BUSY);
 
@@ -414,7 +418,7 @@ ret_code_t hal_spi_port_close(hal_spi_port_ctx_t *ctx) {
  * @return 32位状态码
  */
 ret_code_t hal_spi_port_set_evt_cb(hal_spi_port_ctx_t *ctx, hal_spi_port_evt_cb_t cb, void *user) {
-    if (!ctx) return SPI_PORT_PARAM(RET_R_NULL_PTR);
+    REQUIRE_RET(ctx != NULL, SPI_PORT_PARAM(RET_R_NULL_PTR));
     ctx->evt_cb   = cb;
     ctx->evt_user = user;
     return RET_OK;
@@ -429,7 +433,7 @@ ret_code_t hal_spi_port_set_evt_cb(hal_spi_port_ctx_t *ctx, hal_spi_port_evt_cb_
 ret_code_t hal_spi_port_apply(hal_spi_port_ctx_t *ctx, const hal_spi_dev_cfg_t *dev_cfg,
                               uint32_t bus_default_hz) {
     /* 参数检查 */
-    if (!ctx || !dev_cfg) return SPI_PORT_PARAM(RET_R_NULL_PTR);
+    REQUIRE_RET((ctx != NULL) && (dev_cfg != NULL), SPI_PORT_PARAM(RET_R_NULL_PTR));
     if (!ctx->opened) return SPI_PORT_STATE(RET_R_NOT_READY);
     /* 不能在已有事务进行的情况下 重新配置 */
     if (ctx->xfer_busy) return SPI_PORT_STATE(RET_R_BUSY);
@@ -501,7 +505,7 @@ ret_code_t hal_spi_port_apply(hal_spi_port_ctx_t *ctx, const hal_spi_dev_cfg_t *
  */
 ret_code_t hal_spi_port_stream_start(hal_spi_port_ctx_t *ctx, const hal_spi_xfer_t *xfer) {
     /* 参数检查 */
-    if (!ctx || !xfer) return SPI_PORT_PARAM(RET_R_NULL_PTR);
+    REQUIRE_RET((ctx != NULL) && (xfer != NULL), SPI_PORT_PARAM(RET_R_NULL_PTR));
     if (!ctx->opened) return SPI_PORT_STATE(RET_R_NOT_READY);
     if (ctx->xfer_busy) return SPI_PORT_STATE(RET_R_BUSY);
     if (!ctx->use_dma) return SPI_PORT_PARAM(RET_R_UNSUPPORTED);
@@ -509,7 +513,7 @@ ret_code_t hal_spi_port_stream_start(hal_spi_port_ctx_t *ctx, const hal_spi_xfer
     SPI_HandleTypeDef *h = ctx->bsp.hspi;
     /* 必须已经注册 */
     if (!h) return SPI_PORT_STATE(RET_R_NOT_READY);
-    if (xfer->len == 0u) return SPI_PORT_PARAM(RET_R_RANGE_ERR);
+    REQUIRE_RET(xfer->len != 0u, SPI_PORT_PARAM(RET_R_RANGE_ERR));
     /* 获取 事务 */
     hal_spi_xfer_t stream_xfer = *xfer;
     /* 添加上 硬件DMA 流事务 */
@@ -567,10 +571,10 @@ ret_code_t hal_spi_port_stream_start(hal_spi_port_ctx_t *ctx, const hal_spi_xfer
  */
 ret_code_t hal_spi_port_stream_stop(hal_spi_port_ctx_t *ctx, bool disable_spi) {
     /* 参数检查 */
-    if (!ctx) return SPI_PORT_PARAM(RET_R_NULL_PTR);
+    REQUIRE_RET(ctx != NULL, SPI_PORT_PARAM(RET_R_NULL_PTR));
     if (!ctx->opened) return SPI_PORT_STATE(RET_R_NOT_READY);
     if (!ctx->hw_stream_active) return SPI_PORT_STATE(RET_R_NOT_READY);
-    if (!ctx->bsp.hspi) return SPI_PORT_STATE(RET_R_NOT_READY);
+    if (ctx->bsp.hspi == NULL) return SPI_PORT_STATE(RET_R_NOT_READY);
     /* 停止DMA  */
     if (HAL_SPI_DMAStop(ctx->bsp.hspi) != HAL_OK) {
         return SPI_PORT_IO(RET_R_HW_FAULT);
@@ -594,15 +598,15 @@ ret_code_t hal_spi_port_stream_stop(hal_spi_port_ctx_t *ctx, bool disable_spi) {
  */
 ret_code_t hal_spi_port_xfer(hal_spi_port_ctx_t *ctx, const hal_spi_xfer_t *xfer) {
     /* 参数检查 */
-    if (!ctx || !xfer) return SPI_PORT_PARAM(RET_R_NULL_PTR);
+    REQUIRE_RET((ctx != NULL) && (xfer != NULL), SPI_PORT_PARAM(RET_R_NULL_PTR));
     if (!ctx->opened) return SPI_PORT_STATE(RET_R_NOT_READY);
     if (ctx->xfer_busy) return SPI_PORT_STATE(RET_R_BUSY);
 
     SPI_HandleTypeDef *h = ctx->bsp.hspi;
     if (!h) return SPI_PORT_STATE(RET_R_NOT_READY);
 
-    if (xfer->len == 0u) return SPI_PORT_PARAM(RET_R_RANGE_ERR);
-    if (xfer->flags & HAL_SPI_XFER_HW_STREAM) return SPI_PORT_PARAM(RET_R_UNSUPPORTED);
+    REQUIRE_RET(xfer->len != 0u, SPI_PORT_PARAM(RET_R_RANGE_ERR));
+    if ((xfer->flags & HAL_SPI_XFER_HW_STREAM) != 0u) return SPI_PORT_PARAM(RET_R_UNSUPPORTED);
     if (!ctx->use_dma && !ctx->use_irq) return SPI_PORT_PARAM(RET_R_UNSUPPORTED);
     /* 发送和接收的地址 */
     const uint8_t *tx                 = (const uint8_t *)xfer->tx;

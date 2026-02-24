@@ -8,6 +8,18 @@
 
 #include <string.h>
 
+#include "assert_cus.h"
+#include "eb_config.h"
+
+#if EB_ENABLE_ASSERT
+#define EB_ASSERT_PARAM(x) ASSERT_PARAM((x))
+#else
+#define EB_ASSERT_PARAM(x) \
+    do {                   \
+        (void)sizeof(x);   \
+    } while (0)
+#endif
+
 #ifndef EB_BUDGET_BUCKET_US
 #define EB_BUDGET_BUCKET_US 50u
 #endif
@@ -49,6 +61,7 @@ static inline uint32_t clamp_bucket(uint32_t dur_us) {
  * @return
  */
 static inline uint32_t prio_idx(eb_prio_t p) {
+    EB_ASSERT_PARAM((p == EB_PRIO_H) || (p == EB_PRIO_M) || (p == EB_PRIO_L));
     switch (p) {
         case EB_PRIO_H:
             return 0u;

@@ -230,6 +230,7 @@ void BB_UpdateMinStackFree(uint32_t bytes) {
  * @brief 记录看门狗失败快照（复位前调用）
  */
 void BB_RecordWdgFail(const bb_wdg_fail_record_t* record) {
+    ASSERT_PARAM(record != NULL);
     if (record == NULL) return;
     g_bb.wdg.valid    = record->valid;
     g_bb.wdg.task_id  = record->task_id;

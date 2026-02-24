@@ -1,5 +1,8 @@
 ﻿#include "eb_eventdef.h"
 
+#include <stdint.h>
+
+#include "assert_cus.h"
 #include "eb_config.h"
 #include "eb_event_id.h"
 
@@ -46,6 +49,8 @@ static const eb_eventdef_t g_defs[] = {
     {EB_EVT_OLED_ERROR, EB_PLANE_CONTROL, EB_PRIO_M, EB_SEM_EDGE, EB_DROP_NEW, 0u, EB_STORM_NONE,
      0u, 0u, 0u, 0u},
 };
+STATIC_ASSERT((sizeof(g_defs) / sizeof(g_defs[0])) <= (uint32_t)UINT16_MAX,
+              "event definition count exceeds uint16_t");
 /**
  * @brief 返回定义的事件个数
  * @return 返回当前定义的事件个数

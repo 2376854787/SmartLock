@@ -1,5 +1,6 @@
 #include <stddef.h>
 
+#include "assert_cus.h"
 #include "log.h"
 #include "log_port.h"
 #include "ret_code.h"
@@ -55,7 +56,8 @@ static void Log_UartEvtCb(void* user, const hal_uart_event_t* evt) {
 
 static int Log_uart_send_async(const uint8_t* d, uint16_t n, void* user) {
     (void)user;
-    if (!d || n == 0u) return LOG_PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    ASSERT_PARAM((d != NULL) && (n != 0u));
+    REQUIRE_RET((d != NULL) && (n != 0u), LOG_PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
     if (!s_log_uart) return LOG_PORT_RET(RET_CLASS_STATE, RET_R_NOT_READY);
     if (s_uart_tx_busy) return LOG_PORT_RET(RET_CLASS_STATE, RET_R_BUSY);
 

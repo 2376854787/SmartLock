@@ -3,6 +3,7 @@
 #if (defined(CFG_FEAT_HAL_WDG) && (CFG_FEAT_HAL_WDG == 1))
 #include <stddef.h>
 
+#include "assert_cus.h"
 #include "hal_wdg.h"
 #include "hal_wdg_port.h"
 
@@ -13,14 +14,15 @@ static volatile bool s_inited = false;
  * @return
  */
 static ret_code_t wdg_cfg_check(const hal_wdg_cfg_t *cfg) {
-    if (cfg == NULL) return RET_MAKE_PARAM(RET_MOD_HAL, RET_SUB_HAL_WDT, RET_R_NULL_PTR);
-    if (cfg->timeout_ms == 0u) return RET_MAKE_PARAM(RET_MOD_HAL, RET_SUB_HAL_WDT, RET_R_RANGE_ERR);
+    ASSERT_PARAM(cfg != NULL);
+    REQUIRE_RET(cfg != NULL, RET_MAKE_PARAM(RET_MOD_HAL, RET_SUB_HAL_WDT, RET_R_NULL_PTR));
+    REQUIRE_RET(cfg->timeout_ms != 0u,
+                RET_MAKE_PARAM(RET_MOD_HAL, RET_SUB_HAL_WDT, RET_R_RANGE_ERR));
 
     /*　窗口看门狗　且　超时时间大于窗口　或　等于０　*/
     if (cfg->mode == HAL_WDG_MODE_WWDG) {
-        if (cfg->window_min_ms == 0u || cfg->window_min_ms >= cfg->timeout_ms) {
-            return RET_MAKE_PARAM(RET_MOD_HAL, RET_SUB_HAL_WDT, RET_R_RANGE_ERR);
-        }
+        REQUIRE_RET((cfg->window_min_ms != 0u) && (cfg->window_min_ms < cfg->timeout_ms),
+                    RET_MAKE_PARAM(RET_MOD_HAL, RET_SUB_HAL_WDT, RET_R_RANGE_ERR));
     }
     return RET_OK;
 }

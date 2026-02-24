@@ -6,6 +6,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "assert_cus.h"
 #include "hal_wdg_port.h"
 #include "stm32_hal.h"
 
@@ -21,9 +22,9 @@ static volatile bool s_hw_inited = false;
  * @note 内部辅助函数
  */
 static ret_code_t iwdg_calc(uint32_t timeout_ms, uint32_t *out_presc, uint32_t *out_reload) {
-    if (!out_presc || !out_reload) {
-        return RET_MAKE_PARAM(RET_MOD_PORT, RET_SUB_PORT_WDG, RET_R_NULL_PTR);
-    }
+    ASSERT_PARAM((out_presc != NULL) && (out_reload != NULL));
+    REQUIRE_RET((out_presc != NULL) && (out_reload != NULL),
+                RET_MAKE_PARAM(RET_MOD_PORT, RET_SUB_PORT_WDG, RET_R_NULL_PTR));
     const uint32_t lsi_hz  = 32000u;
     const uint32_t presc   = IWDG_PRESCALER_256; /* tick ≈ 125Hz */
     const uint32_t tick_hz = lsi_hz / 256u;
@@ -65,10 +66,10 @@ static void wdg_debug_freeze_apply(bool enable) {
  */
 ret_code_t hal_wdg_port_init(const hal_wdg_cfg_t *cfg) {
     /* 参数检查 */
-    if (cfg == NULL) return RET_MAKE_PARAM(RET_MOD_PORT, RET_SUB_PORT_WDG, RET_R_NULL_PTR);
-    if (cfg->mode != HAL_WDG_MODE_IWDG) {
-        return RET_MAKE_PARAM(RET_MOD_PORT, RET_SUB_PORT_WDG, RET_R_UNSUPPORTED);
-    }
+    ASSERT_PARAM(cfg != NULL);
+    REQUIRE_RET(cfg != NULL, RET_MAKE_PARAM(RET_MOD_PORT, RET_SUB_PORT_WDG, RET_R_NULL_PTR));
+    REQUIRE_RET(cfg->mode == HAL_WDG_MODE_IWDG,
+                RET_MAKE_PARAM(RET_MOD_PORT, RET_SUB_PORT_WDG, RET_R_UNSUPPORTED));
     /* 计算出所需要的 预分频系数 重载值 */
     uint32_t presc = 0, reload = 0;
     const ret_code_t rc = iwdg_calc(cfg->timeout_ms, &presc, &reload);

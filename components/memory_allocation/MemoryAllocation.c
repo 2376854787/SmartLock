@@ -4,6 +4,7 @@
 #include <stdlib.h>
 
 #include "MemoryAllocation.h"
+#include "assert_cus.h"
 static uint8_t MemoryPond[MEMORY_POND_MAX_SIZE];
 volatile uint16_t MemoryPondIndex = 0;  // 指向还没有被分配的空间的第一个地址
 
@@ -14,6 +15,7 @@ volatile uint16_t MemoryPondIndex = 0;  // 指向还没有被分配的空间的�
  * @retval 返回指针基准地址
  **/
 uint8_t* static_alloc(const uint32_t size, const uint8_t alignment) {
+    ASSERT_PARAM((alignment == 0u) || ((alignment & (alignment - 1u)) == 0u));
     // 1、计算当前指针的地址
     const uintptr_t cur = (uintptr_t)&MemoryPond[MemoryPondIndex];
     uint8_t padding     = 0;

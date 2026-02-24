@@ -5,6 +5,7 @@
 #include "APP_config.h"
 #include "hal_uart_port.h"
 #include "log.h"
+#include "assert_cus.h"
 #include <stdio.h>
 
 #if (defined(CFG_FEAT_HAL_UART) && (CFG_FEAT_HAL_UART == 1))
@@ -78,7 +79,9 @@ static inline ret_code_t uart_map_port_to_hal(ret_code_t rc_port, const char* ap
 }
 
 ret_code_t hal_uart_open(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_uart_t** out) {
-    if (!cfg || !out) return UART_HAL_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    ASSERT_PARAM((cfg != NULL) && (out != NULL));
+    REQUIRE_RET((cfg != NULL) && (out != NULL), UART_HAL_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
+    *out = NULL;
 
     const ret_code_t rc = hal_uart_port_open(id, cfg, out);
     if (ret_is_err(rc)) {
@@ -90,7 +93,8 @@ ret_code_t hal_uart_open(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_uart_t
 }
 
 ret_code_t hal_uart_close(hal_uart_t* h) {
-    if (!h) return UART_HAL_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    ASSERT_PARAM(h != NULL);
+    REQUIRE_RET(h != NULL, UART_HAL_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
 
     const ret_code_t rc = hal_uart_port_close(h);
     if (ret_is_err(rc))
@@ -99,7 +103,8 @@ ret_code_t hal_uart_close(hal_uart_t* h) {
 }
 
 ret_code_t hal_uart_rx_start(hal_uart_t* h) {
-    if (!h) return UART_HAL_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    ASSERT_PARAM(h != NULL);
+    REQUIRE_RET(h != NULL, UART_HAL_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
 
     const ret_code_t rc = hal_uart_port_rx_start(h);
     if (ret_is_err(rc))
@@ -108,7 +113,9 @@ ret_code_t hal_uart_rx_start(hal_uart_t* h) {
 }
 
 ret_code_t hal_uart_send_async(hal_uart_t* h, const uint8_t* buf, uint32_t len) {
-    if (!h || !buf || len == 0u) return UART_HAL_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    ASSERT_PARAM((h != NULL) && (buf != NULL) && (len != 0u));
+    REQUIRE_RET((h != NULL) && (buf != NULL) && (len != 0u),
+                UART_HAL_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
 
     const ret_code_t rc = hal_uart_port_send_async(h, buf, len);
     if (ret_is_err(rc))
@@ -118,8 +125,11 @@ ret_code_t hal_uart_send_async(hal_uart_t* h, const uint8_t* buf, uint32_t len) 
 
 ret_code_t hal_uart_read(hal_uart_t* h, uint8_t* out, uint32_t want, uint32_t* nread) {
     if (nread) *nread = 0u;
-    if (!h || !out) return UART_HAL_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
-    if (want == 0u) return UART_HAL_RET(RET_CLASS_PARAM, RET_R_RANGE_ERR);
+    ASSERT_PARAM((h != NULL) && (out != NULL) && (nread != NULL));
+    ASSERT_PARAM(want != 0u);
+    REQUIRE_RET((h != NULL) && (out != NULL) && (nread != NULL),
+                UART_HAL_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
+    REQUIRE_RET(want != 0u, UART_HAL_RET(RET_CLASS_PARAM, RET_R_RANGE_ERR));
 
     const ret_code_t rc = hal_uart_port_read(h, out, want, nread);
     if (ret_is_err(rc))
@@ -130,7 +140,9 @@ ret_code_t hal_uart_read(hal_uart_t* h, uint8_t* out, uint32_t want, uint32_t* n
 ret_code_t hal_uart_read_reserve(hal_uart_t* h, uint32_t want, hal_uart_read_span_t* out,
                                  uint32_t* nread) {
     if (nread) *nread = 0u;
-    if (!h || !out) return UART_HAL_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    ASSERT_PARAM((h != NULL) && (out != NULL) && (nread != NULL));
+    REQUIRE_RET((h != NULL) && (out != NULL) && (nread != NULL),
+                UART_HAL_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
 
     const ret_code_t rc = hal_uart_port_read_reserve(h, want, out, nread);
     if (ret_is_err(rc))
@@ -139,7 +151,8 @@ ret_code_t hal_uart_read_reserve(hal_uart_t* h, uint32_t want, hal_uart_read_spa
 }
 
 ret_code_t hal_uart_read_commit(hal_uart_t* h, uint32_t nread) {
-    if (!h) return UART_HAL_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    ASSERT_PARAM(h != NULL);
+    REQUIRE_RET(h != NULL, UART_HAL_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
 
     const ret_code_t rc = hal_uart_port_read_commit(h, nread);
     if (ret_is_err(rc))
@@ -148,7 +161,8 @@ ret_code_t hal_uart_read_commit(hal_uart_t* h, uint32_t nread) {
 }
 
 ret_code_t hal_uart_set_evt_cb(hal_uart_t* h, hal_uart_evt_cb_t cb, void* user) {
-    if (!h) return UART_HAL_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    ASSERT_PARAM(h != NULL);
+    REQUIRE_RET(h != NULL, UART_HAL_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
 
     const ret_code_t rc = hal_uart_port_set_evt_cb(h, cb, user);
     if (ret_is_err(rc))

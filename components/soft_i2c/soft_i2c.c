@@ -49,6 +49,19 @@
 /** 时钟拉伸等待超时 (μs)，超过此时间认为从机异常 */
 #define SCL_STRETCH_TIMEOUT_US 1000u
 
+static inline ret_code_t si2c_lock(soft_i2c_t *bus) {
+    CORE_ASSERT(bus != NULL);
+    if ((bus == NULL) || (bus->mutex == NULL))
+        return SI2C_RET(RET_CLASS_STATE, RET_R_NOT_READY);
+    return OSAL_mutex_lock(bus->mutex, OSAL_WAIT_FOREVER);
+}
+
+static inline void si2c_unlock(soft_i2c_t *bus) {
+    if ((bus != NULL) && (bus->mutex != NULL)) {
+        (void)OSAL_mutex_unlock(bus->mutex);
+    }
+}
+
 /* ======================== 时钟拉伸 ======================== */
 
 /**
@@ -211,10 +224,12 @@ static bool i2c_read_byte(const soft_i2c_t* bus, bool ack, uint8_t* out) {
  * @return 32位状态码
  */
 ret_code_t soft_i2c_init(soft_i2c_t* bus, const soft_i2c_cfg_t* cfg) {
-    if (!bus || !cfg) {
-        ASSERT_PARAM(bus && cfg);
-        return SI2C_RET(RET_CLASS_PARAM, RET_R_NULL_PTR);
-    }
+    ASSERT_PARAM((bus != NULL) && (cfg != NULL));
+    REQUIRE_RET((bus != NULL) && (cfg != NULL), SI2C_RET(RET_CLASS_PARAM, RET_R_NULL_PTR));
+
+    bus->scl   = NULL;
+    bus->sda   = NULL;
+    bus->mutex = NULL;
 
     bus->delay_us = cfg->delay_us;
     if (bus->delay_us == 0) {
@@ -225,7 +240,11 @@ ret_code_t soft_i2c_init(soft_i2c_t* bus, const soft_i2c_cfg_t* cfg) {
     ret_code_t rc = hal_gpio_open(&bus->scl, cfg->gpio_id_scl);
     if (rc != RET_OK) return rc;
     rc = hal_gpio_open(&bus->sda, cfg->gpio_id_sda);
-    if (rc != RET_OK) return rc;
+    if (rc != RET_OK) {
+        (void)hal_gpio_close(bus->scl);
+        bus->scl = NULL;
+        return rc;
+    }
 
     /* 配置为开漏+上拉输出，默认高电平 */
     const hal_gpio_cfg_t gpio_cfg = {
@@ -239,10 +258,22 @@ ret_code_t soft_i2c_init(soft_i2c_t* bus, const soft_i2c_cfg_t* cfg) {
     };
 
     rc = hal_gpio_config(bus->scl, &gpio_cfg);
-    if (rc != RET_OK) return rc;
+    if (rc != RET_OK) {
+        (void)hal_gpio_close(bus->sda);
+        (void)hal_gpio_close(bus->scl);
+        bus->sda = NULL;
+        bus->scl = NULL;
+        return rc;
+    }
 
     rc = hal_gpio_config(bus->sda, &gpio_cfg);
-    if (rc != RET_OK) return rc;
+    if (rc != RET_OK) {
+        (void)hal_gpio_close(bus->sda);
+        (void)hal_gpio_close(bus->scl);
+        bus->sda = NULL;
+        bus->scl = NULL;
+        return rc;
+    }
 
     /* 释放总线 */
     SCL_HIGH(bus);
@@ -251,7 +282,13 @@ ret_code_t soft_i2c_init(soft_i2c_t* bus, const soft_i2c_cfg_t* cfg) {
 
     /* 创建 RTOS 互斥锁（递归 + 优先级继承） */
     rc = OSAL_mutex_create(&bus->mutex, "si2c", true, true);
-    if (rc != RET_OK) return rc;
+    if (rc != RET_OK) {
+        (void)hal_gpio_close(bus->sda);
+        (void)hal_gpio_close(bus->scl);
+        bus->sda = NULL;
+        bus->scl = NULL;
+        return rc;
+    }
 
     return RET_OK;
 }
@@ -264,24 +301,26 @@ ret_code_t soft_i2c_init(soft_i2c_t* bus, const soft_i2c_cfg_t* cfg) {
  * @return 32位状态码
  */
 ret_code_t soft_i2c_write(soft_i2c_t* bus, uint8_t dev_addr, const uint8_t* data, uint32_t len) {
-    if (!bus || (!data && (len > 0u))) {
-        ASSERT_PARAM(bus && (data || (len == 0u)));
-        return SI2C_RET(RET_CLASS_PARAM, RET_R_NULL_PTR);
-    }
-    OSAL_mutex_lock(bus->mutex, OSAL_WAIT_FOREVER);
+    ASSERT_PARAM((bus != NULL) && ((data != NULL) || (len == 0u)));
+    REQUIRE_RET((bus != NULL) && ((data != NULL) || (len == 0u)),
+                SI2C_RET(RET_CLASS_PARAM, RET_R_NULL_PTR));
+    ret_code_t rc = si2c_lock(bus);
+    if (ret_is_err(rc)) return rc;
+
+    ret_code_t ret = RET_OK;
     /* start */
     if (!i2c_start(bus)) {
         LOG_W("I2C", "I2C起始信号发送失败");
-        OSAL_mutex_unlock(bus->mutex);
-        return SI2C_RET(RET_CLASS_TIMEOUT, RET_R_TIMEOUT);
+        ret = SI2C_RET(RET_CLASS_TIMEOUT, RET_R_TIMEOUT);
+        goto out;
     }
 
     /* 发送设备地址 + W(0) */
     if (!i2c_write_byte(bus, (uint8_t)(dev_addr << 1u))) {
         i2c_stop(bus);
         LOG_W("I2C", "I2C地址没有回复");
-        OSAL_mutex_unlock(bus->mutex);
-        return SI2C_RET(RET_CLASS_IO, RET_R_IO);
+        ret = SI2C_RET(RET_CLASS_IO, RET_R_IO);
+        goto out;
     }
 
     /* 发送数据 */
@@ -289,14 +328,15 @@ ret_code_t soft_i2c_write(soft_i2c_t* bus, uint8_t dev_addr, const uint8_t* data
         if (!i2c_write_byte(bus, data[i])) {
             i2c_stop(bus);
             LOG_W("I2C", "I2C读取数据失败");
-            OSAL_mutex_unlock(bus->mutex);
-            return SI2C_RET(RET_CLASS_IO, RET_R_IO);
+            ret = SI2C_RET(RET_CLASS_IO, RET_R_IO);
+            goto out;
         }
     }
 
     i2c_stop(bus);
-    OSAL_mutex_unlock(bus->mutex);
-    return RET_OK;
+out:
+    si2c_unlock(bus);
+    return ret;
 }
 /**
  * @brief 往指定地址设备读取 len 字节数据
@@ -308,22 +348,23 @@ ret_code_t soft_i2c_write(soft_i2c_t* bus, uint8_t dev_addr, const uint8_t* data
  * @noye 地址传入7位地址不加 读写控制位
  */
 ret_code_t soft_i2c_read(soft_i2c_t* bus, uint8_t dev_addr, uint8_t* data, uint32_t len) {
-    if (!bus || (!data && (len > 0u))) {
-        ASSERT_PARAM(bus && (data || (len == 0u)));
-        return SI2C_RET(RET_CLASS_PARAM, RET_R_NULL_PTR);
-    }
-    OSAL_mutex_lock(bus->mutex, OSAL_WAIT_FOREVER);
+    ASSERT_PARAM((bus != NULL) && ((data != NULL) || (len == 0u)));
+    REQUIRE_RET((bus != NULL) && ((data != NULL) || (len == 0u)),
+                SI2C_RET(RET_CLASS_PARAM, RET_R_NULL_PTR));
+    ret_code_t rc = si2c_lock(bus);
+    if (ret_is_err(rc)) return rc;
+    ret_code_t ret = RET_OK;
     if (!i2c_start(bus)) {
         LOG_W("I2C", "I2C起始信号发送失败");
-        OSAL_mutex_unlock(bus->mutex);
-        return SI2C_RET(RET_CLASS_TIMEOUT, RET_R_TIMEOUT);
+        ret = SI2C_RET(RET_CLASS_TIMEOUT, RET_R_TIMEOUT);
+        goto out;
     }
     /* 发送设备地址 + R(1) */
     if (!i2c_write_byte(bus, (uint8_t)((dev_addr << 1u) | 0x01u))) {
         i2c_stop(bus);
         LOG_W("I2C", "I2C地址没有回复");
-        OSAL_mutex_unlock(bus->mutex);
-        return SI2C_RET(RET_CLASS_IO, RET_R_IO);
+        ret = SI2C_RET(RET_CLASS_IO, RET_R_IO);
+        goto out;
     }
     /* 读取数据: 除最后一字节外均发 ACK */
     for (uint32_t i = 0; i < len; ++i) {
@@ -331,13 +372,14 @@ ret_code_t soft_i2c_read(soft_i2c_t* bus, uint8_t dev_addr, uint8_t* data, uint3
         if (!i2c_read_byte(bus, send_ack, &data[i])) {
             i2c_stop(bus);
             LOG_W("I2C", "I2C读取数据失败");
-            OSAL_mutex_unlock(bus->mutex);
-            return SI2C_RET(RET_CLASS_TIMEOUT, RET_R_TIMEOUT);
+            ret = SI2C_RET(RET_CLASS_TIMEOUT, RET_R_TIMEOUT);
+            goto out;
         }
     }
     i2c_stop(bus);
-    OSAL_mutex_unlock(bus->mutex);
-    return RET_OK;
+out:
+    si2c_unlock(bus);
+    return ret;
 }
 /**
  * @brief 往指定设备的寄存器开始写数据
@@ -350,49 +392,51 @@ ret_code_t soft_i2c_read(soft_i2c_t* bus, uint8_t dev_addr, uint8_t* data, uint3
  */
 ret_code_t soft_i2c_write_reg16(soft_i2c_t* bus, uint8_t dev_addr, uint16_t reg,
                                 const uint8_t* data, uint32_t len) {
-    if (!bus || (!data && (len > 0u))) {
-        ASSERT_PARAM(bus && (data || (len == 0u)));
-        return SI2C_RET(RET_CLASS_PARAM, RET_R_NULL_PTR);
-    }
-    OSAL_mutex_lock(bus->mutex, OSAL_WAIT_FOREVER);
+    ASSERT_PARAM((bus != NULL) && ((data != NULL) || (len == 0u)));
+    REQUIRE_RET((bus != NULL) && ((data != NULL) || (len == 0u)),
+                SI2C_RET(RET_CLASS_PARAM, RET_R_NULL_PTR));
+    ret_code_t rc = si2c_lock(bus);
+    if (ret_is_err(rc)) return rc;
+    ret_code_t ret = RET_OK;
     /* 1、start */
     if (!i2c_start(bus)) {
         LOG_W("I2C", "I2C起始信号发送失败");
-        OSAL_mutex_unlock(bus->mutex);
-        return SI2C_RET(RET_CLASS_TIMEOUT, RET_R_TIMEOUT);
+        ret = SI2C_RET(RET_CLASS_TIMEOUT, RET_R_TIMEOUT);
+        goto out;
     }
 
     /* 2、发送设备地址 + W(0) */
     if (!i2c_write_byte(bus, (uint8_t)(dev_addr << 1u))) {
         i2c_stop(bus);
-        OSAL_mutex_unlock(bus->mutex);
-        return SI2C_RET(RET_CLASS_IO, RET_R_IO);
+        ret = SI2C_RET(RET_CLASS_IO, RET_R_IO);
+        goto out;
     }
 
     /* 3、发送 16-bit 寄存器地址 (大端: 高字节在前) */
     if (!i2c_write_byte(bus, (uint8_t)(reg >> 8u))) {
         i2c_stop(bus);
-        OSAL_mutex_unlock(bus->mutex);
-        return SI2C_RET(RET_CLASS_IO, RET_R_IO);
+        ret = SI2C_RET(RET_CLASS_IO, RET_R_IO);
+        goto out;
     }
     if (!i2c_write_byte(bus, (uint8_t)(reg & 0xFFu))) {
         i2c_stop(bus);
-        OSAL_mutex_unlock(bus->mutex);
-        return SI2C_RET(RET_CLASS_IO, RET_R_IO);
+        ret = SI2C_RET(RET_CLASS_IO, RET_R_IO);
+        goto out;
     }
 
     /* 发送数据 */
     for (uint32_t i = 0; i < len; ++i) {
         if (!i2c_write_byte(bus, data[i])) {
             i2c_stop(bus);
-            OSAL_mutex_unlock(bus->mutex);
-            return SI2C_RET(RET_CLASS_IO, RET_R_IO);
+            ret = SI2C_RET(RET_CLASS_IO, RET_R_IO);
+            goto out;
         }
     }
 
     i2c_stop(bus);
-    OSAL_mutex_unlock(bus->mutex);
-    return RET_OK;
+out:
+    si2c_unlock(bus);
+    return ret;
 }
 /**
  * @brief 从指定设备寄存器读取 len 字节数据
@@ -405,60 +449,62 @@ ret_code_t soft_i2c_write_reg16(soft_i2c_t* bus, uint8_t dev_addr, uint16_t reg,
  */
 ret_code_t soft_i2c_read_reg16(soft_i2c_t* bus, uint8_t dev_addr, uint16_t reg, uint8_t* data,
                                uint32_t len) {
-    if (!bus || (!data && (len > 0u))) {
-        ASSERT_PARAM(bus && (data || (len == 0u)));
-        return SI2C_RET(RET_CLASS_PARAM, RET_R_NULL_PTR);
-    }
-    OSAL_mutex_lock(bus->mutex, OSAL_WAIT_FOREVER);
+    ASSERT_PARAM((bus != NULL) && ((data != NULL) || (len == 0u)));
+    REQUIRE_RET((bus != NULL) && ((data != NULL) || (len == 0u)),
+                SI2C_RET(RET_CLASS_PARAM, RET_R_NULL_PTR));
+    ret_code_t rc = si2c_lock(bus);
+    if (ret_is_err(rc)) return rc;
+    ret_code_t ret = RET_OK;
 
     /*  1、start */
     if (!i2c_start(bus)) {
         LOG_W("I2C", "I2C起始信号发送失败");
-        OSAL_mutex_unlock(bus->mutex);
-        return SI2C_RET(RET_CLASS_TIMEOUT, RET_R_TIMEOUT);
+        ret = SI2C_RET(RET_CLASS_TIMEOUT, RET_R_TIMEOUT);
+        goto out;
     }
     /* 2、指定设备地址写 */
     if (!i2c_write_byte(bus, (uint8_t)(dev_addr << 1u))) {
         i2c_stop(bus);
-        OSAL_mutex_unlock(bus->mutex);
-        return SI2C_RET(RET_CLASS_IO, RET_R_IO);
+        ret = SI2C_RET(RET_CLASS_IO, RET_R_IO);
+        goto out;
     }
     /* 3、指定读取寄存器地址 */
     if (!i2c_write_byte(bus, (uint8_t)(reg >> 8u))) {
         i2c_stop(bus);
-        OSAL_mutex_unlock(bus->mutex);
-        return SI2C_RET(RET_CLASS_IO, RET_R_IO);
+        ret = SI2C_RET(RET_CLASS_IO, RET_R_IO);
+        goto out;
     }
     if (!i2c_write_byte(bus, (uint8_t)(reg & 0xFFu))) {
         i2c_stop(bus);
-        OSAL_mutex_unlock(bus->mutex);
-        return SI2C_RET(RET_CLASS_IO, RET_R_IO);
+        ret = SI2C_RET(RET_CLASS_IO, RET_R_IO);
+        goto out;
     }
 
     /* 4、start */
     if (!i2c_start(bus)) {
-        OSAL_mutex_unlock(bus->mutex);
-        return SI2C_RET(RET_CLASS_TIMEOUT, RET_R_TIMEOUT);
+        ret = SI2C_RET(RET_CLASS_TIMEOUT, RET_R_TIMEOUT);
+        goto out;
     }
     /* 5、指定地址读 */
     if (!i2c_write_byte(bus, (uint8_t)((dev_addr << 1u) | 0x01u))) {
         i2c_stop(bus);
-        OSAL_mutex_unlock(bus->mutex);
-        return SI2C_RET(RET_CLASS_IO, RET_R_IO);
+        ret = SI2C_RET(RET_CLASS_IO, RET_R_IO);
+        goto out;
     }
     /* 6、读取数据 */
     for (uint32_t i = 0; i < len; ++i) {
         const bool send_ack = (i < (len - 1u));
         if (!i2c_read_byte(bus, send_ack, &data[i])) {
             i2c_stop(bus);
-            OSAL_mutex_unlock(bus->mutex);
-            return SI2C_RET(RET_CLASS_TIMEOUT, RET_R_TIMEOUT);
+            ret = SI2C_RET(RET_CLASS_TIMEOUT, RET_R_TIMEOUT);
+            goto out;
         }
     }
 
     i2c_stop(bus);
-    OSAL_mutex_unlock(bus->mutex);
-    return RET_OK;
+out:
+    si2c_unlock(bus);
+    return ret;
 }
 
 #else /* !CFG_FEAT_SOFT_I2C */

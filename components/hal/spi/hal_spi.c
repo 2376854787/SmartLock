@@ -9,6 +9,7 @@
 #include "hal_spi_port.h"
 #include "hal_time.h"
 #include "osal.h"
+#include "assert_cus.h"
 
 /* ---------- 参数/状态码 ---------- */
 #define SPI_RC_PARAM(reason_)   RET_MAKE_PARAM(RET_MOD_HAL, RET_SUB_HAL_SPI, (reason_))
@@ -140,6 +141,7 @@ static void release_dev_slot(hal_spi_dev_t *d) {
  * @return 32位状态码
  */
 static ret_code_t bus_lock(hal_spi_bus_t *b, uint32_t timeout_ms) {
+    REQUIRE_RET(b != NULL, SPI_RC_PARAM(RET_R_NULL_PTR));
     if (!b->lock_valid) return RET_OK;
     return OSAL_mutex_lock(b->lock, timeout_ms);
 }
@@ -148,6 +150,8 @@ static ret_code_t bus_lock(hal_spi_bus_t *b, uint32_t timeout_ms) {
  * @param b 总线句柄
  */
 static void bus_unlock(hal_spi_bus_t *b) {
+    CORE_ASSERT(b != NULL);
+    if (!b) return;
     if (!b->lock_valid) return;
     (void)OSAL_mutex_unlock(b->lock);
 }
@@ -211,11 +215,11 @@ static void wait_spi_idle_before_cs_deassert(const hal_spi_dev_t *d) {
  */
 static ret_code_t cfg_check_bus(const hal_spi_bus_cfg_t *cfg) {
     /* 排除 NULL */
-    if (!cfg) return SPI_RC_PARAM(RET_R_NULL_PTR);
+    REQUIRE_RET(cfg != NULL, SPI_RC_PARAM(RET_R_NULL_PTR));
     /* 检查 bus_id 是否在有效范围内 */
-    if (cfg->bus_id >= HAL_SPI_BUS_MAX) return SPI_RC_PARAM(RET_R_RANGE_ERR);
+    REQUIRE_RET(cfg->bus_id < HAL_SPI_BUS_MAX, SPI_RC_PARAM(RET_R_RANGE_ERR));
     /* 确保合法速率 */
-    if (cfg->default_hz == 0u) return SPI_RC_PARAM(RET_R_RANGE_ERR);
+    REQUIRE_RET(cfg->default_hz != 0u, SPI_RC_PARAM(RET_R_RANGE_ERR));
     return RET_OK;
 }
 /**
@@ -225,26 +229,26 @@ static ret_code_t cfg_check_bus(const hal_spi_bus_cfg_t *cfg) {
  */
 static ret_code_t cfg_check_dev(const hal_spi_dev_cfg_t *cfg) {
     /* 非 NULL */
-    if (!cfg) return SPI_RC_PARAM(RET_R_NULL_PTR);
+    REQUIRE_RET(cfg != NULL, SPI_RC_PARAM(RET_R_NULL_PTR));
     /* 模式合法检查 */
-    if (cfg->mode > HAL_SPI_MODE3) return SPI_RC_PARAM(RET_R_INVALID_ARG);
+    REQUIRE_RET(cfg->mode <= HAL_SPI_MODE3, SPI_RC_PARAM(RET_R_INVALID_ARG));
     /* 大小端合法检查 */
-    if (cfg->bit_order != HAL_SPI_BITORDER_MSB && cfg->bit_order != HAL_SPI_BITORDER_LSB)
-        return SPI_RC_PARAM(RET_R_INVALID_ARG);
+    REQUIRE_RET((cfg->bit_order == HAL_SPI_BITORDER_MSB) || (cfg->bit_order == HAL_SPI_BITORDER_LSB),
+                SPI_RC_PARAM(RET_R_INVALID_ARG));
     /* 最大速率 大于0 */
-    if (cfg->max_hz == 0u) return SPI_RC_PARAM(RET_R_RANGE_ERR);
+    REQUIRE_RET(cfg->max_hz != 0u, SPI_RC_PARAM(RET_R_RANGE_ERR));
     /* 位宽合法检查 */
-    if (cfg->frame_bits != HAL_SPI_FRAME_8 && cfg->frame_bits != HAL_SPI_FRAME_16)
-        return SPI_RC_PARAM(RET_R_INVALID_ARG);
+    REQUIRE_RET((cfg->frame_bits == HAL_SPI_FRAME_8) || (cfg->frame_bits == HAL_SPI_FRAME_16),
+                SPI_RC_PARAM(RET_R_INVALID_ARG));
     /* 双工方向合法检查 */
-    if (cfg->dir != HAL_SPI_DIR_2LINES && cfg->dir != HAL_SPI_DIR_2LINES_RXONLY &&
-        cfg->dir != HAL_SPI_DIR_LINE)
-        return SPI_RC_PARAM(RET_R_INVALID_ARG);
+    REQUIRE_RET((cfg->dir == HAL_SPI_DIR_2LINES) || (cfg->dir == HAL_SPI_DIR_2LINES_RXONLY) ||
+                    (cfg->dir == HAL_SPI_DIR_LINE),
+                SPI_RC_PARAM(RET_R_INVALID_ARG));
     /* 片选类型合法检查 */
-    if (cfg->cs_type != HAL_SPI_CS_GPIO && cfg->cs_type != HAL_SPI_CS_HW)
-        return SPI_RC_PARAM(RET_R_INVALID_ARG);
+    REQUIRE_RET((cfg->cs_type == HAL_SPI_CS_GPIO) || (cfg->cs_type == HAL_SPI_CS_HW),
+                SPI_RC_PARAM(RET_R_INVALID_ARG));
     if (cfg->cs_type == HAL_SPI_CS_GPIO) {
-        if (cfg->cs_gpio_id == 0u) return SPI_RC_PARAM(RET_R_RANGE_ERR);
+        REQUIRE_RET(cfg->cs_gpio_id != 0u, SPI_RC_PARAM(RET_R_RANGE_ERR));
     }
     return RET_OK;
 }
@@ -258,27 +262,30 @@ static ret_code_t cfg_check_dev(const hal_spi_dev_cfg_t *cfg) {
 static ret_code_t validate_api_xfer_common(const hal_spi_dev_t *dev, const hal_spi_xfer_t *xfer,
                                            bool hw_stream_api) {
     /* 句柄非空检查 */
-    if (!dev || !xfer) return SPI_RC_PARAM(RET_R_NULL_PTR);
+    REQUIRE_RET((dev != NULL) && (xfer != NULL), SPI_RC_PARAM(RET_R_NULL_PTR));
     /* 必须设备被使用和以及绑定的总线被初始化 */
-    if (!dev->in_use || !dev->bus || !dev->bus->initialized) return SPI_RC_STATE(RET_R_NOT_READY);
+    if (!dev->in_use || (dev->bus == NULL) || !dev->bus->initialized)
+        return SPI_RC_STATE(RET_R_NOT_READY);
     /* 长度必须有效 */
-    if (xfer->len == 0u) return SPI_RC_PARAM(RET_R_RANGE_ERR);
+    REQUIRE_RET(xfer->len != 0u, SPI_RC_PARAM(RET_R_RANGE_ERR));
     /* 发送和接收地址不能同时为空 */
-    if (xfer->tx == NULL && xfer->rx == NULL) return SPI_RC_PARAM(RET_R_INVALID_ARG);
+    REQUIRE_RET((xfer->tx != NULL) || (xfer->rx != NULL), SPI_RC_PARAM(RET_R_INVALID_ARG));
     /* 硬件流api调用必查看是不是 end事务*/
     if (hw_stream_api) {
-        if (xfer->flags & HAL_SPI_XFER_STREAM_END) return SPI_RC_PARAM(RET_R_INVALID_ARG);
+        REQUIRE_RET((xfer->flags & HAL_SPI_XFER_STREAM_END) == 0u,
+                    SPI_RC_PARAM(RET_R_INVALID_ARG));
     } else {
         /* 非硬件api 就不能有硬件流事务*/
-        if (xfer->flags & HAL_SPI_XFER_HW_STREAM) return SPI_RC_PARAM(RET_R_UNSUPPORTED);
+        REQUIRE_RET((xfer->flags & HAL_SPI_XFER_HW_STREAM) == 0u,
+                    SPI_RC_PARAM(RET_R_UNSUPPORTED));
         /* 非硬件流 且是流结束事务 && 不是软件流 返回错误 */
         if ((xfer->flags & HAL_SPI_XFER_STREAM_END) && !(xfer->flags & HAL_SPI_XFER_STREAM))
             return SPI_RC_PARAM(RET_R_INVALID_ARG);
     }
     /* 检查位宽和发送的长度是否对的上 */
     const uint32_t frame_bytes = (dev->cfg.frame_bits == HAL_SPI_FRAME_16) ? 2u : 1u;
-    if ((xfer->len % frame_bytes) != 0u) return SPI_RC_PARAM(RET_R_RANGE_ERR);
-    if ((xfer->len / frame_bytes) > (uint32_t)UINT16_MAX) return SPI_RC_PARAM(RET_R_RANGE_ERR);
+    REQUIRE_RET((xfer->len % frame_bytes) == 0u, SPI_RC_PARAM(RET_R_RANGE_ERR));
+    REQUIRE_RET((xfer->len / frame_bytes) <= (uint32_t)UINT16_MAX, SPI_RC_PARAM(RET_R_RANGE_ERR));
 
     return RET_OK;
 }
@@ -395,7 +402,7 @@ static void spi_port_evt_cb(void *user, const hal_spi_port_evt_t *evt) {
  */
 ret_code_t hal_spi_bus_open(const hal_spi_bus_cfg_t *cfg, hal_spi_bus_t **out_bus) {
     /* 参数检查 */
-    if (!out_bus) return SPI_RC_PARAM(RET_R_NULL_PTR);
+    REQUIRE_RET(out_bus != NULL, SPI_RC_PARAM(RET_R_NULL_PTR));
     *out_bus      = NULL;
 
     /* 检查总线的配置 */
@@ -443,7 +450,7 @@ ret_code_t hal_spi_bus_open(const hal_spi_bus_cfg_t *cfg, hal_spi_bus_t **out_bu
  */
 ret_code_t hal_spi_bus_close(hal_spi_bus_t *bus) {
     /* 参数检查 */
-    if (!bus) return SPI_RC_PARAM(RET_R_NULL_PTR);
+    REQUIRE_RET(bus != NULL, SPI_RC_PARAM(RET_R_NULL_PTR));
     if (!bus->initialized) return SPI_RC_STATE(RET_R_NOT_READY);
     /* 异步传输进行中不允许关闭总线 */
     if (bus->xfer_busy) return SPI_RC_STATE(RET_R_BUSY);
@@ -472,10 +479,12 @@ ret_code_t hal_spi_bus_close(hal_spi_bus_t *bus) {
 ret_code_t hal_spi_dev_attach(hal_spi_bus_t *bus, const hal_spi_dev_cfg_t *cfg,
                               hal_spi_dev_t **out_dev) {
     /* 参数检查 */
-    if (!out_dev) return SPI_RC_PARAM(RET_R_NULL_PTR);
+    REQUIRE_RET(out_dev != NULL, SPI_RC_PARAM(RET_R_NULL_PTR));
     *out_dev = NULL;
+    ASSERT_PARAM(bus != NULL);
+    REQUIRE_RET(bus != NULL, SPI_RC_PARAM(RET_R_NULL_PTR));
     /* 确保总线已经初始化 */
-    if (!bus || !bus->initialized) return SPI_RC_STATE(RET_R_NOT_READY);
+    if (!bus->initialized) return SPI_RC_STATE(RET_R_NOT_READY);
     /* 检查设备的配置 */
     ret_code_t rc = cfg_check_dev(cfg);
     if (ret_is_err(rc)) return rc;
@@ -520,7 +529,7 @@ ret_code_t hal_spi_dev_attach(hal_spi_bus_t *bus, const hal_spi_dev_cfg_t *cfg,
  * @return 32位状态码
  */
 ret_code_t hal_spi_dev_set_evt_cb(hal_spi_dev_t *dev, hal_spi_evt_cb_t cb, void *user) {
-    if (!dev) return SPI_RC_PARAM(RET_R_NULL_PTR);
+    REQUIRE_RET(dev != NULL, SPI_RC_PARAM(RET_R_NULL_PTR));
     if (!dev->in_use) return SPI_RC_STATE(RET_R_NOT_READY);
     dev->evt_cb   = cb;
     dev->evt_user = user;
@@ -531,7 +540,7 @@ ret_code_t hal_spi_dev_set_evt_cb(hal_spi_dev_t *dev, hal_spi_evt_cb_t cb, void 
  * @return 32位状态码
  */
 ret_code_t hal_spi_dev_detach(hal_spi_dev_t *dev) {
-    if (!dev) return SPI_RC_PARAM(RET_R_NULL_PTR);
+    REQUIRE_RET(dev != NULL, SPI_RC_PARAM(RET_R_NULL_PTR));
     if (!dev->in_use) return SPI_RC_STATE(RET_R_NOT_READY);
 
     /* 异步传输进行中不允许解绑当前设备 */
@@ -686,8 +695,9 @@ ret_code_t hal_spi_stream_start(hal_spi_dev_t *dev, const hal_spi_xfer_t *xfer) 
  * @return
  */
 ret_code_t hal_spi_stream_stop(hal_spi_dev_t *dev, bool disable_spi) {
-    if (!dev) return SPI_RC_PARAM(RET_R_NULL_PTR);
-    if (!dev->in_use || !dev->bus || !dev->bus->initialized) return SPI_RC_STATE(RET_R_NOT_READY);
+    REQUIRE_RET(dev != NULL, SPI_RC_PARAM(RET_R_NULL_PTR));
+    if (!dev->in_use || (dev->bus == NULL) || !dev->bus->initialized)
+        return SPI_RC_STATE(RET_R_NOT_READY);
     hal_spi_bus_t *b = dev->bus;
     /* 锁 */
     ret_code_t rc    = bus_lock(b, OSAL_WAIT_FOREVER);

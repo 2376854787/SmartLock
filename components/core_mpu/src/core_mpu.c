@@ -1,5 +1,6 @@
 #include "core_mpu.h"
 
+#include "assert_cus.h"
 #include "core_mpu_port.h"
 
 /*
@@ -198,6 +199,7 @@ static uint32_t core_mpu_floor_pow2_u32(uint32_t x) {
 }
 
 static core_mpu_rc_t core_mpu_validate_map(const core_mpu_map_t* m) {
+    ASSERT_PARAM(m != NULL);
     if (!m) return CORE_MPU_RC_INVALID_ARG;
 
     if (m->flash_start >= m->flash_end) return CORE_MPU_RC_INVALID_ARG;
@@ -293,6 +295,7 @@ static core_mpu_rc_t core_mpu_v7_set_region(uint32_t region, uintptr_t base, uin
 static core_mpu_rc_t core_mpu_v7_program_range(uint32_t* region_io, uint32_t region_limit,
                                                uintptr_t start, uintptr_t end, uint32_t rasr_attr) {
     if (start >= end) return CORE_MPU_RC_OK;
+    ASSERT_PARAM(region_io != NULL);
     if (!region_io) return CORE_MPU_RC_INVALID_ARG;
 
     uintptr_t cur = start;
@@ -592,10 +595,11 @@ uint32_t core_mpu_hw_region_count(void) {
 }
 
 core_mpu_rc_t core_mpu_apply_default(const core_mpu_map_t* map, const core_mpu_policy_t* policy) {
+    ASSERT_PARAM(map != NULL);
+    if (map == NULL) return CORE_MPU_RC_INVALID_ARG;
     (void)policy;
 
 #if !CORE_MPU_HAS_MPU
-    (void)map;
     return CORE_MPU_RC_UNSUPPORTED;
 #else
     core_mpu_rc_t rc = core_mpu_validate_map(map);

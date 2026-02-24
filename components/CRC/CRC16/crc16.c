@@ -3,6 +3,7 @@
 #include <stdint.h>
 
 #include "APP_config.h"
+#include "assert_cus.h"
 #include "ret_code.h"
 #if (defined(CFG_FEAT_CRC16) && (CFG_FEAT_CRC16 == 1))
 #define RET_MOD_UTIL(clas_, err_) \
@@ -85,6 +86,9 @@ static const uint16_t config_count = sizeof(g_crc16_config) / sizeof(g_crc16_con
  */
 ret_code_t crc16_cal(const crc16_config_t* cfg, const uint8_t* data, uint16_t length,
                      uint16_t* out) {
+    ASSERT_PARAM((cfg != NULL) && ((data != NULL) || (length == 0u)) && (out != NULL));
+    REQUIRE_RET((cfg != NULL) && ((data != NULL) || (length == 0u)) && (out != NULL),
+                RET_MOD_UTIL(RET_CLASS_PARAM, RET_R_INVALID_ARG));
     uint16_t crc = cfg->init;
     for (uint16_t i = 0; i < length; i++) {
         if (cfg->isMsbFirst) {
@@ -125,9 +129,8 @@ ret_code_t crc16_cal(const crc16_config_t* cfg, const uint8_t* data, uint16_t le
 ret_code_t crc16_cal_default(crc16_config_default name, const uint8_t* data, uint16_t length,
                              uint16_t* out) {
     /* 边界检查，防止数组越界 */
-    if (name >= config_count) {
-        return RET_MOD_UTIL(RET_CLASS_PARAM, RET_R_INVALID_ARG);
-    }
+    ASSERT_PARAM(name < config_count);
+    REQUIRE_RET(name < config_count, RET_MOD_UTIL(RET_CLASS_PARAM, RET_R_INVALID_ARG));
     return crc16_cal(&g_crc16_config[name], data, length, out);
 }
 
@@ -141,9 +144,9 @@ ret_code_t crc16_cal_default(crc16_config_default name, const uint8_t* data, uin
  */
 static ret_code_t crc16_cal_table_impl(const crc16_config_t* cfg, const uint8_t* data,
                                        uint16_t length, uint16_t* out) {
-    if (!cfg || (!data && length != 0) || !out) {
-        return RET_MOD_UTIL(RET_CLASS_PARAM, RET_R_INVALID_ARG);
-    }
+    ASSERT_PARAM((cfg != NULL) && ((data != NULL) || (length == 0u)) && (out != NULL));
+    REQUIRE_RET((cfg != NULL) && ((data != NULL) || (length == 0u)) && (out != NULL),
+                RET_MOD_UTIL(RET_CLASS_PARAM, RET_R_INVALID_ARG));
 
     uint16_t crc = cfg->init;
 
@@ -187,7 +190,7 @@ static ret_code_t crc16_cal_table_impl(const crc16_config_t* cfg, const uint8_t*
  */
 ret_code_t crc16_cal_table(const crc16_config_t* cfg, const uint8_t* data, uint16_t length,
                            uint16_t* out) {
-    /* 这里直接走查表实现（速度快） */
+    /* 这里直接走查表实现 */
     return crc16_cal_table_impl(cfg, data, length, out);
 }
 
@@ -202,9 +205,8 @@ ret_code_t crc16_cal_table(const crc16_config_t* cfg, const uint8_t* data, uint1
  */
 ret_code_t crc16_cal_default_table(crc16_config_default name, const uint8_t* data, uint16_t length,
                                    uint16_t* out) {
-    if (name >= config_count) {
-        return RET_MOD_UTIL(RET_CLASS_PARAM, RET_R_INVALID_ARG);
-    }
+    ASSERT_PARAM(name < config_count);
+    REQUIRE_RET(name < config_count, RET_MOD_UTIL(RET_CLASS_PARAM, RET_R_INVALID_ARG));
     return crc16_cal_table_impl(&g_crc16_config[name], data, length, out);
 }
 

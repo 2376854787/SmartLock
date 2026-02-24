@@ -6,6 +6,7 @@
 
 #include "MemoryAllocation.h"
 #include "RingBuffer.h"
+#include "assert_cus.h"
 #include "barrier.h"
 #include "rb_port.h"
 /* 状态错误状态码打包宏 */
@@ -14,6 +15,7 @@
 /* 给 ret_code_t 返回函数用 */
 #define RB_CHECK_VALID_RC(rb)                                       \
     do {                                                            \
+        ASSERT_PARAM(((rb) != NULL) && ((rb)->buffer != NULL) && ((rb)->size >= 2u)); \
         if ((rb) == NULL || (rb)->buffer == NULL || (rb)->size < 2) \
             return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);      \
     } while (0)
@@ -21,6 +23,7 @@
 /* 给 uint32_t 返回函数用：非法就返回 0（*/
 #define RB_CHECK_VALID_U32(rb)                                                 \
     do {                                                                       \
+        ASSERT_PARAM(((rb) != NULL) && ((rb)->buffer != NULL) && ((rb)->size >= 2u)); \
         if ((rb) == NULL || (rb)->buffer == NULL || (rb)->size < 2) return 0u; \
     } while (0)
 
@@ -28,6 +31,7 @@
 #define RB_CHECK_ARGS_RC(rb, ptr, size)                                                           \
     do {                                                                                          \
         RB_CHECK_VALID_RC(rb);                                                                    \
+        ASSERT_PARAM(((ptr) != NULL) && ((size) != NULL) && (*(size) != 0u));                    \
         if (!(ptr) || !(size) || *(size) == 0) return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG); \
     } while (0)
 
@@ -272,6 +276,7 @@ static ret_code_t RB_Reserve_Logic(const RingBuffer* rb, uint32_t want, RingBuff
  * @note 实际写入字节数 = min(len, span->n1 + span->n2)
  */
 void RingBuffer_SpanWriteFromLinear(const RingBufferSpan* span, const uint8_t* src, uint32_t len) {
+    ASSERT_PARAM((span != NULL) && (src != NULL) && (len != 0u));
     if (!span || !src || len == 0u) return;
 
     uint32_t copied = 0u;
@@ -296,6 +301,7 @@ void RingBuffer_SpanWriteFromLinear(const RingBufferSpan* span, const uint8_t* s
  * @note 实际读取字节数 = min(len, span->n1 + span->n2)
  */
 void RingBuffer_SpanReadToLinear(const RingBufferSpan* span, uint8_t* dst, uint32_t len) {
+    ASSERT_PARAM((span != NULL) && (dst != NULL) && (len != 0u));
     if (!span || !dst || len == 0u) return;
 
     uint32_t copied = 0u;
@@ -323,6 +329,7 @@ void RingBuffer_SpanReadToLinear(const RingBufferSpan* span, uint8_t* dst, uint3
  */
 void RingBuffer_SpanWriteFromCircular(const RingBufferSpan* span, const uint8_t* src_ring,
                                       uint32_t src_ring_len, uint32_t src_pos, uint32_t len) {
+    ASSERT_PARAM((span != NULL) && (src_ring != NULL) && (src_ring_len != 0u) && (len != 0u));
     if (!span || !src_ring || src_ring_len == 0u || len == 0u) return;
 
     /* 规范化源端起点，避免 src_pos 超过环长 */
@@ -376,6 +383,7 @@ void RingBuffer_SpanWriteFromCircular(const RingBufferSpan* span, const uint8_t*
  * @return 状态码
  */
 ret_code_t CreateRingBuffer(RingBuffer* rb, const char* name, const uint32_t size) {
+    ASSERT_PARAM((rb != NULL) && (size >= 2u));
     if (rb == NULL || size < 2) return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
 
     rb->buffer = static_alloc(size, DEFAULT_ALIGNMENT);
@@ -1028,6 +1036,11 @@ uint32_t RingBuffer_GetContigWrite(const RingBuffer* rb) {
  * @return
  */
 RingBufferStatus RingBuffer_GetStatus(const RingBuffer* rb) {
+    ASSERT_PARAM(rb != NULL);
+    if (rb == NULL) {
+        const RingBufferStatus empty = {0};
+        return empty;
+    }
     RB_ENTER_CRITICAL();
     const RingBufferStatus status = {
         .used                = RingBuffer_GetUsedSize(rb),
@@ -1052,6 +1065,8 @@ static inline uint32_t rb_mod(uint32_t x, uint32_t m) {
 
 bool RingBuffer_SPSC_OverwriteIfExists(RingBuffer* rb, const uint8_t* item, uint32_t item_size,
                                        uint32_t event_id_off, uint32_t key_off) {
+    ASSERT_PARAM((rb != NULL) && (item != NULL) && (item_size != 0u));
+    ASSERT_PARAM((event_id_off + 4u <= item_size) && (key_off + 4u <= item_size));
     if (!rb || !item || item_size == 0u) return false;
     if (event_id_off + 4u > item_size) return false;
     if (key_off + 4u > item_size) return false;

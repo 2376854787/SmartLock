@@ -2,6 +2,18 @@
 /* 检查是否启用了 事件映射 */
 #if (defined(EB_CFG_ENABLE_EVENTMAP) && (EB_CFG_ENABLE_EVENTMAP == 1))
 #include <string.h>
+
+#include "assert_cus.h"
+#include "eb_config.h"
+
+#if EB_ENABLE_ASSERT
+#define EB_ASSERT_PARAM(x) ASSERT_PARAM((x))
+#else
+#define EB_ASSERT_PARAM(x) \
+    do {                   \
+        (void)sizeof(x);   \
+    } while (0)
+#endif
 #ifndef EB_EVENTMAP_CAP
 #define EB_EVENTMAP_CAP 256 /* 建议>= 事件数*2  */
 #endif
@@ -35,6 +47,7 @@ void eb_eventmap_build(const uint32_t* event_ids, uint16_t n) {
     /* 容器初始化置零 */
     memset(g_map, 0, sizeof(g_map));
     /* 参数检查 */
+    EB_ASSERT_PARAM((event_ids != NULL) || (n == 0u));
     if (!event_ids) return;
     /* 遍历事件表建立哈希映射 */
     for (uint16_t i = 0; i < n; i++) {

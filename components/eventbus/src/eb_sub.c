@@ -2,12 +2,22 @@
 
 #include <string.h>
 
+#include "assert_cus.h"
 #include "compiler_cus.h"
 #include "eb_config.h"
 #include "eb_eventdef.h"
 #include "eb_freeze.h"
 #include "eb_port.h"
 #include "osal.h"
+
+#if EB_ENABLE_ASSERT
+#define EB_ASSERT_PARAM(x) ASSERT_PARAM((x))
+#else
+#define EB_ASSERT_PARAM(x) \
+    do {                   \
+        (void)sizeof(x);   \
+    } while (0)
+#endif
 
 /* =====================================================================================
  * 订阅表实现：
@@ -56,6 +66,7 @@ static bool sub_equal(const eb_sub_t* a, const eb_sub_t* b) {
  * @return 32位状态码
  */
 eb_ret_t eb_sub_add(const eb_sub_t* s) {
+    EB_ASSERT_PARAM(s != NULL);
     if (!s) return EB_ERR_BADARG;
     if (eb_is_frozen()) return EB_ERR_BADSTATE;
     /* 获取在策略表的索引 */
@@ -68,7 +79,7 @@ eb_ret_t eb_sub_add(const eb_sub_t* s) {
     /* 检查订阅者桶是否超过限制 */
     if (b->n >= (uint16_t)EB_MAX_SUBS) {
         eb_port_exit_critical(pm);
-        // TODO 加上断言
+        /* 资源上限，按运行态返回 */
         return EB_ERR_FULL;
     }
 
@@ -90,6 +101,7 @@ eb_ret_t eb_sub_add(const eb_sub_t* s) {
  * @return 32位状态码
  */
 eb_ret_t eb_sub_remove(const eb_sub_t* s) {
+    EB_ASSERT_PARAM(s != NULL);
     if (!s) return EB_ERR_BADARG;
     if (eb_is_frozen()) return EB_ERR_BADSTATE;
     const int32_t idx = idx_of(s->event_id);
@@ -120,6 +132,7 @@ eb_ret_t eb_sub_remove(const eb_sub_t* s) {
  * @return 实际返回的订阅信息数量
  */
 uint32_t eb_sub_find(uint32_t event_id, eb_sub_t* out_list, uint32_t max) {
+    EB_ASSERT_PARAM((out_list != NULL) && (max != 0u));
     if (!out_list || max == 0u) return 0u;
     const int32_t idx = idx_of(event_id);
     if (idx < 0 || idx >= (int32_t)EB_MAX_EVENTS) return 0u;
@@ -228,7 +241,11 @@ void eb_sub_init(void) {
     __atomic_store_n((uint32_t*)&g_reg.active_idx, 0u, __ATOMIC_RELEASE);
     __atomic_store_n((uint32_t*)&g_reg.writer_lock, 0u, __ATOMIC_RELEASE);
 #if EB_COW_USE_MUTEXES
-    OSAL_mutex_create(&writer_mutex, "cow_writer", 1, 1);
+    const ret_code_t rc = OSAL_mutex_create(&writer_mutex, "cow_writer", 1, 1);
+#if EB_ENABLE_ASSERT
+    ASSERT_FATAL(rc == RET_OK);
+#endif
+    (void)rc;
 #endif
 }
 /**
@@ -237,6 +254,7 @@ void eb_sub_init(void) {
  * @return 32位状态码
  */
 eb_ret_t eb_sub_add(const eb_sub_t* s) {
+    EB_ASSERT_PARAM(s != NULL);
     if (!s) return EB_ERR_BADARG;
     if (eb_is_frozen()) return EB_ERR_BADSTATE;
     /* 获取 订阅事件所在的桶索引 */
@@ -256,7 +274,7 @@ eb_ret_t eb_sub_add(const eb_sub_t* s) {
     uint16_t* cnt = &g_reg.tables[shadow].counts[(uint32_t)eidx];
     if (*cnt >= (uint16_t)EB_MAX_SUBS) {
         writer_lock_release(&writer_mutex);
-        // TODO 断言
+        /* 资源上限，按运行态返回 */
         return EB_ERR_FULL;
     }
 
@@ -283,6 +301,7 @@ eb_ret_t eb_sub_add(const eb_sub_t* s) {
  * @return
  */
 eb_ret_t eb_sub_remove(const eb_sub_t* s) {
+    EB_ASSERT_PARAM(s != NULL);
     if (!s) return EB_ERR_BADARG;
     if (eb_is_frozen()) return EB_ERR_BADSTATE;
     /* 获取事件所在桶索引 */
@@ -326,6 +345,7 @@ eb_ret_t eb_sub_remove(const eb_sub_t* s) {
  * @return 实际找的数量
  */
 uint32_t eb_sub_find(uint32_t event_id, eb_sub_t* out_list, uint32_t max) {
+    EB_ASSERT_PARAM((out_list != NULL) && (max != 0u));
     if (!out_list || max == 0u) return 0u;
 
     const int32_t eidx = eb_event_index(event_id);
