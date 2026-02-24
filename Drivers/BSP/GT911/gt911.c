@@ -22,7 +22,11 @@
 
 #include "APP_config.h"
 
-#if defined(CFG_FEAT_GT911) && (CFG_FEAT_GT911==1)
+/* GT911 统一归口到 PORT/I2C 子模块；保留 class/reason，重写 module/submodule。 */
+#define GT911_RET(cls_, reason_) \
+    RET_MAKE(RET_MOD_PORT, RET_SUB_PORT_I2C, RET_CODE_MAKE((cls_), (reason_)))
+
+#if defined(CFG_FEAT_GT911) && (CFG_FEAT_GT911 == 1)
 
 #include <string.h>
 
@@ -46,8 +50,10 @@
 
 /* ======================== 错误码 ======================== */
 
-#define GT911_RET(cls_, reason_) \
-    RET_MAKE(RET_MOD_PORT, RET_SUB_PORT_I2C, RET_CODE_MAKE((cls_), (reason_)))
+static inline ret_code_t gt911_wrap_lower_rc(ret_code_t rc) {
+    if (ret_is_ok(rc)) return RET_OK;
+    return RET_MAKE(RET_MOD_PORT, RET_SUB_PORT_I2C, RET_CODE16(rc));
+}
 
 /* ======================== 内部函数 ======================== */
 
@@ -73,7 +79,7 @@ static ret_code_t gt911_hw_reset(const gt911_dev_t* dev) {
         .default_level = HAL_GPIO_LEVEL_LOW,
     };
     ret_code_t rc = hal_gpio_config(dev->intr, &int_out_cfg);
-    if (rc != RET_OK) return rc;
+    if (ret_is_err(rc)) return gt911_wrap_lower_rc(rc);
 
     /* 配置 RST 为推挽输出 */
     const hal_gpio_cfg_t rst_cfg = {
@@ -86,7 +92,7 @@ static ret_code_t gt911_hw_reset(const gt911_dev_t* dev) {
         .default_level = HAL_GPIO_LEVEL_LOW,
     };
     rc = hal_gpio_config(dev->rst, &rst_cfg);
-    if (rc != RET_OK) return rc;
+    if (ret_is_err(rc)) return gt911_wrap_lower_rc(rc);
 
     /* Step 1: INT 输出地址选择电平 */
     if (dev->addr == GT911_ADDR_LOW) {
@@ -117,7 +123,7 @@ static ret_code_t gt911_hw_reset(const gt911_dev_t* dev) {
     };
     rc = hal_gpio_config(dev->intr, &int_in_cfg);
 
-    return rc;
+    return gt911_wrap_lower_rc(rc);
 }
 
 /**
@@ -133,7 +139,7 @@ static ret_code_t gt911_update_refresh_rate(gt911_dev_t* dev, uint8_t rate) {
     /* 1. 读取当前完整配置 (186 字节: 0x8047 ~ 0x8100) */
     ret_code_t rc =
         soft_i2c_read_reg16(&dev->i2c, dev->addr, GT911_REG_CONFIG, cfg, GT911_CFG_SIZE);
-    if (rc != RET_OK) return rc;
+    if (ret_is_err(rc)) return gt911_wrap_lower_rc(rc);
 
     /* 2. 修改刷新率 (偏移 = 0x804C - 0x8047 = 15) */
     /* 检查是否需变更，避免无效写 */
@@ -156,7 +162,7 @@ static ret_code_t gt911_update_refresh_rate(gt911_dev_t* dev, uint8_t rate) {
     /* GT911 要求写 Config 时要整块写入或分块写入，这里一次性写186字节 */
     rc = soft_i2c_write_reg16(&dev->i2c, dev->addr, GT911_REG_CONFIG, cfg, GT911_CFG_SIZE);
 
-    return rc;
+    return gt911_wrap_lower_rc(rc);
 }
 
 /* ======================== 公共 API ======================== */
@@ -173,14 +179,14 @@ ret_code_t gt911_init(gt911_dev_t* dev, const gt911_cfg_t* cfg) {
 
     /* 打开 RST / INT 引脚句柄 */
     ret_code_t rc = hal_gpio_open(&dev->rst, cfg->gpio_id_rst);
-    if (rc != RET_OK) return rc;
+    if (ret_is_err(rc)) return gt911_wrap_lower_rc(rc);
 
     rc = hal_gpio_open(&dev->intr, cfg->gpio_id_int);
-    if (rc != RET_OK) return rc;
+    if (ret_is_err(rc)) return gt911_wrap_lower_rc(rc);
 
     /* 硬件复位 + I2C 地址选择 */
     rc = gt911_hw_reset(dev);
-    if (rc != RET_OK) return rc;
+    if (ret_is_err(rc)) return rc;
 
     /* 初始化 Soft I2C 总线 */
     const soft_i2c_cfg_t i2c_cfg = {
@@ -189,12 +195,12 @@ ret_code_t gt911_init(gt911_dev_t* dev, const gt911_cfg_t* cfg) {
         .delay_us    = 1, /* ~400kHz，GT911 支持最高 400kHz */
     };
     rc = soft_i2c_init(&dev->i2c, &i2c_cfg);
-    if (rc != RET_OK) return rc;
+    if (ret_is_err(rc)) return gt911_wrap_lower_rc(rc);
 
     /* 验证通信: 读 Product ID */
     char product_id[4] = {0};
     rc                 = gt911_read_product_id(dev, product_id, sizeof(product_id));
-    if (rc != RET_OK) return rc;
+    if (ret_is_err(rc)) return rc;
 
     /* 检查 Product ID 是否包含 "911" 子串 */
     if (product_id[0] != '9' || product_id[1] != '1' || product_id[2] != '1') {
@@ -204,7 +210,7 @@ ret_code_t gt911_init(gt911_dev_t* dev, const gt911_cfg_t* cfg) {
     /* 更新刷新率 (如果配置了) */
     rc = gt911_update_refresh_rate(dev, cfg->refresh_rate);
 
-    return rc;
+    return gt911_wrap_lower_rc(rc);
 }
 
 ret_code_t gt911_read_touch(gt911_dev_t* dev, gt911_touch_data_t* out) {
@@ -217,7 +223,7 @@ ret_code_t gt911_read_touch(gt911_dev_t* dev, gt911_touch_data_t* out) {
     /* 读取触摸状态寄存器 0x814E */
     uint8_t status = 0;
     ret_code_t rc  = soft_i2c_read_reg16(&dev->i2c, dev->addr, GT911_REG_STATUS, &status, 1);
-    if (rc != RET_OK) return rc;
+    if (ret_is_err(rc)) return gt911_wrap_lower_rc(rc);
 
     /* bit7: buffer_ready 标志 */
     if (!(status & 0x80u)) {
@@ -238,7 +244,7 @@ ret_code_t gt911_read_touch(gt911_dev_t* dev, gt911_touch_data_t* out) {
         const uint32_t read_len = (uint32_t)touch_count * GT911_POINT_SIZE;
 
         rc = soft_i2c_read_reg16(&dev->i2c, dev->addr, GT911_REG_POINT_BASE, raw, read_len);
-        if (rc != RET_OK) {
+        if (ret_is_err(rc)) {
             out->count = 0;
             /* 仍然需要清标志，否则 GT911 不会更新下一帧 */
             goto clear_flag;
@@ -264,15 +270,15 @@ clear_flag:
     /* 清除 buffer_ready 标志: 向 0x814E 写入 0x00 */
     {
         const uint8_t zero = 0x00u;
-        const ret_code_t rc2 =
-            soft_i2c_write_reg16(&dev->i2c, dev->addr, GT911_REG_STATUS, &zero, 1);
+        const ret_code_t rc2 = gt911_wrap_lower_rc(
+            soft_i2c_write_reg16(&dev->i2c, dev->addr, GT911_REG_STATUS, &zero, 1));
         /* 如果前面读取成功但清标志失败，优先返回清标志的错误 */
         if (rc == RET_OK && rc2 != RET_OK) {
             rc = rc2;
         }
     }
 
-    return rc;
+    return gt911_wrap_lower_rc(rc);
 }
 
 ret_code_t gt911_read_product_id(gt911_dev_t* dev, char* id_buf, uint32_t buf_len) {
@@ -283,28 +289,29 @@ ret_code_t gt911_read_product_id(gt911_dev_t* dev, char* id_buf, uint32_t buf_le
         return GT911_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     }
 
-    return soft_i2c_read_reg16(&dev->i2c, dev->addr, GT911_REG_PRODUCT_ID, (uint8_t*)id_buf, 4);
+    return gt911_wrap_lower_rc(
+        soft_i2c_read_reg16(&dev->i2c, dev->addr, GT911_REG_PRODUCT_ID, (uint8_t*)id_buf, 4));
 }
 
-#else /* !ENABLE_GT911 */
+#else /* !CFG_FEAT_GT911 */
 
 ret_code_t gt911_init(gt911_dev_t* dev, const gt911_cfg_t* cfg) {
     (void)dev;
     (void)cfg;
-    return RET_MAKE_PARAM(RET_MOD_PORT, RET_SUB_PORT_I2C, RET_R_UNSUPPORTED);
+    return GT911_RET(RET_CLASS_PARAM, RET_R_UNSUPPORTED);
 }
 
 ret_code_t gt911_read_touch(gt911_dev_t* dev, gt911_touch_data_t* out) {
     (void)dev;
     (void)out;
-    return RET_MAKE_PARAM(RET_MOD_PORT, RET_SUB_PORT_I2C, RET_R_UNSUPPORTED);
+    return GT911_RET(RET_CLASS_PARAM, RET_R_UNSUPPORTED);
 }
 
 ret_code_t gt911_read_product_id(gt911_dev_t* dev, char* id_buf, uint32_t buf_len) {
     (void)dev;
     (void)id_buf;
     (void)buf_len;
-    return RET_MAKE_PARAM(RET_MOD_PORT, RET_SUB_PORT_I2C, RET_R_UNSUPPORTED);
+    return GT911_RET(RET_CLASS_PARAM, RET_R_UNSUPPORTED);
 }
 
-#endif /* ENABLE_GT911 */
+#endif /* CFG_FEAT_GT911 */

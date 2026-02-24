@@ -23,16 +23,16 @@
 
 #include "APP_config.h"
 
-#if (defined(CFG_FEAT_SOFT_I2C) && (CFG_FEAT_SOFT_I2C == 1)) && (defined(CFG_FEAT_HAL_GPIO) && (CFG_FEAT_HAL_GPIO == 1))
+/* soft_i2c 统一归口到 HAL/I2C 子模块。 */
+#define SI2C_RET(cls_, reason_) \
+    RET_MAKE(RET_MOD_HAL, RET_SUB_HAL_I2C, RET_CODE_MAKE((cls_), (reason_)))
+
+#if (defined(CFG_FEAT_SOFT_I2C) && (CFG_FEAT_SOFT_I2C == 1)) && \
+    (defined(CFG_FEAT_HAL_GPIO) && (CFG_FEAT_HAL_GPIO == 1))
 
 #include "assert_cus.h"
 #include "hal_time.h"
 #include "log.h"
-
-/* ======================== 错误码构造 ======================== */
-
-#define SI2C_RET(cls_, reason_) \
-    RET_MAKE(RET_MOD_HAL, RET_SUB_HAL_I2C, RET_CODE_MAKE((cls_), (reason_)))
 
 /* ======================== 内部宏 ======================== */
 
@@ -212,7 +212,7 @@ static bool i2c_read_byte(const soft_i2c_t* bus, bool ack, uint8_t* out) {
  */
 ret_code_t soft_i2c_init(soft_i2c_t* bus, const soft_i2c_cfg_t* cfg) {
     if (!bus || !cfg) {
-        ASSERT_PARAM(bus || cfg);
+        ASSERT_PARAM(bus && cfg);
         return SI2C_RET(RET_CLASS_PARAM, RET_R_NULL_PTR);
     }
 
@@ -264,8 +264,8 @@ ret_code_t soft_i2c_init(soft_i2c_t* bus, const soft_i2c_cfg_t* cfg) {
  * @return 32位状态码
  */
 ret_code_t soft_i2c_write(soft_i2c_t* bus, uint8_t dev_addr, const uint8_t* data, uint32_t len) {
-    if (!bus || (!data && len > 0)) {
-        ASSERT_PARAM(bus || (data && len > 0));
+    if (!bus || (!data && (len > 0u))) {
+        ASSERT_PARAM(bus && (data || (len == 0u)));
         return SI2C_RET(RET_CLASS_PARAM, RET_R_NULL_PTR);
     }
     OSAL_mutex_lock(bus->mutex, OSAL_WAIT_FOREVER);
@@ -308,8 +308,8 @@ ret_code_t soft_i2c_write(soft_i2c_t* bus, uint8_t dev_addr, const uint8_t* data
  * @noye 地址传入7位地址不加 读写控制位
  */
 ret_code_t soft_i2c_read(soft_i2c_t* bus, uint8_t dev_addr, uint8_t* data, uint32_t len) {
-    if (!bus || (!data && len > 0)) {
-        ASSERT_PARAM(bus || (data && len > 0));
+    if (!bus || (!data && (len > 0u))) {
+        ASSERT_PARAM(bus && (data || (len == 0u)));
         return SI2C_RET(RET_CLASS_PARAM, RET_R_NULL_PTR);
     }
     OSAL_mutex_lock(bus->mutex, OSAL_WAIT_FOREVER);
@@ -350,8 +350,8 @@ ret_code_t soft_i2c_read(soft_i2c_t* bus, uint8_t dev_addr, uint8_t* data, uint3
  */
 ret_code_t soft_i2c_write_reg16(soft_i2c_t* bus, uint8_t dev_addr, uint16_t reg,
                                 const uint8_t* data, uint32_t len) {
-    if (!bus) {
-        ASSERT_PARAM(bus);
+    if (!bus || (!data && (len > 0u))) {
+        ASSERT_PARAM(bus && (data || (len == 0u)));
         return SI2C_RET(RET_CLASS_PARAM, RET_R_NULL_PTR);
     }
     OSAL_mutex_lock(bus->mutex, OSAL_WAIT_FOREVER);
@@ -405,7 +405,8 @@ ret_code_t soft_i2c_write_reg16(soft_i2c_t* bus, uint8_t dev_addr, uint16_t reg,
  */
 ret_code_t soft_i2c_read_reg16(soft_i2c_t* bus, uint8_t dev_addr, uint16_t reg, uint8_t* data,
                                uint32_t len) {
-    if (!bus || (!data && len > 0)) {
+    if (!bus || (!data && (len > 0u))) {
+        ASSERT_PARAM(bus && (data || (len == 0u)));
         return SI2C_RET(RET_CLASS_PARAM, RET_R_NULL_PTR);
     }
     OSAL_mutex_lock(bus->mutex, OSAL_WAIT_FOREVER);
@@ -466,7 +467,7 @@ ret_code_t soft_i2c_read_reg16(soft_i2c_t* bus, uint8_t dev_addr, uint16_t reg, 
 ret_code_t soft_i2c_init(soft_i2c_t* bus, const soft_i2c_cfg_t* cfg) {
     (void)bus;
     (void)cfg;
-    return RET_MAKE_PARAM(RET_MOD_HAL, RET_SUB_HAL_I2C, RET_R_UNSUPPORTED);
+    return SI2C_RET(RET_CLASS_PARAM, RET_R_UNSUPPORTED);
 }
 
 ret_code_t soft_i2c_write(soft_i2c_t* bus, uint8_t dev_addr, const uint8_t* data, uint32_t len) {
@@ -474,7 +475,7 @@ ret_code_t soft_i2c_write(soft_i2c_t* bus, uint8_t dev_addr, const uint8_t* data
     (void)dev_addr;
     (void)data;
     (void)len;
-    return RET_MAKE_PARAM(RET_MOD_HAL, RET_SUB_HAL_I2C, RET_R_UNSUPPORTED);
+    return SI2C_RET(RET_CLASS_PARAM, RET_R_UNSUPPORTED);
 }
 
 ret_code_t soft_i2c_read(soft_i2c_t* bus, uint8_t dev_addr, uint8_t* data, uint32_t len) {
@@ -482,7 +483,7 @@ ret_code_t soft_i2c_read(soft_i2c_t* bus, uint8_t dev_addr, uint8_t* data, uint3
     (void)dev_addr;
     (void)data;
     (void)len;
-    return RET_MAKE_PARAM(RET_MOD_HAL, RET_SUB_HAL_I2C, RET_R_UNSUPPORTED);
+    return SI2C_RET(RET_CLASS_PARAM, RET_R_UNSUPPORTED);
 }
 
 ret_code_t soft_i2c_write_reg16(soft_i2c_t* bus, uint8_t dev_addr, uint16_t reg,
@@ -492,7 +493,7 @@ ret_code_t soft_i2c_write_reg16(soft_i2c_t* bus, uint8_t dev_addr, uint16_t reg,
     (void)reg;
     (void)data;
     (void)len;
-    return RET_MAKE_PARAM(RET_MOD_HAL, RET_SUB_HAL_I2C, RET_R_UNSUPPORTED);
+    return SI2C_RET(RET_CLASS_PARAM, RET_R_UNSUPPORTED);
 }
 
 ret_code_t soft_i2c_read_reg16(soft_i2c_t* bus, uint8_t dev_addr, uint16_t reg, uint8_t* data,
@@ -502,7 +503,7 @@ ret_code_t soft_i2c_read_reg16(soft_i2c_t* bus, uint8_t dev_addr, uint16_t reg, 
     (void)reg;
     (void)data;
     (void)len;
-    return RET_MAKE_PARAM(RET_MOD_HAL, RET_SUB_HAL_I2C, RET_R_UNSUPPORTED);
+    return SI2C_RET(RET_CLASS_PARAM, RET_R_UNSUPPORTED);
 }
 
 #endif /* CFG_FEAT_SOFT_I2C */
