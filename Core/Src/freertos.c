@@ -76,14 +76,14 @@
 osThreadId_t KeyScanTaskHandle;
 const osThreadAttr_t KeyScanTask_attributes = {
   .name = "KeyScanTask",
-  .stack_size = 512 * 4,
+  .stack_size = 300 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for uartTask */
 osThreadId_t uartTaskHandle;
 const osThreadAttr_t uartTask_attributes = {
   .name = "uartTask",
-  .stack_size = 512 * 4,
+  .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityLow,
 };
 /* Definitions for lcdTask */
@@ -101,7 +101,7 @@ osThreadId_t LightSensor_TaskHandle;
 /* 光敏传感器任务 */
 const osThreadAttr_t LightSensor_Task_attributes = {
     .name       = "LightSensor_Task",
-    .stack_size = 256 * 4,
+    .stack_size = 128 * 4,
     .priority   = (osPriority_t)osPriorityNormal,
 };
 
@@ -395,11 +395,11 @@ void StartTask_LCD(void *argument)
             LOG_I("StartTask_LCD", "ESP init done");
         }
 
-        if ((HAL_GetTick() - last_report_tick) >= 1000U) {
+        if ((hal_get_tick_ms() - last_report_tick) >= 1000U) {
             const UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
             LOG_I("LVGL", "flush=%lu, stack_wm=%lu", (unsigned long)lv_port_disp_get_flush_count(),
                   (unsigned long)watermark);
-            last_report_tick = HAL_GetTick();
+            last_report_tick = hal_get_tick_ms();
         }
         osDelay(20);
     }
