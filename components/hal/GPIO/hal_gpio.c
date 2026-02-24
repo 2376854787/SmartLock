@@ -6,7 +6,6 @@
 
 /**
  * 平台接口
- * 由 platform/stm32/ports/hal_gpio_port.c 实现
  */
 ret_code_t hal_gpio_port_open(hal_gpio_t** out, uint32_t id);
 

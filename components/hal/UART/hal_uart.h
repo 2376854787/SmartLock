@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+
 #include "RingBuffer.h"
 #include "ret_code.h"
 
@@ -15,7 +16,6 @@ typedef enum {
     HAL_UART_ID_4,
     HAL_UART_ID_MAX  // 大小会影响后面实现静态串口数组的大小
 } hal_uart_id_t;
-
 
 /* UART 事件类型 */
 typedef enum {
@@ -52,10 +52,10 @@ typedef RingBufferSpan hal_uart_read_span_t;
 typedef void (*hal_uart_evt_cb_t)(void* user, const hal_uart_event_t* evt);
 
 typedef struct {
-    uint32_t baud;                /*　波特率　*/
+    uint32_t baud;                /* 波特率　*/
     uart_word_length_t data_bits; /* 数据位 */
     uart_Stop_Bits stop_bits;     /* 停止位 */
-    uint8_t parity;               /* 优先级 */
+    uint32_t parity;              /* 奇偶校验 */
     bool flow_ctrl;               /* 硬件流控 true/false */
     bool isCompatible;            /* 用于 rb的对应参数 */
 } hal_uart_cfg_t;

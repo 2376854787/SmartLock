@@ -4,7 +4,8 @@
 #include "stm32_hal_config.h"
 
 /* hal抽象选择宏 */
-#if (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1)) && (defined(CFG_FEAT_HAL_GPIO) && (CFG_FEAT_HAL_GPIO == 1))
+#if (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1)) && \
+    (defined(CFG_FEAT_HAL_GPIO) && (CFG_FEAT_HAL_GPIO == 1))
 #include <stdint.h>
 #include <string.h>
 
@@ -107,7 +108,6 @@ static ret_code_t gpio_enable_clock(const GPIO_TypeDef* GPIOx) {
  * @return 被映射的平台上下拉枚举
  */
 static ret_code_t map_pull(hal_gpio_pull_t p, uint32_t* out) {
-    // ReSharper disable once CppDFAConstantConditions
     if (!out) return PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     switch (p) {
         case HAL_GPIO_PULL_NONE:
@@ -131,7 +131,6 @@ static ret_code_t map_pull(hal_gpio_pull_t p, uint32_t* out) {
  * @return
  */
 static ret_code_t map_speed(hal_gpio_speed_t s, uint32_t* out) {
-    // ReSharper disable once CppDFAConstantConditions
     if (!out) return PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     switch (s) {
         case HAL_GPIO_SPEED_LOW:
@@ -158,7 +157,6 @@ static ret_code_t map_speed(hal_gpio_speed_t s, uint32_t* out) {
  * @return ret_code_t
  */
 static ret_code_t map_alternate(uint32_t in_af, uint32_t* out_af) {
-    // ReSharper disable once CppDFAConstantConditions
     if (!out_af) return PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
 
 #ifdef IS_GPIO_AF
@@ -174,17 +172,15 @@ static ret_code_t map_alternate(uint32_t in_af, uint32_t* out_af) {
     return PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
 }
 
-/* ---------------- 平台导出：供 components/hal/src/hal_gpio.c 调用 ---------------- */
 /**
  * @brief 从板级GPIO映射表获取 具体的GPIO
  * @param out 存储具体的port/Pin
  * @param id 板级映射
  * @return 返回状态码
- * @note
+ * @note 调用后必须 调用 hal_gpio_port_config 初始化
  */
 ret_code_t hal_gpio_port_open(hal_gpio_t** out, uint32_t id) {
     if (!out) return PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
-
     board_gpio_hw_t hw;
     /* 返回 port & Pin */
     const ret_code_t rc = board_gpio_lookup(id, &hw);
@@ -523,5 +519,3 @@ void EXTI15_10_IRQHandler(void) {
 }
 
 #endif
-
-

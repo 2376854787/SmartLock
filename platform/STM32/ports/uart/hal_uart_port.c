@@ -308,13 +308,14 @@ void stm32_uart_irq_dma_tx(hal_uart_id_t id) {
  * @param cfg 串口配置
  * @param out 返回配置好的串口句柄
  * @return 返回状态码
+ * @note 这里的中断以及优先级配置是 串口Dma rx/tx是一致的
  */
 ret_code_t hal_uart_port_open(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_uart_t** out) {
     /* 参数错误检查 */
     if (!cfg || !out) return UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     if (id >= HAL_UART_ID_MAX) return UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
 
-    /* 获取到该id 对应的静态数组地址 */
+    /* 获取到该id 对应的静态数组（全局资源）地址 */
     hal_uart_t* u = &g_uarts[id];
     if (u->opened) return UART_RET(RET_CLASS_STATE, RET_R_BUSY);
     u->id                = id;
@@ -329,20 +330,22 @@ ret_code_t hal_uart_port_open(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_u
         !isPowerOfTwo_Size(bsp.rx_dma_len) || bsp.sw_rb_len < 2u) {
         return UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     }
-
+    /* 查看RB 是否初始化 */
     if (!u->rb_ready) {
         (void)snprintf(u->rb_name, sizeof(u->rb_name), "stm32_port_uart_RB%d", id);
         rc = CreateRingBuffer(&u->rb, u->rb_name, bsp.sw_rb_len);
         if (ret_is_err(rc)) return rc;
         u->rb_ready = true;
     } else {
+        /* 初始化的 RB大小和指定初始化的大小不一致 判定初始化失败 */
         if (u->rb.size != bsp.sw_rb_len) {
             return UART_RET(RET_CLASS_STATE, RET_R_STATE_ERR);
         }
+        /* 初始化失败 重置RB */
         rc = ResetRingBuffer(&u->rb);
         if (ret_is_err(rc)) return rc;
     }
-
+    /* 填充参数 */
     u->bsp                       = bsp;
     u->isCompatible              = cfg->isCompatible;
     u->cb                        = NULL;
@@ -363,17 +366,17 @@ ret_code_t hal_uart_port_open(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_u
     /* 串口初始化 */
     if (HAL_UART_Init(u->bsp.huart) != HAL_OK) return UART_RET(RET_CLASS_IO, RET_R_IO);
 
-    /* NVIC 可由 BSP 配，也可这里开 */
+    /* NVIC 可由 BSP 配 */
     if (u->bsp.usart_irq > 0) {
-        HAL_NVIC_SetPriority(u->bsp.usart_irq, u->bsp.irq_prio, 0);
+        HAL_NVIC_SetPriority(u->bsp.usart_irq, u->bsp.irq_prio, u->bsp.irq_sub_prio);
         HAL_NVIC_EnableIRQ(u->bsp.usart_irq);
     }
     if (u->bsp.dma_rx_irq > 0) {
-        HAL_NVIC_SetPriority(u->bsp.dma_rx_irq, u->bsp.irq_prio, 0);
+        HAL_NVIC_SetPriority(u->bsp.dma_rx_irq, u->bsp.irq_prio, u->bsp.irq_sub_prio);
         HAL_NVIC_EnableIRQ(u->bsp.dma_rx_irq);
     }
     if (u->bsp.dma_tx_irq > 0) {
-        HAL_NVIC_SetPriority(u->bsp.dma_tx_irq, u->bsp.irq_prio, 0);
+        HAL_NVIC_SetPriority(u->bsp.dma_tx_irq, u->bsp.irq_prio, u->bsp.irq_sub_prio);
         HAL_NVIC_EnableIRQ(u->bsp.dma_tx_irq);
     }
 
