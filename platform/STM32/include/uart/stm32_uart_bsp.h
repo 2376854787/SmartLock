@@ -19,7 +19,8 @@ typedef struct {
     uint8_t* rx_dma_buf;         // DMA 环形缓冲
     uint32_t rx_dma_len;         // 环形缓冲长度 必须为2的幂 否则出错
     uint32_t sw_rb_len;          // 软件 RB 长度 默认1024
-    uint32_t irq_prio;           // NVIC 优先级
+    uint32_t irq_prio;           // NVIC 抢占优先级
+    uint32_t irq_sub_prio;       // 次优先级
 } stm32_uart_bsp_t;
 
 /* 板级实现 */
