@@ -12,6 +12,12 @@
 /* HAL 端口选项 */
 #define CFG_PARAM_UART_RX_USE_DMA_IDLE    1 /* 启用 DMA + IDLE 接收 */
 #define CFG_PARAM_UART_DISABLE_DMA_IT_HT  0 /* 是否关闭 DMA 半传输中断 */
+#define CFG_PARAM_SPI_PORT_USE_LOCAL_IRQ_HANDLER \
+    0 /* SPI: 是否在 hal_spi_port.c 内定义 SPIx_IRQHandler */
+#define CFG_PARAM_SPI_PORT_USE_LOCAL_HAL_CALLBACKS \
+    1 /* SPI: 是否在 hal_spi_port.c 内定义 HAL_SPI_*Callback */
+#define CFG_PARAM_SPI_STRICT_XFER_CHECK \
+    1 /* SPI: 是否启用严格传输参数/方向/DMA句柄校验 */
 
 /* STM32 H7 缓存选项（按平台能力配置） */
 #define CFG_PARAM_STM32_DMA_CACHE_CLEAN       0
@@ -23,6 +29,17 @@
 #endif
 #if ((CFG_PARAM_UART_DISABLE_DMA_IT_HT != 0) && (CFG_PARAM_UART_DISABLE_DMA_IT_HT != 1))
 #error "CFG_PARAM_UART_DISABLE_DMA_IT_HT 必须为 0 或 1。"
+#endif
+#if ((CFG_PARAM_SPI_PORT_USE_LOCAL_IRQ_HANDLER != 0) && \
+     (CFG_PARAM_SPI_PORT_USE_LOCAL_IRQ_HANDLER != 1))
+#error "CFG_PARAM_SPI_PORT_USE_LOCAL_IRQ_HANDLER 必须为 0 或 1。"
+#endif
+#if ((CFG_PARAM_SPI_PORT_USE_LOCAL_HAL_CALLBACKS != 0) && \
+     (CFG_PARAM_SPI_PORT_USE_LOCAL_HAL_CALLBACKS != 1))
+#error "CFG_PARAM_SPI_PORT_USE_LOCAL_HAL_CALLBACKS 必须为 0 或 1。"
+#endif
+#if ((CFG_PARAM_SPI_STRICT_XFER_CHECK != 0) && (CFG_PARAM_SPI_STRICT_XFER_CHECK != 1))
+#error "CFG_PARAM_SPI_STRICT_XFER_CHECK 必须为 0 或 1。"
 #endif
 #if ((CFG_PARAM_STM32_DMA_CACHE_CLEAN != 0) && (CFG_PARAM_STM32_DMA_CACHE_CLEAN != 1))
 #error "CFG_PARAM_STM32_DMA_CACHE_CLEAN 必须为 0 或 1。"
