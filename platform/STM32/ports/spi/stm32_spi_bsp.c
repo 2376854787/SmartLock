@@ -9,7 +9,7 @@ extern DMA_HandleTypeDef hdma_spi1_tx;
 extern SPI_HandleTypeDef hspi1;
 ret_code_t stm32_spi_bsp_get(uint8_t bus_id, stm32_spi_bsp_t *out) {
     if (!out) {
-        return RET_MAKE_PARAM(RET_MOD_PORT, RET_SUB_PORT_STM32, RET_R_NULL_PTR);
+        return RET_MAKE_PARAM(RET_MOD_PORT, RET_SUB_PORT_SPI, RET_R_NULL_PTR);
     }
     memset(out, 0, sizeof(*out));
 
@@ -23,7 +23,7 @@ ret_code_t stm32_spi_bsp_get(uint8_t bus_id, stm32_spi_bsp_t *out) {
             out->spi_irq      = SPI1_IRQn;
             break;
         default:
-            return RET_MAKE_STATE(RET_MOD_PORT, RET_SUB_PORT_STM32, RET_R_NOT_READY);
+            return RET_MAKE_STATE(RET_MOD_PORT, RET_SUB_PORT_SPI, RET_R_NOT_READY);
     }
     return RET_OK;
 }

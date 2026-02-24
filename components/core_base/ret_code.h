@@ -14,7 +14,7 @@ extern "C" {
  *  32-bit 状态码
  *
  * 位布局：
- *   [31:24] Module (Layer)      8-bit
+ *   [31:24] Module              8-bit
  *   [23:16] Submodule(Component)8-bit
  *   [15:0 ] Code                16-bit  (Class + Reason)
  *
@@ -22,10 +22,6 @@ extern "C" {
  *   [15:12] Class   4-bit  -> 错误大类（用于上层策略/统计聚类）
  *   [11:0 ] Reason 12-bit  -> 具体原因（用于细粒度定位）
  *
- * 约定：
- *   - RET_OK 必须为 0
- *   - 上层逻辑禁止写死 rc == 某个固定值；应使用 ret_is_xxx / ret_class 等判断
- *   - 发布后：Module/Submodule/Reason 值尽量保持稳定，只新增不改旧值
  * =============================================================================
  */
 
@@ -36,22 +32,32 @@ typedef uint32_t ret_code_t;
  * =============================================================================
  */
 typedef enum {
-    RET_MOD_NONE     = 0x00u, /* 保留 */
-    RET_MOD_CORE     = 0x01u, /* core_base / 通用核心 */
-    RET_MOD_OSAL     = 0x02u, /* OS 抽象层 */
-    RET_MOD_HAL      = 0x03u, /* HAL 抽象层 */
-    RET_MOD_RB       = 0x04u, /* RingBuffer */
-    RET_MOD_MEM      = 0x05u, /* MemPool / MemoryAllocation */
-    RET_MOD_LOG      = 0x06u, /* 日志 */
-    RET_MOD_AT       = 0x07u, /* AT/协议栈 */
-    RET_MOD_PORT     = 0x08u, /* 平台端口层 platform/ports */
-    RET_MOD_APP      = 0x09u, /* 业务应用层（SmartLock app） */
-    RET_MOD_SEC      = 0x0Au, /* 安全/加密/证书 */
-    RET_MOD_STOR     = 0x0Bu, /* 存储（Flash KV/FS/参数区） */
-    RET_MOD_OTA      = 0x0Cu, /* OTA/Boot/升级 */
-    RET_MOD_TOOLS    = 0x0Du, /* 通用工具类 */
-    RET_MOD_EVENTBUS = 0x0Eu, /* 事件总线 */
-    RET_MOD_SYS      = 0x0Fu  /* 系统 */
+    RET_MOD_NONE = 0x00u, /* 保留 */
+
+    /* 0x1x: 基础框架层 */
+    RET_MOD_CORE = 0x10u, /* core_base / 通用核心 */
+    RET_MOD_OSAL = 0x11u, /* OS 抽象层 */
+    RET_MOD_SYS  = 0x12u, /* 系统监控/看门狗/运行时守护 */
+
+    /* 0x2x: 硬件与平台适配层 */
+    RET_MOD_HAL  = 0x20u, /* HAL 抽象层 */
+    RET_MOD_PORT = 0x21u, /* 平台端口层 platform/ports */
+
+    /* 0x3x: 中间件与通用组件层 */
+    RET_MOD_RB       = 0x30u, /* RingBuffer */
+    RET_MOD_MEM      = 0x31u, /* MemPool / MemoryAllocation */
+    RET_MOD_LOG      = 0x32u, /* 日志 */
+    RET_MOD_EVENTBUS = 0x33u, /* 事件总线 */
+    RET_MOD_AT       = 0x34u, /* AT/协议栈 */
+    RET_MOD_TOOLS    = 0x35u, /* 通用工具类 */
+
+    /* 0x4x: 业务服务层 */
+    RET_MOD_SEC  = 0x40u, /* 安全/加密/证书 */
+    RET_MOD_STOR = 0x41u, /* 存储（Flash KV/FS/参数区） */
+    RET_MOD_OTA  = 0x42u, /* OTA/Boot/升级 */
+
+    /* 0x5x: 应用层 */
+    RET_MOD_APP = 0x50u, /* 业务应用层（SmartLock app） */
 } ret_module_id_t;
 
 /* =============================================================================
@@ -139,10 +145,12 @@ typedef enum {
 /* ---- PORT 子模块 ---- */
 typedef enum {
     RET_SUB_PORT_NONE   = 0x00u,
-    RET_SUB_PORT_STM32  = 0x01u,
-    RET_SUB_PORT_ESP    = 0x02u,
-    RET_SUB_PORT_LINUX  = 0x03u,
-    RET_SUB_PORT_DRIVER = 0x04u,
+    RET_SUB_PORT_GPIO   = 0x01u,
+    RET_SUB_PORT_UART   = 0x02u,
+    RET_SUB_PORT_SPI    = 0x03u,
+    RET_SUB_PORT_I2C    = 0x04u,
+    RET_SUB_PORT_WDG    = 0x05u,
+    RET_SUB_PORT_TIME   = 0x06u,
 } ret_sub_port_t;
 
 /* ---- APP 子模块---- */
@@ -191,7 +199,8 @@ typedef enum {
 } ret_sub_eventbus_t;
 /* ---- 系统 子模块 ---- */
 typedef enum {
-    RET_SUB_SYS_WDG = 0x00u,
+    RET_SUB_SYS_NONE = 0x00u,
+    RET_SUB_SYS_WDG  = 0x01u,
 } ret_sub_sys_t;
 /* =============================================================================
  * 3) Code(16-bit) = Class(4-bit) + Reason(12-bit)

@@ -15,7 +15,7 @@
 #include "ret_code.h"
 #include "stm32_hal.h"
 #define PORT_RET(clas_, err_) \
-    RET_MAKE(RET_MOD_PORT, RET_SUB_PORT_STM32, RET_CODE_MAKE((clas_), (err_)))
+    RET_MAKE(RET_MOD_PORT, RET_SUB_PORT_GPIO, RET_CODE_MAKE((clas_), (err_)))
 /* ---------------- 断言（热路径用） ---------------- */
 
 __WEAK NORETURN void hal_gpio_assert_failed(const char* file, int line) {

@@ -9,11 +9,11 @@
 #include "stm32_spi_series.h"
 
 /* 状态码 */
-#define SPI_PORT_PARAM(reason_)   RET_MAKE_PARAM(RET_MOD_PORT, RET_SUB_PORT_STM32, (reason_))
-#define SPI_PORT_STATE(reason_)   RET_MAKE_STATE(RET_MOD_PORT, RET_SUB_PORT_STM32, (reason_))
-#define SPI_PORT_TIMEOUT(reason_) RET_MAKE_TIMEOUT(RET_MOD_PORT, RET_SUB_PORT_STM32, (reason_))
-#define SPI_PORT_IO(reason_)      RET_MAKE_IO(RET_MOD_PORT, RET_SUB_PORT_STM32, (reason_))
-#define SPI_PORT_RES(reason_)     RET_MAKE_RESOURCE(RET_MOD_PORT, RET_SUB_PORT_STM32, (reason_))
+#define SPI_PORT_PARAM(reason_)   RET_MAKE_PARAM(RET_MOD_PORT, RET_SUB_PORT_SPI, (reason_))
+#define SPI_PORT_STATE(reason_)   RET_MAKE_STATE(RET_MOD_PORT, RET_SUB_PORT_SPI, (reason_))
+#define SPI_PORT_TIMEOUT(reason_) RET_MAKE_TIMEOUT(RET_MOD_PORT, RET_SUB_PORT_SPI, (reason_))
+#define SPI_PORT_IO(reason_)      RET_MAKE_IO(RET_MOD_PORT, RET_SUB_PORT_SPI, (reason_))
+#define SPI_PORT_RES(reason_)     RET_MAKE_RESOURCE(RET_MOD_PORT, RET_SUB_PORT_SPI, (reason_))
 
 /* 打开的 SPI 端口注册表：用于在 HAL 回调里反查 ctx */
 static hal_spi_port_ctx_t *s_spi_ctxs[HAL_SPI_BUS_MAX];
@@ -22,7 +22,7 @@ __WEAK ret_code_t stm32_spi_bsp_get(uint8_t bus_id, stm32_spi_bsp_t *out) {
     (void)bus_id;
     (void)out;
     /* 默认not_ready */
-    return RET_MAKE_STATE(RET_MOD_PORT, RET_SUB_PORT_STM32, RET_R_NOT_READY);
+    return RET_MAKE_STATE(RET_MOD_PORT, RET_SUB_PORT_SPI, RET_R_NOT_READY);
 }
 
 __WEAK uint32_t stm32_spi_busclk_hz(const SPI_HandleTypeDef *hspi) {

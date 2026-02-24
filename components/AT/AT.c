@@ -15,7 +15,7 @@ AT_Resp_t AT_Wait(AT_Command_t* h, uint32_t wait_ms);
 void AT_CmdRelease(AT_Manager_t* mgr, AT_Command_t* h);
 
 #define AT_UART_RET(cls_, reason_) \
-    RET_MAKE(RET_MOD_HAL, RET_SUB_HAL_UART, RET_CODE_MAKE((cls_), (reason_)))
+    RET_MAKE(RET_MOD_AT, RET_SUB_AT_TRANSPORT, RET_CODE_MAKE((cls_), (reason_)))
 static void AT_UartEvtCb(void* user, const hal_uart_event_t* evt);
 /**
  * @brief 将数据从线性数组 搬运到 span  包括获取span 搬运 提交

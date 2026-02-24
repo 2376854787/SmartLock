@@ -65,17 +65,17 @@ static inline uint32_t read_lr_return_addr(void) {
 
 #define OSAL_CRIT_PAYLOAD_MASK (0x3FFFFFFFUL) /* 低 30 位存 payload（足够容纳常见返回值） */
 #define OSAL_MUTEX_RET(clas_, err_) \
-    RET_MAKE(RET_MOD_HAL, RET_SUB_OSAL_MUTEX, RET_CODE_MAKE((clas_), (err_)))
+    RET_MAKE(RET_MOD_OSAL, RET_SUB_OSAL_MUTEX, RET_CODE_MAKE((clas_), (err_)))
 #define OSAL_TASK_RET(clas_, err_) \
-    RET_MAKE(RET_MOD_HAL, RET_SUB_OSAL_TASK, RET_CODE_MAKE((clas_), (err_)))
+    RET_MAKE(RET_MOD_OSAL, RET_SUB_OSAL_TASK, RET_CODE_MAKE((clas_), (err_)))
 #define OSAL_QUEUE_RET(clas_, err_) \
-    RET_MAKE(RET_MOD_HAL, RET_SUB_OSAL_QUEUE, RET_CODE_MAKE((clas_), (err_)))
+    RET_MAKE(RET_MOD_OSAL, RET_SUB_OSAL_QUEUE, RET_CODE_MAKE((clas_), (err_)))
 #define OSAL_SEM_RET(clas_, err_) \
-    RET_MAKE(RET_MOD_HAL, RET_SUB_OSAL_SEM, RET_CODE_MAKE((clas_), (err_)))
+    RET_MAKE(RET_MOD_OSAL, RET_SUB_OSAL_SEM, RET_CODE_MAKE((clas_), (err_)))
 #define OSAL_TIMER_RET(clas_, err_) \
-    RET_MAKE(RET_MOD_HAL, RET_SUB_OSAL_TIMER, RET_CODE_MAKE((clas_), (err_)))
+    RET_MAKE(RET_MOD_OSAL, RET_SUB_OSAL_TIMER, RET_CODE_MAKE((clas_), (err_)))
 #define OSAL_ISR_RET(clas_, err_) \
-    RET_MAKE(RET_MOD_HAL, RET_SUB_OSAL_ISR, RET_CODE_MAKE((clas_), (err_)))
+    RET_MAKE(RET_MOD_OSAL, RET_SUB_OSAL_ISR, RET_CODE_MAKE((clas_), (err_)))
 
 /* ================================================ 内核状态/时间
  * ====================================================== */

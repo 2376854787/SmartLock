@@ -15,7 +15,7 @@
 
 /* 根据当前所属模块id 与返回状态生成32位状态码 */
 #define UART_RET(clas_, errno_) \
-    RET_MAKE(RET_MOD_PORT, RET_SUB_PORT_STM32, RET_CODE_MAKE((clas_), (errno_)))
+    RET_MAKE(RET_MOD_PORT, RET_SUB_PORT_UART, RET_CODE_MAKE((clas_), (errno_)))
 
 /* ========== UART 上下文 ========== */
 struct hal_uart {

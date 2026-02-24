@@ -8,7 +8,7 @@
 
 /* 根据当前所属模块id 与返回状态生成32位状态码 */
 #define UART_MAP_RET(clas_, errno_) \
-    RET_MAKE(RET_MOD_HAL, RET_SUB_HAL_UART, RET_CODE_MAKE((clas_), (errno_)))
+    RET_MAKE(RET_MOD_PORT, RET_SUB_PORT_UART, RET_CODE_MAKE((clas_), (errno_)))
 
 /* cubemx 或者自己初始化定义的句柄 */
 extern UART_HandleTypeDef huart1;

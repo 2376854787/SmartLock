@@ -10,7 +10,7 @@
 #include "stm32_hal.h"
 
 #define PORT_RET(clas_, err_) \
-    RET_MAKE(RET_MOD_PORT, RET_SUB_PORT_STM32, RET_CODE_MAKE((clas_), (err_)))
+    RET_MAKE(RET_MOD_PORT, RET_SUB_PORT_GPIO, RET_CODE_MAKE((clas_), (err_)))
 
 typedef struct {
     uint32_t id;
@@ -46,4 +46,3 @@ ret_code_t board_gpio_lookup(uint32_t id, board_gpio_hw_t* out) {
     return RET_E_UNSUPPORTED;
 }
 #endif
-

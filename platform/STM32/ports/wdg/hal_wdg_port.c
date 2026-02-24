@@ -22,7 +22,7 @@ static volatile bool s_hw_inited = false;
  */
 static ret_code_t iwdg_calc(uint32_t timeout_ms, uint32_t *out_presc, uint32_t *out_reload) {
     if (!out_presc || !out_reload) {
-        return RET_MAKE_PARAM(RET_MOD_PORT, RET_SUB_PORT_STM32, RET_R_NULL_PTR);
+        return RET_MAKE_PARAM(RET_MOD_PORT, RET_SUB_PORT_WDG, RET_R_NULL_PTR);
     }
     const uint32_t lsi_hz  = 32000u;
     const uint32_t presc   = IWDG_PRESCALER_256; /* tick ≈ 125Hz */
@@ -65,9 +65,9 @@ static void wdg_debug_freeze_apply(bool enable) {
  */
 ret_code_t hal_wdg_port_init(const hal_wdg_cfg_t *cfg) {
     /* 参数检查 */
-    if (cfg == NULL) return RET_MAKE_PARAM(RET_MOD_PORT, RET_SUB_PORT_STM32, RET_R_NULL_PTR);
+    if (cfg == NULL) return RET_MAKE_PARAM(RET_MOD_PORT, RET_SUB_PORT_WDG, RET_R_NULL_PTR);
     if (cfg->mode != HAL_WDG_MODE_IWDG) {
-        return RET_MAKE_PARAM(RET_MOD_PORT, RET_SUB_PORT_STM32, RET_R_UNSUPPORTED);
+        return RET_MAKE_PARAM(RET_MOD_PORT, RET_SUB_PORT_WDG, RET_R_UNSUPPORTED);
     }
     /* 计算出所需要的 预分频系数 重载值 */
     uint32_t presc = 0, reload = 0;
@@ -79,7 +79,7 @@ ret_code_t hal_wdg_port_init(const hal_wdg_cfg_t *cfg) {
     s_hiwdg.Init.Prescaler = presc;
     s_hiwdg.Init.Reload    = reload;
     if (HAL_IWDG_Init(&s_hiwdg) != HAL_OK) {
-        return RET_MAKE_IO(RET_MOD_PORT, RET_SUB_PORT_STM32, RET_R_HW_FAULT);
+        return RET_MAKE_IO(RET_MOD_PORT, RET_SUB_PORT_WDG, RET_R_HW_FAULT);
     }
     s_hw_inited = true;
     return RET_OK;
@@ -90,10 +90,10 @@ ret_code_t hal_wdg_port_init(const hal_wdg_cfg_t *cfg) {
  */
 ret_code_t hal_wdg_port_kick(void) {
     /* 检查是否初始化了看门狗 */
-    if (!s_hw_inited) return RET_MAKE_STATE(RET_MOD_PORT, RET_SUB_PORT_STM32, RET_R_NOT_READY);
+    if (!s_hw_inited) return RET_MAKE_STATE(RET_MOD_PORT, RET_SUB_PORT_WDG, RET_R_NOT_READY);
     /* 喂狗 */
     if (HAL_IWDG_Refresh(&s_hiwdg) != HAL_OK) {
-        return RET_MAKE_IO(RET_MOD_PORT, RET_SUB_PORT_STM32, RET_R_HW_FAULT);
+        return RET_MAKE_IO(RET_MOD_PORT, RET_SUB_PORT_WDG, RET_R_HW_FAULT);
     }
     return RET_OK;
 }

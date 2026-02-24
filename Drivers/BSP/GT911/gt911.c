@@ -47,7 +47,7 @@
 /* ======================== 错误码 ======================== */
 
 #define GT911_RET(cls_, reason_) \
-    RET_MAKE(RET_MOD_PORT, RET_SUB_PORT_DRIVER, RET_CODE_MAKE((cls_), (reason_)))
+    RET_MAKE(RET_MOD_PORT, RET_SUB_PORT_I2C, RET_CODE_MAKE((cls_), (reason_)))
 
 /* ======================== 内部函数 ======================== */
 
@@ -291,20 +291,20 @@ ret_code_t gt911_read_product_id(gt911_dev_t* dev, char* id_buf, uint32_t buf_le
 ret_code_t gt911_init(gt911_dev_t* dev, const gt911_cfg_t* cfg) {
     (void)dev;
     (void)cfg;
-    return RET_MAKE_PARAM(RET_MOD_PORT, RET_SUB_PORT_DRIVER, RET_R_UNSUPPORTED);
+    return RET_MAKE_PARAM(RET_MOD_PORT, RET_SUB_PORT_I2C, RET_R_UNSUPPORTED);
 }
 
 ret_code_t gt911_read_touch(gt911_dev_t* dev, gt911_touch_data_t* out) {
     (void)dev;
     (void)out;
-    return RET_MAKE_PARAM(RET_MOD_PORT, RET_SUB_PORT_DRIVER, RET_R_UNSUPPORTED);
+    return RET_MAKE_PARAM(RET_MOD_PORT, RET_SUB_PORT_I2C, RET_R_UNSUPPORTED);
 }
 
 ret_code_t gt911_read_product_id(gt911_dev_t* dev, char* id_buf, uint32_t buf_len) {
     (void)dev;
     (void)id_buf;
     (void)buf_len;
-    return RET_MAKE_PARAM(RET_MOD_PORT, RET_SUB_PORT_DRIVER, RET_R_UNSUPPORTED);
+    return RET_MAKE_PARAM(RET_MOD_PORT, RET_SUB_PORT_I2C, RET_R_UNSUPPORTED);
 }
 
 #endif /* ENABLE_GT911 */
