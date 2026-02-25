@@ -14,4 +14,10 @@
 /* OLED */
 #define EB_EVT_OLED_REFRESH_REQ EB_EID(EB_MOD_OLED, 0x0001)  // Control, L, Snapshot
 #define EB_EVT_OLED_ERROR       EB_EID(EB_MOD_OLED, 0x0002)  // Control, M, Edge
+
+/* SPI */
+#define EB_EVT_SPI_DONE        EB_EID(EB_MOD_SPI, 0x0001)  // Control, M, Edge
+#define EB_EVT_SPI_ERROR       EB_EID(EB_MOD_SPI, 0x0002)  // Control, H, Edge
+#define EB_EVT_SPI_STREAM_HALF EB_EID(EB_MOD_SPI, 0x0003)  // Control, M, Snapshot
+#define EB_EVT_SPI_STREAM_FULL EB_EID(EB_MOD_SPI, 0x0004)  // Control, M, Snapshot
 #endif                                                       // SMARTLOCK_EB_EVENT_ID_H

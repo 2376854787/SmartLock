@@ -8,7 +8,7 @@
 #define EB_CFG_ENABLE_EVENTMAP 1 /* 哈希查找表 加速事件定义查找 */
 
 #ifndef EB_MAX_EVENTS
-#define EB_MAX_EVENTS 128u /* 事件种类数 订阅表尺寸 */
+#define EB_MAX_EVENTS 16u /* 事件种类数 订阅表尺寸 */
 #endif
 
 /* 分发时单个事件一次最多返回的订阅信息数 */
@@ -18,7 +18,7 @@
 
 /* 单个事件最大订阅数 */
 #ifndef EB_MAX_SUBS
-#define EB_MAX_SUBS 64u
+#define EB_MAX_SUBS 4u
 #endif
 
 /* 1： 上电时注册所有订阅 eb_freeze()冻结只读 分发不需要锁  0：可以动态增删订阅 */

@@ -223,7 +223,7 @@ void eb_init(void) {
     eb_trace_init();
 #endif
 #if (defined(EB_CFG_ENABLE_BUDGET) && (EB_CFG_ENABLE_BUDGET == 1))
-    // TODO 添加注释
+    // 初始化直方图
     eb_budget_init();
 #endif
 }

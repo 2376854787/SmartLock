@@ -363,4 +363,3 @@ uint32_t eb_sub_find(uint32_t event_id, eb_sub_t* out_list, uint32_t max) {
 }
 
 #endif /* EB_CFG_STATIC_FREEZE */
-
