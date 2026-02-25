@@ -29,10 +29,20 @@
 #define CFG_FEAT_GT911          1 /* GT911 电容触控驱动 */
 #define CFG_FEAT_HAL_SPI        1 /* 启动SPI抽象 */
 #define CFG_FEAT_HAL_I2C        1 /* 启动 I2C 抽象 */
+#define CFG_FEAT_HAL_ERROR_CATCH 0 /* 统一 HAL 错误钩子覆盖(1: 启用外部覆盖) */
 
 /* HAL SPI 运行策略参数 */
 #define CFG_PARAM_SPI_LOG_PORT_ERR        1 /* port->HAL 映射错误是否记录日志 */
 #define CFG_PARAM_SPI_LOG_PORT_ERR_IN_ISR 0 /* 1: ISR中也打日志(谨慎) */
+/* HAL UART 运行策略参数 */
+#define CFG_PARAM_UART_LOG_PORT_ERR        1 /* port->HAL 映射错误是否记录日志 */
+#define CFG_PARAM_UART_LOG_PORT_ERR_IN_ISR 0 /* 1: ISR中也打日志(谨慎) */
+/* HAL GPIO 运行策略参数 */
+#define CFG_PARAM_GPIO_LOG_PORT_ERR        1 /* port->HAL 映射错误是否记录日志 */
+#define CFG_PARAM_GPIO_LOG_PORT_ERR_IN_ISR 0 /* 1: ISR中也打日志(谨慎) */
+/* HAL WDG 运行策略参数 */
+#define CFG_PARAM_WDG_LOG_PORT_ERR        1 /* port->HAL 映射错误是否记录日志 */
+#define CFG_PARAM_WDG_LOG_PORT_ERR_IN_ISR 0 /* 1: ISR中也打日志(谨慎) */
 
 /* 协议标准配置宏  取消注释即开启整个项目的RTOS执行标准 */
 /* 启动CMSIS v2 标准 */

@@ -138,4 +138,15 @@ ret_code_t hal_uart_send_async(hal_uart_t* h, const uint8_t* buf, uint32_t len);
  */
 ret_code_t hal_uart_set_evt_cb(hal_uart_t* h, hal_uart_evt_cb_t cb, void* user);
 
+/**
+ * @brief 内部错误弱钩子函数
+ * @param rc_port port 错误码
+ * @param rc_hal  hal 错误码
+ * @param api     api名称
+ * @param arg0    参数1
+ * @param arg1    参数2
+ */
+void hal_uart_on_port_error(ret_code_t rc_port, ret_code_t rc_hal, const char* api, uint32_t arg0,
+                            uint32_t arg1);
+
 #endif  // HAL_UART_H

@@ -58,6 +58,15 @@
 #if ((CFG_FEAT_HAL_UART != 0) && (CFG_FEAT_HAL_UART != 1))
 #error "CFG_FEAT_HAL_UART 必须为 0 或 1。"
 #endif
+#if ((CFG_FEAT_HAL_SPI != 0) && (CFG_FEAT_HAL_SPI != 1))
+#error "CFG_FEAT_HAL_SPI 必须为 0 或 1。"
+#endif
+#if ((CFG_FEAT_HAL_I2C != 0) && (CFG_FEAT_HAL_I2C != 1))
+#error "CFG_FEAT_HAL_I2C 必须为 0 或 1。"
+#endif
+#if ((CFG_FEAT_HAL_ERROR_CATCH != 0) && (CFG_FEAT_HAL_ERROR_CATCH != 1))
+#error "CFG_FEAT_HAL_ERROR_CATCH 必须为 0 或 1。"
+#endif
 #if ((CFG_FEAT_HAL_TIME != 0) && (CFG_FEAT_HAL_TIME != 1))
 #error "CFG_FEAT_HAL_TIME 必须为 0 或 1。"
 #endif
@@ -78,6 +87,24 @@
 #endif
 #if ((CFG_PARAM_SPI_LOG_PORT_ERR_IN_ISR != 0) && (CFG_PARAM_SPI_LOG_PORT_ERR_IN_ISR != 1))
 #error "CFG_PARAM_SPI_LOG_PORT_ERR_IN_ISR 必须为 0 或 1。"
+#endif
+#if ((CFG_PARAM_UART_LOG_PORT_ERR != 0) && (CFG_PARAM_UART_LOG_PORT_ERR != 1))
+#error "CFG_PARAM_UART_LOG_PORT_ERR 必须为 0 或 1。"
+#endif
+#if ((CFG_PARAM_UART_LOG_PORT_ERR_IN_ISR != 0) && (CFG_PARAM_UART_LOG_PORT_ERR_IN_ISR != 1))
+#error "CFG_PARAM_UART_LOG_PORT_ERR_IN_ISR 必须为 0 或 1。"
+#endif
+#if ((CFG_PARAM_GPIO_LOG_PORT_ERR != 0) && (CFG_PARAM_GPIO_LOG_PORT_ERR != 1))
+#error "CFG_PARAM_GPIO_LOG_PORT_ERR 必须为 0 或 1。"
+#endif
+#if ((CFG_PARAM_GPIO_LOG_PORT_ERR_IN_ISR != 0) && (CFG_PARAM_GPIO_LOG_PORT_ERR_IN_ISR != 1))
+#error "CFG_PARAM_GPIO_LOG_PORT_ERR_IN_ISR 必须为 0 或 1。"
+#endif
+#if ((CFG_PARAM_WDG_LOG_PORT_ERR != 0) && (CFG_PARAM_WDG_LOG_PORT_ERR != 1))
+#error "CFG_PARAM_WDG_LOG_PORT_ERR 必须为 0 或 1。"
+#endif
+#if ((CFG_PARAM_WDG_LOG_PORT_ERR_IN_ISR != 0) && (CFG_PARAM_WDG_LOG_PORT_ERR_IN_ISR != 1))
+#error "CFG_PARAM_WDG_LOG_PORT_ERR_IN_ISR 必须为 0 或 1。"
 #endif
 
 /* 依赖关系检查 */

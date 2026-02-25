@@ -22,6 +22,17 @@ ret_code_t hal_wdg_init(const hal_wdg_cfg_t *cfg);
 ret_code_t hal_wdg_kick(void);
 bool hal_wdg_is_inited(void);
 
+/**
+ * @brief 内部错误弱钩子函数
+ * @param rc_port port 错误码
+ * @param rc_hal  hal 错误码
+ * @param api     api名称
+ * @param arg0    参数1
+ * @param arg1    参数2
+ */
+void hal_wdg_on_port_error(ret_code_t rc_port, ret_code_t rc_hal, const char *api, uint32_t arg0,
+                           uint32_t arg1);
+
 #ifdef __cplusplus
 }
 #endif
