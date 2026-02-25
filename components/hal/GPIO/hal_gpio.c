@@ -93,7 +93,7 @@ static inline ret_code_t gpio_map_port_to_hal(ret_code_t rc_port, const char* ap
 }
 
 /**
- * @brief 从port实现函数返回映射的指定GPIO port与PIN结构体
+ * @brief 从port实现函数返回映射的指定GPIO port与PIN结构体到内部资源池并返回这个GPIO的地址
  * @param out 接收结构体的地址
  * @param id  全局引脚id
  * @return

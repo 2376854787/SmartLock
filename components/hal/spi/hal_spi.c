@@ -92,7 +92,7 @@ struct hal_spi_bus {
 /* 设备 */
 struct hal_spi_dev {
     bool in_use;           /* 设备是否被挂载 */
-    hal_spi_bus_t *bus;    /* 总线配置 */
+    hal_spi_bus_t *bus;    /* 挂载的总线 */
     hal_spi_dev_cfg_t cfg; /* 设备配置 */
     hal_gpio_t *cs;        /* 片选线句柄 */
     bool cs_valid;         /* 是否可以手动翻转片选线 */
@@ -246,13 +246,19 @@ static bool bus_has_attached_dev(const hal_spi_bus_t *bus) {
     OSAL_exit_critical_ex(cs);
     return found;
 }
-
+/**
+ * @brief 找到一个没有被使用的 设备对象池 进行填充配置 并声明该对象已被使用
+ * @param bus 总线句柄
+ * @param cfg 设备配置
+ * @return
+ */
 static hal_spi_dev_t *reserve_dev_slot(hal_spi_bus_t *bus, const hal_spi_dev_cfg_t *cfg) {
     if (!bus || !cfg) return NULL;
 
     hal_spi_dev_t *d     = NULL;
     osal_crit_state_t cs = 0u;
     OSAL_enter_critical_ex(&cs);
+    /* 找到一个没有被使用的 设备对象池 进行填充配置 */
     for (uint32_t i = 0; i < HAL_SPI_DEV_MAX; i++) {
         if (!s_devs[i].in_use) {
             d = &s_devs[i];
@@ -443,11 +449,11 @@ static ret_code_t cfg_check_dev(const hal_spi_dev_cfg_t *cfg) {
     return RET_OK;
 }
 /**
- *
- * @param dev
- * @param xfer
- * @param hw_stream_api
- * @return
+ * @brief 检查句柄参数、事务参数
+ * @param dev 设备句柄
+ * @param xfer 事务
+ * @param hw_stream_api 是否是数据流的api
+ * @return 状态码
  */
 static ret_code_t validate_api_xfer_common(const hal_spi_dev_t *dev, const hal_spi_xfer_t *xfer,
                                            bool hw_stream_api) {
@@ -643,8 +649,9 @@ static void spi_sync_mark_done(hal_spi_bus_t *b, ret_code_t rc_hal, uint32_t byt
  */
 static ret_code_t spi_sync_wait_done(hal_spi_bus_t *b, uint32_t wait_ms, uint32_t *done_bytes) {
     if (!b) return SPI_RC_PARAM(RET_R_NULL_PTR);
-
+    /* 规范等待时间 */
     const uint32_t wait_eff = spi_sync_norm_wait(wait_ms);
+    /* 信号量方式等待 */
     if (b->sync_sem_valid) {
         const ret_code_t sem_rc = OSAL_sem_take(b->sync_sem, wait_eff);
         if (ret_is_err(sem_rc)) {
@@ -652,6 +659,7 @@ static ret_code_t spi_sync_wait_done(hal_spi_bus_t *b, uint32_t wait_ms, uint32_
             return spi_map_wait_rc_to_hal(sem_rc);
         }
     } else {
+        /* 计算截止日期 */
         const uint32_t deadline_ms =
             (wait_eff == OSAL_WAIT_FOREVER) ? 0u : (hal_get_tick_ms() + wait_eff);
         while (1) {
@@ -660,14 +668,16 @@ static ret_code_t spi_sync_wait_done(hal_spi_bus_t *b, uint32_t wait_ms, uint32_
             OSAL_enter_critical_ex(&cs);
             done = (b->sync_done != 0u);
             OSAL_exit_critical_ex(cs);
+            /* 等待回调将同步事务完成 */
             if (done) break;
 
+            /* 时间已到 还未完成 超时*/
             if ((wait_eff != OSAL_WAIT_FOREVER) &&
                 HAL_TIME_AFTER_EQ(hal_get_tick_ms(), deadline_ms)) {
                 spi_sync_abort_wait(b);
                 return SPI_RC_TIMEOUT(RET_R_TIMEOUT);
             }
-
+            /* 非阻塞 让出CPU */
             if (OSAL_kernel_is_running()) {
                 (void)OSAL_delay_ms(1u);
             }
@@ -679,7 +689,9 @@ static ret_code_t spi_sync_wait_done(hal_spi_bus_t *b, uint32_t wait_ms, uint32_
     OSAL_enter_critical_ex(&cs);
     if (b->sync_done) {
         rc_hal = b->sync_rc;
+        /* 回传字节数 */
         if (done_bytes) *done_bytes = b->sync_bytes;
+        /* 清除等待同步 */
         b->sync_waiting = 0u;
         b->sync_done    = 0u;
         b->sync_bytes   = 0u;
@@ -830,7 +842,7 @@ ret_code_t hal_spi_bus_close(hal_spi_bus_t *bus) {
     /* 参数检查 */
     REQUIRE_RET(bus != NULL, SPI_RC_PARAM(RET_R_NULL_PTR));
     if (!bus->initialized) return SPI_RC_STATE(RET_R_NOT_READY);
-    /* 异步传输进行中不允许关闭总线 */
+    /* 异步传输进行中 总线被占用不允许关闭总线 */
     if (bus->xfer_busy) return SPI_RC_STATE(RET_R_BUSY);
     /* 如果仍有设备挂在当前总线上，拒绝关闭总线 */
     if (bus_has_attached_dev(bus)) return SPI_RC_STATE(RET_R_BUSY);
@@ -852,7 +864,7 @@ ret_code_t hal_spi_bus_close(hal_spi_bus_t *bus) {
     return RET_OK;
 }
 /**
- * @brief 初始化设备句柄并将设备和总线进行绑定注册
+ * @brief 初始化设备句柄并将设备和总线进行绑定注册 填充资源池中的对象并返回这个对象 并且根据事务
  * @param bus 总线句柄
  * @param cfg 设备配置 通信模式、大小端、位宽、频率、片选id、片选类型、活动电平等
  * @param out_dev 返回设备句柄
@@ -870,7 +882,7 @@ ret_code_t hal_spi_dev_attach(hal_spi_bus_t *bus, const hal_spi_dev_cfg_t *cfg,
     /* 检查设备的配置 */
     ret_code_t rc = cfg_check_dev(cfg);
     if (ret_is_err(rc)) return rc;
-
+    /* 设备资源池中 填充配置并返回这个对象 */
     hal_spi_dev_t *d = reserve_dev_slot(bus, cfg);
     if (!d) return SPI_RC_RES(RET_R_NO_RESOURCE);
 
@@ -978,6 +990,7 @@ static ret_code_t spi_xfer_guarded(hal_spi_dev_t *d, const hal_spi_xfer_t *x) {
     /* CS 选中 */
     const bool no_cs = (x->flags & HAL_SPI_XFER_NO_CS) != 0u;
     if (!no_cs) cs_assert(d);
+    /* 发起一次异步传输 */
     rc = hal_spi_port_xfer(&b->port, x);
     if (ret_is_err(rc)) {
         /* 发起失败且 CS 已经拉低，需要立即释放 */
@@ -1001,9 +1014,10 @@ static ret_code_t spi_stream_start_guarded(hal_spi_dev_t *d, const hal_spi_xfer_
     uint32_t flags   = x->flags | HAL_SPI_XFER_HW_STREAM;
     /* 必须加上调整 cs线 */
     if ((flags & HAL_SPI_XFER_NO_CS) == 0u) flags |= HAL_SPI_XFER_KEEP_CS;
-    /* 原子申请事务 */
+    /* 原子申请事务 占用总线*/
     ret_code_t rc = bus_claim_active_xfer(b, d, flags);
     if (ret_is_err(rc)) return rc;
+
     /* 底层应用配置 */
     rc = hal_spi_port_apply(&b->port, &d->cfg, b->cfg.default_hz);
     if (ret_is_err(rc)) {
@@ -1011,9 +1025,11 @@ static ret_code_t spi_stream_start_guarded(hal_spi_dev_t *d, const hal_spi_xfer_
         bus_release_active_xfer(b);
         return spi_map_port_to_hal(rc, "hal_spi_port_apply", b->cfg.bus_id, x->len);
     }
+
     /* 没有no_cs 事务就选中cs */
     const bool no_cs = (flags & HAL_SPI_XFER_NO_CS) != 0u;
     if (!no_cs) cs_assert(d);
+
     /* 调用底层的数据流开始 */
     rc = hal_spi_port_stream_start(&b->port, x);
     if (ret_is_err(rc)) {
@@ -1058,15 +1074,16 @@ static ret_code_t spi_abort_guarded(hal_spi_dev_t *d, bool disable_spi) {
     hal_spi_bus_t *b = d->bus;
     if (!b || !b->xfer_busy) return SPI_RC_STATE(RET_R_NOT_READY);
     if (b->active_dev != d) return SPI_RC_STATE(RET_R_BUSY);
-
+    /* 底层 port */
     const uint32_t flags = b->active_flags;
     const ret_code_t rc  = hal_spi_port_abort(&b->port, disable_spi);
     if (ret_is_err(rc)) {
         return spi_map_port_to_hal(rc, "hal_spi_port_abort", b->cfg.bus_id, disable_spi ? 1u : 0u);
     }
-
+    /* 据事务 是否取消选中 */
     const bool no_cs = (flags & HAL_SPI_XFER_NO_CS) != 0u;
     if (!no_cs) cs_deassert(d);
+    /* 释放事务 */
     bus_release_active_xfer(b);
 
     /* 中止属于业务中断当前事务，向回调与同步等待统一上报 ERROR。 */
@@ -1111,20 +1128,24 @@ ret_code_t hal_spi_transceive(hal_spi_dev_t *dev, const hal_spi_xfer_t *xfer) {
 static ret_code_t spi_transceive_sync_common(hal_spi_dev_t *dev, const hal_spi_xfer_t *xfer,
                                              uint32_t wait_ms) {
     REQUIRE_RET(!OSAL_in_isr(), SPI_RC_STATE(RET_R_STATE_ERR));
-
+    /* 检查设备参数、 事务参数的有效性 */
     ret_code_t rc = validate_api_xfer_common(dev, xfer, false);
     if (ret_is_err(rc)) return rc;
     hal_spi_bus_t *b      = dev->bus;
+    /* 规范等待时间 */
     const uint32_t wait_t = spi_sync_norm_wait(wait_ms);
-
+    /* 计算死亡时间点 */
     uint32_t deadline_ms  = 0u;
     if (wait_t != OSAL_WAIT_FOREVER) deadline_ms = hal_get_tick_ms() + wait_t;
 
+    /* 锁 */
     rc = bus_lock(b, wait_t);
     if (ret_is_err(rc)) return rc;
-
+    /* 准备一个新的同步上下文 */
     spi_sync_prepare_wait(b);
+    /* 开始异步传输 */
     rc = spi_xfer_guarded(dev, xfer);
+    /* 解锁 */
     bus_unlock(b);
 
     if (ret_is_err(rc)) {
@@ -1133,6 +1154,7 @@ static ret_code_t spi_transceive_sync_common(hal_spi_dev_t *dev, const hal_spi_x
     }
 
     uint32_t remain_ms = wait_t;
+    /* 计算同步等待的时间 */
     if (wait_t != OSAL_WAIT_FOREVER) {
         const uint32_t now_ms = hal_get_tick_ms();
         if (HAL_TIME_AFTER_EQ(now_ms, deadline_ms))

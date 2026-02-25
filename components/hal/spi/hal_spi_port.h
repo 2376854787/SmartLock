@@ -53,7 +53,7 @@ typedef struct {
     bool use_dma;        /* 总线是否启用 DMA 传输 */
     bool use_irq;        /* 总线是否启用 SPI 中断 */
     /* =========== port 内部缓存 =========== */
-    bool cfg_cache_valid;
+    bool cfg_cache_valid;          /* 缓存配置有效性 */
     hal_spi_mode_t cur_mode;       /* 模式 */
     hal_spi_bitorder_t cur_order;  /* 大小端序 */
     hal_spi_frame_bits_t cur_bits; /* 位宽 */

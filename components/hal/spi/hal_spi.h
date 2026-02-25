@@ -159,7 +159,7 @@ typedef struct {
 } hal_spi_xfer_t;
 
 /**
- * @brief 打开 SPI 总线
+ * @brief 打开 SPI 总线 填充 bus port成员 并在port层 句柄池也保存一份这个port
  * @param cfg     总线配置（bus_id、DMA/IRQ、默认频率）
  * @param out_bus 返回总线句柄
  * @return RET_OK 或错误码
@@ -167,7 +167,7 @@ typedef struct {
 ret_code_t hal_spi_bus_open(const hal_spi_bus_cfg_t *cfg, hal_spi_bus_t **out_bus);
 
 /**
- * @brief 关闭 SPI 总线 DeInit & 中断使能
+ * @brief 关闭 SPI 总线 DeInit & 中断使能 复位bus port成员
  * @param bus 总线句柄
  * @return RET_OK 或错误码
  * @note 若仍有设备挂载或事务进行中会返回 BUSY
@@ -175,7 +175,8 @@ ret_code_t hal_spi_bus_open(const hal_spi_bus_cfg_t *cfg, hal_spi_bus_t **out_bu
 ret_code_t hal_spi_bus_close(hal_spi_bus_t *bus);
 
 /**
- * @brief 挂载 SPI 设备到总线
+ * @brief 挂载 SPI 设备到总线 hal 设备资源池选择一个设备对象进行填充 并指向bus 并根据 cs类型决定hal
+ * GPIO 配置
  * @param bus     总线句柄
  * @param cfg     设备配置（模式、位宽、频率、片选策略）
  * @param out_dev 返回设备句柄
@@ -185,7 +186,7 @@ ret_code_t hal_spi_dev_attach(hal_spi_bus_t *bus, const hal_spi_dev_cfg_t *cfg,
                               hal_spi_dev_t **out_dev);
 
 /**
- * @brief 从总线解绑 SPI 设备 关闭设备的 cs GPIO
+ * @brief 从总线解绑 SPI 设备 池对象的配置置0 关闭设备的 cs GPIO
  * @param dev 设备句柄
  * @return RET_OK 或错误码
  */
@@ -206,7 +207,8 @@ ret_code_t hal_spi_dev_set_evt_cb(hal_spi_dev_t *dev, hal_spi_evt_cb_t cb, void 
  * @param dev    设备句柄
  * @param target 分发目标
  * @return RET_OK 或错误码
- * @note CFG_PARAM_SPI_EVT_DISPATCH_MODE=QUEUE 时，target 需为 osal_msgq_t，队列 item 为 hal_spi_event_t。
+ * @note CFG_PARAM_SPI_EVT_DISPATCH_MODE=QUEUE 时，target 需为 osal_msgq_t，队列 item 为
+ * hal_spi_event_t。
  * @note CFG_PARAM_SPI_EVT_DISPATCH_MODE=TASK_NOTIFY 时，target 需为 osal_thread_t。
  * @note CFG_PARAM_SPI_EVT_DISPATCH_MODE=EVENTBUS 时，该句柄不会被使用。
  */

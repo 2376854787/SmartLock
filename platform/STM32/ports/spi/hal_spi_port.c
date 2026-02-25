@@ -4,9 +4,9 @@
 #include <limits.h>
 #include <string.h>
 
+#include "assert_cus.h"
 #include "hal_spi_port.h"
 #include "osal.h"
-#include "assert_cus.h"
 #include "stm32_spi_series.h"
 
 /* 状态码 */
@@ -372,6 +372,7 @@ ret_code_t hal_spi_port_open(const hal_spi_bus_cfg_t *cfg, hal_spi_port_ctx_t *o
     int32_t slot         = -1;
     osal_crit_state_t cs = 0u;
     OSAL_enter_critical_ex(&cs);
+    /* 找到同一空闲位置 */
     slot = find_free_slot();
     if (slot >= 0) s_spi_ctxs[slot] = out;
     OSAL_exit_critical_ex(cs);
@@ -621,12 +622,14 @@ ret_code_t hal_spi_port_xfer(hal_spi_port_ctx_t *ctx, const hal_spi_xfer_t *xfer
     /* 检查对齐 计算出真正的传输len */
     const ret_code_t frc = calc_xfer_frame_meta(h, xfer, tx, rx, &frame_count);
     if (ret_is_err(frc)) return frc;
+    /* Dcache 处理 */
     if (ctx->use_dma) {
         spi_dma_prepare_tx_buf(tx, xfer->len);
         spi_dma_prepare_rx_buf(rx, xfer->len);
     }
 
     HAL_StatusTypeDef st  = HAL_ERROR;
+    /* 更新port层的 参数从 事务 */
     ctx->xfer_busy        = 1u;
     ctx->req_type         = req_type;
     ctx->active_len       = xfer->len;
@@ -687,7 +690,7 @@ ret_code_t hal_spi_port_abort(hal_spi_port_ctx_t *ctx, bool disable_spi) {
     REQUIRE_RET(ctx != NULL, SPI_PORT_PARAM(RET_R_NULL_PTR));
     if (!ctx->opened) return SPI_PORT_STATE(RET_R_NOT_READY);
     if (ctx->bsp.hspi == NULL) return SPI_PORT_STATE(RET_R_NOT_READY);
-
+    /* 取消事务 */
     if (ctx->xfer_busy) {
         const HAL_StatusTypeDef st = HAL_SPI_Abort(ctx->bsp.hspi);
         if (st != HAL_OK) return map_hal_status(st);
@@ -697,6 +700,7 @@ ret_code_t hal_spi_port_abort(hal_spi_port_ctx_t *ctx, bool disable_spi) {
         if (HAL_SPI_DeInit(ctx->bsp.hspi) != HAL_OK) {
             return SPI_PORT_IO(RET_R_HW_FAULT);
         }
+        /* 缓存配置失效 */
         ctx->cfg_cache_valid = false;
     }
 
