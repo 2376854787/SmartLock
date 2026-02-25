@@ -84,7 +84,29 @@ ret_code_t hal_spi_port_apply(hal_spi_port_ctx_t *ctx, const hal_spi_dev_cfg_t *
 ret_code_t hal_spi_port_stream_start(hal_spi_port_ctx_t *ctx, const hal_spi_xfer_t *xfer);
 ret_code_t hal_spi_port_stream_stop(hal_spi_port_ctx_t *ctx, bool disable_spi);
 
+/**
+ * @brief 发起一次 port 层异步事务（发起成功后立即返回）
+ * @param ctx  port 句柄
+ * @param xfer 事务参数
+ * @return RET_OK 或错误码
+ */
 ret_code_t hal_spi_port_xfer(hal_spi_port_ctx_t *ctx, const hal_spi_xfer_t *xfer);
+
+/**
+ * @brief 强制中止当前 port 层事务（普通异步/硬件流）
+ * @param ctx         port 句柄
+ * @param disable_spi true: 中止后反初始化 SPI；false: 仅中止事务
+ * @return RET_OK 或错误码
+ */
+ret_code_t hal_spi_port_abort(hal_spi_port_ctx_t *ctx, bool disable_spi);
+
+/**
+ * @brief 等待底层 SPI 外设进入空闲态（如 BSY 清零）
+ * @param ctx      port 句柄
+ * @param spin_max 最大轮询次数（0 表示只检查一次）
+ * @return RET_OK: 已空闲；其他为错误码（超时/状态异常）
+ */
+ret_code_t hal_spi_port_wait_idle(const hal_spi_port_ctx_t *ctx, uint32_t spin_max);
 
 /* 当关闭本地 ISR/回调定义时，可在外部 ISR/HAL 回调中调用这些 hook */
 void hal_spi_port_irq_dispatch_hook(IRQn_Type irqn);

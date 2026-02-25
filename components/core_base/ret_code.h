@@ -239,6 +239,7 @@ typedef enum {
     RET_R_BUSY            = 0x012u, /* 忙：资源占用/正在传输/锁已持有（建议退避重试） */
     RET_R_STATE_ERR       = 0x013u, /* 状态机错误：状态不一致/非法状态迁移/重复调用顺序错 */
     RET_R_WOULD_BLOCK     = 0x014u, /* 将阻塞：非阻塞 API 语义下无法立即完成（如无数据/无空间） */
+    RET_R_ABORTED         = 0x015u, /* 主动中止：由上层/控制逻辑主动取消当前事务 */
 
     /* TIMEOUT (0x3xx) */
     RET_R_TIMEOUT         = 0x020u, /* 超时：等待事件/外设响应/队列/信号量超过设定时间 */
@@ -355,6 +356,9 @@ CORE_INLINE bool ret_is_timeout(ret_code_t r) {
 }
 CORE_INLINE bool ret_is_busy(ret_code_t r) {
     return ret_is_reason(r, RET_R_BUSY);
+}
+CORE_INLINE bool ret_is_aborted(ret_code_t r) {
+    return ret_is_reason(r, RET_R_ABORTED);
 }
 CORE_INLINE bool ret_is_no_mem(ret_code_t r) {
     return ret_is_reason(r, RET_R_NO_MEM);

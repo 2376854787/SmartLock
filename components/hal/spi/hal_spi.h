@@ -30,11 +30,13 @@ extern "C" {
  * 1. [hal_spi_transceive]   : 一次性事务，禁止传 HAL_SPI_XFER_HW_STREAM。
  * 2. [hal_spi_stream_start] : 启动硬件流(DMA Circular)，回调触发 STREAM_HALF/FULL。
  * 3. [hal_spi_stream_stop]  : 停止 DMA (可选 DeInit)，停止动作本身不触发 DONE 事件。
- * 4. [XFER_STREAM/END 标志] : 代表“软件流分包语义”(期间不断片选)，非硬件 Circular。
+ * 4. [hal_spi_abort]        : 强制中止当前设备事务（普通异步/硬件流），可选 DeInit SPI。
+ * 5. [XFER_STREAM/END 标志] : 代表“软件流分包语义”(期间不断片选)，非硬件 Circular。
  *
  * @warning 调用建议:
  * - 主机硬件流（发或收），一律优先配为 2LINES 全双工模式。
  * - 主机仅接收的硬件流（如ADC），必须开双路 DMA Circular。
+ * - 关闭DMA、SPI、中断使能、以及内部信息 调用顺序 hal_spi_stream_stop(dev, true) -> hal_spi_dev_detach(dev) -> hal_spi_bus_close(bus)
  * ========================================================================================= */
 /* clang-format on */
 
@@ -148,18 +150,115 @@ typedef struct {
     uint32_t timeout_ms; /* 发起路径锁超时（非阻塞模式下不是传输完成超时） */
     uint32_t flags;      /* 片选线传输后的处理 */
 } hal_spi_xfer_t;
-/* 获取总线配置 */
+
+/**
+ * @brief 打开 SPI 总线
+ * @param cfg     总线配置（bus_id、DMA/IRQ、默认频率）
+ * @param out_bus 返回总线句柄
+ * @return RET_OK 或错误码
+ */
 ret_code_t hal_spi_bus_open(const hal_spi_bus_cfg_t *cfg, hal_spi_bus_t **out_bus);
+
+/**
+ * @brief 关闭 SPI 总线 DeInit & 中断使能
+ * @param bus 总线句柄
+ * @return RET_OK 或错误码
+ * @note 若仍有设备挂载或事务进行中会返回 BUSY
+ */
 ret_code_t hal_spi_bus_close(hal_spi_bus_t *bus);
 
+/**
+ * @brief 挂载 SPI 设备到总线
+ * @param bus     总线句柄
+ * @param cfg     设备配置（模式、位宽、频率、片选策略）
+ * @param out_dev 返回设备句柄
+ * @return RET_OK 或错误码
+ */
 ret_code_t hal_spi_dev_attach(hal_spi_bus_t *bus, const hal_spi_dev_cfg_t *cfg,
                               hal_spi_dev_t **out_dev);
+
+/**
+ * @brief 从总线解绑 SPI 设备 关闭设备的 cs GPIO
+ * @param dev 设备句柄
+ * @return RET_OK 或错误码
+ */
 ret_code_t hal_spi_dev_detach(hal_spi_dev_t *dev);
+
+/**
+ * @brief 注册设备事件回调
+ * @param dev  设备句柄
+ * @param cb   回调函数
+ * @param user 用户上下文
+ * @return RET_OK 或错误码
+ */
 ret_code_t hal_spi_dev_set_evt_cb(hal_spi_dev_t *dev, hal_spi_evt_cb_t cb, void *user);
 
-/* 说明：当前实现为非阻塞发起，完成结果通过 hal_spi_dev_set_evt_cb 回调通知 */
+/**
+ * @brief 发起一次异步事务（非阻塞）
+ * @param dev  设备句柄
+ * @param xfer 事务参数
+ * @return RET_OK 或错误码
+ * @note 成功返回仅表示“发起成功”，完成结果通过事件回调上报
+ */
 ret_code_t hal_spi_transceive(hal_spi_dev_t *dev, const hal_spi_xfer_t *xfer);
+
+/**
+ * @brief 同步收发（阻塞到事务完成或超时）
+ * @param dev     设备句柄
+ * @param tx      发送缓存，可为 NULL（纯接收）
+ * @param rx      接收缓存，可为 NULL（纯发送）
+ * @param len     传输字节数
+ * @param wait_ms 等待完成超时（ms），传 0 表示永久等待
+ * @return RET_OK 或错误码
+ * @note 该接口仅封装一次性事务，不包含 stream 语义
+ */
+ret_code_t hal_spi_transceive_sync(hal_spi_dev_t *dev, const void *tx, void *rx, uint32_t len,
+                                   uint32_t wait_ms);
+
+/**
+ * @brief 同步发送（阻塞到发送完成或超时）
+ * @param dev     设备句柄
+ * @param tx      发送缓存地址
+ * @param len     发送字节数
+ * @param wait_ms 等待完成超时（ms），传 0 表示永久等待
+ * @return RET_OK 或错误码
+ */
+ret_code_t hal_spi_send_sync(hal_spi_dev_t *dev, const void *tx, uint32_t len, uint32_t wait_ms);
+
+/**
+ * @brief 同步接收（阻塞到接收完成或超时）
+ * @param dev     设备句柄
+ * @param rx      接收缓存地址
+ * @param len     接收字节数
+ * @param wait_ms 等待完成超时（ms），传 0 表示永久等待
+ * @return RET_OK 或错误码
+ */
+ret_code_t hal_spi_recv_sync(hal_spi_dev_t *dev, void *rx, uint32_t len, uint32_t wait_ms);
+
+/**
+ * @brief 启动硬件流事务（DMA Circular）
+ * @param dev  设备句柄
+ * @param xfer 事务参数
+ * @return RET_OK 或错误码
+ */
 ret_code_t hal_spi_stream_start(hal_spi_dev_t *dev, const hal_spi_xfer_t *xfer);
+
+/**
+ * @brief 强制中止当前设备正在进行的事务
+ * @param dev         设备句柄
+ * @param disable_spi true: 中止后反初始化 SPI；false: 仅中止事务
+ * @return RET_OK 或错误码
+ * @note 仅能中止“当前活跃设备”的事务；若总线忙于其他设备会返回 BUSY
+ * 非 NO_CS 会释放 cs 底层调用  HAL_SPI_Abort （暂时）暂停DMA/IT 不会关闭NVIC 只能close 函数关闭
+ */
+ret_code_t hal_spi_abort(hal_spi_dev_t *dev, bool disable_spi);
+
+/**
+ * @brief 停止硬件流事务 & 停止DMA 可选DeInit SPI
+ * @param dev         设备句柄
+ * @param disable_spi true: 停止后反初始化 SPI；false: 仅停止流
+ * @return RET_OK 或错误码
+ */
 ret_code_t hal_spi_stream_stop(hal_spi_dev_t *dev, bool disable_spi);
 /**
  * @brief 内部错误弱钩子函数

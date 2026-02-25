@@ -399,7 +399,7 @@ ret_code_t hal_spi_port_close(hal_spi_port_ctx_t *ctx) {
         }
     }
     OSAL_exit_critical_ex(cs);
-    /* 关闭DMA 中断*/
+    /* 关闭 中断*/
     if (ctx->use_irq && (int32_t)ctx->bsp.spi_irq >= 0) {
         HAL_NVIC_DisableIRQ(ctx->bsp.spi_irq);
     }
@@ -674,6 +674,59 @@ ret_code_t hal_spi_port_xfer(hal_spi_port_ctx_t *ctx, const hal_spi_xfer_t *xfer
         clear_xfer_ctx(ctx);
         return map_hal_status(st);
     }
+    return RET_OK;
+}
+
+/**
+ * @brief 强制中止当前 port 层事务
+ * @param ctx         port 句柄
+ * @param disable_spi true: 中止后反初始化 SPI；false: 仅中止事务
+ * @return RET_OK 或错误码
+ */
+ret_code_t hal_spi_port_abort(hal_spi_port_ctx_t *ctx, bool disable_spi) {
+    REQUIRE_RET(ctx != NULL, SPI_PORT_PARAM(RET_R_NULL_PTR));
+    if (!ctx->opened) return SPI_PORT_STATE(RET_R_NOT_READY);
+    if (ctx->bsp.hspi == NULL) return SPI_PORT_STATE(RET_R_NOT_READY);
+
+    if (ctx->xfer_busy) {
+        const HAL_StatusTypeDef st = HAL_SPI_Abort(ctx->bsp.hspi);
+        if (st != HAL_OK) return map_hal_status(st);
+    }
+
+    if (disable_spi) {
+        if (HAL_SPI_DeInit(ctx->bsp.hspi) != HAL_OK) {
+            return SPI_PORT_IO(RET_R_HW_FAULT);
+        }
+        ctx->cfg_cache_valid = false;
+    }
+
+    clear_xfer_ctx(ctx);
+    return RET_OK;
+}
+
+/**
+ * @brief 等待底层 SPI 外设空闲（BSY 清零）
+ * @param ctx      port 句柄
+ * @param spin_max 最大轮询次数
+ * @return RET_OK 或错误码
+ */
+ret_code_t hal_spi_port_wait_idle(const hal_spi_port_ctx_t *ctx, uint32_t spin_max) {
+    REQUIRE_RET(ctx != NULL, SPI_PORT_PARAM(RET_R_NULL_PTR));
+    if (!ctx->opened) return SPI_PORT_STATE(RET_R_NOT_READY);
+    if (ctx->bsp.hspi == NULL) return SPI_PORT_STATE(RET_R_NOT_READY);
+
+#if defined(SPI_FLAG_BSY)
+    uint32_t spin = spin_max;
+    while ((__HAL_SPI_GET_FLAG(ctx->bsp.hspi, SPI_FLAG_BSY) != RESET) && (spin > 0u)) {
+        spin--;
+    }
+    if (__HAL_SPI_GET_FLAG(ctx->bsp.hspi, SPI_FLAG_BSY) != RESET) {
+        return SPI_PORT_TIMEOUT(RET_R_TIMEOUT);
+    }
+#else
+    (void)spin_max;
+#endif
+
     return RET_OK;
 }
 

@@ -38,11 +38,18 @@ struct hal_spi_bus {
     hal_spi_bus_cfg_t cfg;   /* 总线配置 DMA irq 默认速率 */
     osal_mutex_t lock;       /* 互斥锁 */
     bool lock_valid;         /* 判断当前是否是启动了RTOS 环境 */
+    osal_sem_t sync_sem;     /* 同步事务完成信号量 */
+    bool sync_sem_valid;     /* 同步信号量是否可用 */
     hal_spi_port_ctx_t port; /* 板级资源 */
 
     volatile uint8_t xfer_busy; /* 当前是否有异步事务在进行 */
     hal_spi_dev_t *active_dev;  /* 当前活跃设备 */
     uint32_t active_flags;      /* 当前事务 flags（KEEP_CS/NO_CS/STREAM/HW_STREAM） */
+    /* ======= 同步事务资源 =======*/
+    volatile uint8_t sync_waiting; /* 当前是否存在同步等待方 */
+    volatile uint8_t sync_done;    /* 同步事务是否完成 */
+    ret_code_t sync_rc;            /* 同步事务完成码 */
+    uint32_t sync_bytes;           /* 同步事务完成字节数 */
 };
 /* 设备 */
 struct hal_spi_dev {
@@ -230,16 +237,18 @@ static void cs_deassert(hal_spi_dev_t *d) {
         hal_gpio_write(d->cs, HAL_GPIO_LEVEL_LOW);
 }
 
+/**
+ * @brief 片选释放前等待底层 SPI 空闲（由 port 层实现平台细节）
+ * @param d 设备句柄
+ * @note 若等待失败仅记录/上报错误，不阻断 CS 释放流程
+ */
 static void wait_spi_idle_before_cs_deassert(const hal_spi_dev_t *d) {
-#if defined(CFG_PARAM_SPI_CS_DEASSERT_WAIT_BSY) && (CFG_PARAM_SPI_CS_DEASSERT_WAIT_BSY == 1) && \
-    defined(SPI_FLAG_BSY)
+#if defined(CFG_PARAM_SPI_CS_DEASSERT_WAIT_BSY) && (CFG_PARAM_SPI_CS_DEASSERT_WAIT_BSY == 1)
     if (!d || !d->cs_valid || !d->bus) return;
-    SPI_HandleTypeDef *hspi = d->bus->port.bsp.hspi;
-    if (!hspi) return;
-
-    uint32_t spin = (uint32_t)CFG_PARAM_SPI_CS_DEASSERT_WAIT_BSY_SPIN_MAX;
-    while ((__HAL_SPI_GET_FLAG(hspi, SPI_FLAG_BSY) != RESET) && (spin > 0u)) {
-        spin--;
+    const uint32_t spin = (uint32_t)CFG_PARAM_SPI_CS_DEASSERT_WAIT_BSY_SPIN_MAX;
+    const ret_code_t rc = hal_spi_port_wait_idle(&d->bus->port, spin);
+    if (ret_is_err(rc)) {
+        (void)spi_map_port_to_hal(rc, "hal_spi_port_wait_idle", d->bus->cfg.bus_id, spin);
     }
 #else
     (void)d;
@@ -362,6 +371,184 @@ static void bus_release_active_xfer(hal_spi_bus_t *b) {
 }
 
 /**
+ * @brief 将等待类错误映射为 HAL SPI 统一错误码
+ * @param rc 等待接口返回值（如 OSAL_sem_take）
+ * @return HAL SPI 统一错误码
+ */
+static ret_code_t spi_map_wait_rc_to_hal(ret_code_t rc) {
+    if (ret_is_ok(rc)) return RET_OK;
+
+    if (ret_is_class(rc, RET_CLASS_PARAM)) {
+        if (ret_is_reason(rc, RET_R_NULL_PTR))
+            return SPI_RC_PARAM(RET_R_NULL_PTR);
+        else if (ret_is_reason(rc, RET_R_RANGE_ERR))
+            return SPI_RC_PARAM(RET_R_RANGE_ERR);
+        else
+            return SPI_RC_PARAM(RET_R_INVALID_ARG);
+    }
+
+    if (ret_is_class(rc, RET_CLASS_TIMEOUT)) return SPI_RC_TIMEOUT(RET_R_TIMEOUT);
+
+    if (ret_is_class(rc, RET_CLASS_RESOURCE)) {
+        if (ret_is_reason(rc, RET_R_NO_MEM))
+            return SPI_RC_RES(RET_R_NO_MEM);
+        else
+            return SPI_RC_RES(RET_R_NO_RESOURCE);
+    }
+
+    if (ret_is_class(rc, RET_CLASS_STATE)) {
+        if (ret_is_reason(rc, RET_R_BUSY))
+            return SPI_RC_STATE(RET_R_BUSY);
+        else if (ret_is_reason(rc, RET_R_NOT_READY))
+            return SPI_RC_STATE(RET_R_NOT_READY);
+        else
+            return SPI_RC_STATE(RET_R_STATE_ERR);
+    }
+
+    return SPI_RC_IO(RET_R_IO);
+}
+
+/**
+ * @brief 规范化同步等待超时参数
+ * @param wait_ms 用户输入等待时间（ms）
+ * @return 实际等待时间；0 被转换为 OSAL_WAIT_FOREVER
+ */
+static inline uint32_t spi_sync_norm_wait(uint32_t wait_ms) {
+    return (wait_ms == 0u) ? OSAL_WAIT_FOREVER : wait_ms;
+}
+
+/**
+ * @brief 清空同步信号量中历史残留计数
+ * @param sem 同步信号量
+ */
+static void spi_sync_sem_drain(osal_sem_t sem) {
+    if (!sem) return;
+    while (OSAL_sem_take(sem, 0u) == RET_OK) {
+        /* drain */
+    }
+}
+
+/**
+ * @brief 准备一次新的同步等待上下文
+ * @param b 总线句柄
+ * @note 会重置同步完成状态，并清理旧的信号量计数
+ */
+static void spi_sync_prepare_wait(hal_spi_bus_t *b) {
+    if (!b) return;
+    if (b->sync_sem_valid) spi_sync_sem_drain(b->sync_sem);
+
+    osal_crit_state_t cs = 0u;
+    OSAL_enter_critical_ex(&cs);
+    b->sync_waiting = 1u;
+    b->sync_done    = 0u;
+    b->sync_rc      = SPI_RC_STATE(RET_R_STATE_ERR);
+    b->sync_bytes   = 0u;
+    OSAL_exit_critical_ex(cs);
+}
+
+/**
+ * @brief 终止当前同步等待状态
+ * @param b 总线句柄
+ * @note 用于发起失败或等待失败后的收敛清理
+ */
+static void spi_sync_abort_wait(hal_spi_bus_t *b) {
+    if (!b) return;
+    osal_crit_state_t cs = 0u;
+    OSAL_enter_critical_ex(&cs);
+    b->sync_waiting = 0u;
+    b->sync_done    = 0u;
+    b->sync_rc      = SPI_RC_STATE(RET_R_STATE_ERR);
+    b->sync_bytes   = 0u;
+    OSAL_exit_critical_ex(cs);
+}
+
+/**
+ * @brief 标记同步事务完成并唤醒等待方
+ * @param b      总线句柄
+ * @param rc_hal 完成结果（HAL 语义）
+ * @param bytes  完成字节数
+ */
+static void spi_sync_mark_done(hal_spi_bus_t *b, ret_code_t rc_hal, uint32_t bytes) {
+    if (!b) return;
+
+    bool need_notify      = false;
+    osal_crit_state_t cs  = 0u;
+    OSAL_enter_critical_ex(&cs);
+    if (b->sync_waiting) {
+        b->sync_waiting = 0u;
+        b->sync_done    = 1u;
+        b->sync_rc      = rc_hal;
+        b->sync_bytes   = bytes;
+        need_notify     = b->sync_sem_valid;
+    }
+    OSAL_exit_critical_ex(cs);
+
+    if (need_notify) {
+        if (OSAL_in_isr())
+            (void)OSAL_sem_give_from_isr(b->sync_sem);
+        else
+            (void)OSAL_sem_give(b->sync_sem);
+    }
+}
+
+/**
+ * @brief 等待同步事务完成（信号量或轮询）
+ * @param b         总线句柄
+ * @param wait_ms   等待超时（ms）
+ * @param done_bytes 返回完成字节数，可为 NULL
+ * @return RET_OK 或统一错误码
+ */
+static ret_code_t spi_sync_wait_done(hal_spi_bus_t *b, uint32_t wait_ms, uint32_t *done_bytes) {
+    if (!b) return SPI_RC_PARAM(RET_R_NULL_PTR);
+
+    const uint32_t wait_eff = spi_sync_norm_wait(wait_ms);
+    if (b->sync_sem_valid) {
+        const ret_code_t sem_rc = OSAL_sem_take(b->sync_sem, wait_eff);
+        if (ret_is_err(sem_rc)) {
+            spi_sync_abort_wait(b);
+            return spi_map_wait_rc_to_hal(sem_rc);
+        }
+    } else {
+        const uint32_t deadline_ms = (wait_eff == OSAL_WAIT_FOREVER) ? 0u : (hal_get_tick_ms() + wait_eff);
+        while (1) {
+            bool done            = false;
+            osal_crit_state_t cs = 0u;
+            OSAL_enter_critical_ex(&cs);
+            done = (b->sync_done != 0u);
+            OSAL_exit_critical_ex(cs);
+            if (done) break;
+
+            if ((wait_eff != OSAL_WAIT_FOREVER) && HAL_TIME_AFTER_EQ(hal_get_tick_ms(), deadline_ms)) {
+                spi_sync_abort_wait(b);
+                return SPI_RC_TIMEOUT(RET_R_TIMEOUT);
+            }
+
+            if (OSAL_kernel_is_running()) {
+                (void)OSAL_delay_ms(1u);
+            }
+        }
+    }
+
+    ret_code_t rc_hal      = SPI_RC_STATE(RET_R_STATE_ERR);
+    osal_crit_state_t cs   = 0u;
+    OSAL_enter_critical_ex(&cs);
+    if (b->sync_done) {
+        rc_hal = b->sync_rc;
+        if (done_bytes) *done_bytes = b->sync_bytes;
+        b->sync_waiting = 0u;
+        b->sync_done  = 0u;
+        b->sync_bytes = 0u;
+    } else {
+        b->sync_waiting = 0u;
+        b->sync_done    = 0u;
+        b->sync_rc      = SPI_RC_STATE(RET_R_STATE_ERR);
+        b->sync_bytes   = 0u;
+    }
+    OSAL_exit_critical_ex(cs);
+    return rc_hal;
+}
+
+/**
  * @brief port 层事件回调
  * @param user 总线句柄
  * @param evt 事件载体
@@ -419,13 +606,20 @@ static void spi_port_evt_cb(void *user, const hal_spi_port_evt_t *evt) {
 
     /* 构建事件 */
     hal_spi_event_t hevt = {0};
+    ret_code_t rc_hal    = RET_OK;
     if (ret_is_ok(rc_port)) {
         hevt.type       = HAL_SPI_EVT_DONE;
         hevt.done.bytes = bytes;
+        rc_hal          = RET_OK;
     } else {
         hevt.type   = HAL_SPI_EVT_ERROR;
-        hevt.err.rc = spi_map_port_to_hal(rc_port, "spi_port_evt_cb", (uint32_t)evt->type, bytes);
+        rc_hal      = spi_map_port_to_hal(rc_port, "spi_port_evt_cb", (uint32_t)evt->type, bytes);
+        hevt.err.rc = rc_hal;
     }
+
+    /* 如果当前有同步等待方，写入完成态并尝试唤醒 */
+    spi_sync_mark_done(b, rc_hal, bytes);
+
     /* 上报事件 给用户回调函数 */
     emit_dev_evt(dev, &hevt);
 }
@@ -475,6 +669,9 @@ ret_code_t hal_spi_bus_open(const hal_spi_bus_cfg_t *cfg, hal_spi_bus_t **out_bu
         if (ret_is_ok(OSAL_mutex_create(&b->lock, "spi_bus", false, true))) {
             b->lock_valid = true;
         }
+        if (ret_is_ok(OSAL_sem_create(&b->sync_sem, "spi_sync", 0u, 1u))) {
+            b->sync_sem_valid = true;
+        }
     }
     *out_bus = b;
     return RET_OK;
@@ -501,6 +698,10 @@ ret_code_t hal_spi_bus_close(hal_spi_bus_t *bus) {
     if (bus->lock_valid) {
         (void)OSAL_mutex_delete(bus->lock);
         bus->lock_valid = false;
+    }
+    if (bus->sync_sem_valid) {
+        (void)OSAL_sem_delete(bus->sync_sem);
+        bus->sync_sem_valid = false;
     }
     bus->initialized = false;
     return RET_OK;
@@ -688,6 +889,39 @@ static ret_code_t spi_stream_stop_guarded(hal_spi_dev_t *d, bool disable_spi) {
     bus_release_active_xfer(b);
     return RET_OK;
 }
+
+/**
+ * @brief 在持锁状态下中止当前设备事务
+ * @param d 设备句柄
+ * @param disable_spi true: 中止后反初始化 SPI；false: 仅中止事务
+ * @return RET_OK 或错误码
+ */
+static ret_code_t spi_abort_guarded(hal_spi_dev_t *d, bool disable_spi) {
+    hal_spi_bus_t *b = d->bus;
+    if (!b || !b->xfer_busy) return SPI_RC_STATE(RET_R_NOT_READY);
+    if (b->active_dev != d) return SPI_RC_STATE(RET_R_BUSY);
+
+    const uint32_t flags = b->active_flags;
+    const ret_code_t rc  = hal_spi_port_abort(&b->port, disable_spi);
+    if (ret_is_err(rc)) {
+        return spi_map_port_to_hal(rc, "hal_spi_port_abort", b->cfg.bus_id, disable_spi ? 1u : 0u);
+    }
+
+    const bool no_cs = (flags & HAL_SPI_XFER_NO_CS) != 0u;
+    if (!no_cs) cs_deassert(d);
+    bus_release_active_xfer(b);
+
+    /* 中止属于业务中断当前事务，向回调与同步等待统一上报 ERROR。 */
+    const ret_code_t abort_rc = SPI_RC_STATE(RET_R_ABORTED);
+    spi_sync_mark_done(b, abort_rc, 0u);
+
+    hal_spi_event_t evt = {0};
+    evt.type            = HAL_SPI_EVT_ERROR;
+    evt.err.rc          = abort_rc;
+    emit_dev_evt(d, &evt);
+
+    return RET_OK;
+}
 /**
  * @brief 进行一次异步的事物 立即返回
  * @param dev 设备句柄
@@ -707,6 +941,118 @@ ret_code_t hal_spi_transceive(hal_spi_dev_t *dev, const hal_spi_xfer_t *xfer) {
     bus_unlock(b);
     return rc;
 }
+
+/**
+ * @brief 同步收发通用实现（基于异步发起 + 完成等待）
+ * @param dev     设备句柄
+ * @param xfer    一次性事务参数
+ * @param wait_ms 完成等待超时（ms）
+ * @return RET_OK 或统一错误码
+ * @note 该函数只用于一次性事务，不处理 stream 事务
+ */
+static ret_code_t spi_transceive_sync_common(hal_spi_dev_t *dev, const hal_spi_xfer_t *xfer,
+                                             uint32_t wait_ms) {
+    REQUIRE_RET(!OSAL_in_isr(), SPI_RC_STATE(RET_R_STATE_ERR));
+
+    ret_code_t rc = validate_api_xfer_common(dev, xfer, false);
+    if (ret_is_err(rc)) return rc;
+    hal_spi_bus_t *b      = dev->bus;
+    const uint32_t wait_t = spi_sync_norm_wait(wait_ms);
+
+    uint32_t deadline_ms  = 0u;
+    if (wait_t != OSAL_WAIT_FOREVER) deadline_ms = hal_get_tick_ms() + wait_t;
+
+    rc = bus_lock(b, wait_t);
+    if (ret_is_err(rc)) return rc;
+
+    spi_sync_prepare_wait(b);
+    rc = spi_xfer_guarded(dev, xfer);
+    bus_unlock(b);
+
+    if (ret_is_err(rc)) {
+        spi_sync_abort_wait(b);
+        return rc;
+    }
+
+    uint32_t remain_ms = wait_t;
+    if (wait_t != OSAL_WAIT_FOREVER) {
+        const uint32_t now_ms = hal_get_tick_ms();
+        if (HAL_TIME_AFTER_EQ(now_ms, deadline_ms))
+            remain_ms = 0u;
+        else
+            remain_ms = deadline_ms - now_ms;
+    }
+
+    return spi_sync_wait_done(b, remain_ms, NULL);
+}
+
+/**
+ * @brief 同步收发（阻塞直到完成或超时）
+ * @param dev 设备句柄
+ * @param tx  发送缓存，可为 NULL（纯接收）
+ * @param rx  接收缓存，可为 NULL（纯发送）
+ * @param len 传输长度（字节）
+ * @param wait_ms 等待完成超时（ms），0 表示永久等待
+ * @return RET_OK 或错误码
+ */
+ret_code_t hal_spi_transceive_sync(hal_spi_dev_t *dev, const void *tx, void *rx, uint32_t len,
+                                   uint32_t wait_ms) {
+    const hal_spi_xfer_t xfer = {
+        .tx         = tx,
+        .rx         = rx,
+        .len        = len,
+        .timeout_ms = wait_ms,
+        .flags      = HAL_SPI_XFER_NONE,
+    };
+    return spi_transceive_sync_common(dev, &xfer, wait_ms);
+}
+
+/**
+ * @brief 同步发送
+ * @param dev 设备句柄
+ * @param tx  发送缓存地址
+ * @param len 发送长度（字节）
+ * @param wait_ms 等待完成超时（ms），0 表示永久等待
+ * @return RET_OK 或错误码
+ */
+ret_code_t hal_spi_send_sync(hal_spi_dev_t *dev, const void *tx, uint32_t len, uint32_t wait_ms) {
+    REQUIRE_RET(tx != NULL, SPI_RC_PARAM(RET_R_NULL_PTR));
+    return hal_spi_transceive_sync(dev, tx, NULL, len, wait_ms);
+}
+
+/**
+ * @brief 同步接收
+ * @param dev 设备句柄
+ * @param rx  接收缓存地址
+ * @param len 接收长度（字节）
+ * @param wait_ms 等待完成超时（ms），0 表示永久等待
+ * @return RET_OK 或错误码
+ */
+ret_code_t hal_spi_recv_sync(hal_spi_dev_t *dev, void *rx, uint32_t len, uint32_t wait_ms) {
+    REQUIRE_RET(rx != NULL, SPI_RC_PARAM(RET_R_NULL_PTR));
+    return hal_spi_transceive_sync(dev, NULL, rx, len, wait_ms);
+}
+
+/**
+ * @brief 强制中止当前设备事务（普通异步/硬件流）
+ * @param dev 设备句柄
+ * @param disable_spi true: 中止后反初始化 SPI；false: 仅中止事务
+ * @return RET_OK 或错误码
+ */
+ret_code_t hal_spi_abort(hal_spi_dev_t *dev, bool disable_spi) {
+    REQUIRE_RET(dev != NULL, SPI_RC_PARAM(RET_R_NULL_PTR));
+    if (!dev->in_use || (dev->bus == NULL) || !dev->bus->initialized)
+        return SPI_RC_STATE(RET_R_NOT_READY);
+
+    hal_spi_bus_t *b = dev->bus;
+    ret_code_t rc    = bus_lock(b, OSAL_WAIT_FOREVER);
+    if (ret_is_err(rc)) return rc;
+
+    rc = spi_abort_guarded(dev, disable_spi);
+    bus_unlock(b);
+    return rc;
+}
+
 /**
  * @brief 开始硬件数据流
  * @param dev 设备句柄
