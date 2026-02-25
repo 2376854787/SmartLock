@@ -1,6 +1,7 @@
 #include "hal_uart.h"
 
 #include <stddef.h>
+#include <stdio.h>
 
 #include "APP_config.h"
 #include "assert_cus.h"
@@ -30,7 +31,7 @@ __attribute__((weak)) void hal_uart_on_port_error(ret_code_t rc_port, ret_code_t
 #else
     if (ret_is_err(rc_port) && !OSAL_in_isr()) {
 #endif
-        LOG_E("HAL_UART", "api:%s port:0x%08lX->hal:0x%08lX arg0:%lu arg1:%lu",
+        printf("HAL_UART  api:%s port:0x%08lX->hal:0x%08lX arg0:%lu arg1:%lu",
               (api != NULL) ? api : "unknown", (unsigned long)rc_port, (unsigned long)rc_hal,
               (unsigned long)arg0, (unsigned long)arg1);
     }
