@@ -122,6 +122,10 @@ typedef enum {
     HAL_SPI_EVT_STREAM_HALF = 3, /* stream.bytes: DMA 半满进度 */
     HAL_SPI_EVT_STREAM_FULL = 4, /* stream.bytes: DMA 全满进度 */
 } hal_spi_evt_type_t;
+/* eventbus 语义：
+ * - DONE/STREAM_*: payload_u32 = bytes
+ * - ERROR:         payload_u32 = ret_code_t
+ * - key: [31:24]bus_id [23:16]cs_type [15:0]cs_gpio_id(低16位) */
 
 /* SPI 事件载体 */
 typedef struct {
@@ -139,7 +143,9 @@ typedef struct {
     };
 } hal_spi_event_t;
 
-/* SPI 设备事件回调 */
+/* SPI 设备事件回调
+ * @note 当 CFG_PARAM_SPI_CB_IN_ISR=0 时，ISR 上下文不会直调该回调。
+ *       建议业务侧通过 eventbus 订阅 SPI 事件。 */
 typedef void (*hal_spi_evt_cb_t)(void *user, const hal_spi_event_t *evt);
 
 /* 数据传输载体 */
@@ -190,6 +196,7 @@ ret_code_t hal_spi_dev_detach(hal_spi_dev_t *dev);
  * @param cb   回调函数
  * @param user 用户上下文
  * @return RET_OK 或错误码
+ * @note SPI 事件默认会投递到 eventbus（CFG_PARAM_SPI_EVT_USE_EVENTBUS=1）。
  */
 ret_code_t hal_spi_dev_set_evt_cb(hal_spi_dev_t *dev, hal_spi_evt_cb_t cb, void *user);
 

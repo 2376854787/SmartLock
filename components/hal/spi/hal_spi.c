@@ -13,6 +13,10 @@
 #if defined(CFG_FEAT_LOG_SYSTEM) && (CFG_FEAT_LOG_SYSTEM == 1)
 #include "log.h"
 #endif
+#if defined(CFG_PARAM_SPI_EVT_USE_EVENTBUS) && (CFG_PARAM_SPI_EVT_USE_EVENTBUS == 1)
+#include "eb_api.h"
+#include "eb_event_id.h"
+#endif
 
 /* ---------- 参数/状态码 ---------- */
 #define SPI_RC_PARAM(reason_)   RET_MAKE_PARAM(RET_MOD_HAL, RET_SUB_HAL_SPI, (reason_))
@@ -67,6 +71,63 @@ struct hal_spi_dev {
 static struct hal_spi_bus s_buses[HAL_SPI_BUS_MAX];
 /* 设备资源 */
 static struct hal_spi_dev s_devs[HAL_SPI_DEV_MAX];
+
+#if defined(CFG_PARAM_SPI_EVT_USE_EVENTBUS) && (CFG_PARAM_SPI_EVT_USE_EVENTBUS == 1)
+/**
+ * @brief 将 SPI 设备上下文编码为 eventbus key
+ * @note key布局：[31:24]bus_id [23:16]cs_type [15:0]cs_gpio_id(低16位)
+ */
+static uint32_t spi_evt_make_key(const hal_spi_dev_t *d) {
+    if (!d || !d->bus) return 0u;
+    const uint32_t bus_id = (uint32_t)d->bus->cfg.bus_id & 0xFFu;
+    const uint32_t cs_t   = (uint32_t)d->cfg.cs_type & 0xFFu;
+    const uint32_t cs_id  = (uint32_t)d->cfg.cs_gpio_id & 0xFFFFu;
+    return (bus_id << 24) | (cs_t << 16) | cs_id;
+}
+
+/**
+ * @brief 将 HAL SPI 事件投递到 eventbus
+ * @param d   设备句柄
+ * @param evt 事件载体
+ * @note 投递失败不影响 SPI 事务主流程
+ */
+static void spi_publish_eventbus(const hal_spi_dev_t *d, const hal_spi_event_t *evt) {
+    if (!d || !d->bus || !evt) return;
+
+    uint32_t event_id = 0u;
+    uint32_t payload  = 0u;
+    switch (evt->type) {
+        case HAL_SPI_EVT_DONE:
+            event_id = EB_EVT_SPI_DONE;
+            payload  = evt->done.bytes;
+            break;
+        case HAL_SPI_EVT_ERROR:
+            event_id = EB_EVT_SPI_ERROR;
+            payload  = (uint32_t)evt->err.rc;
+            break;
+        case HAL_SPI_EVT_STREAM_HALF:
+            event_id = EB_EVT_SPI_STREAM_HALF;
+            payload  = evt->stream.bytes;
+            break;
+        case HAL_SPI_EVT_STREAM_FULL:
+            event_id = EB_EVT_SPI_STREAM_FULL;
+            payload  = evt->stream.bytes;
+            break;
+        default:
+            return;
+    }
+
+    const eb_event_t ev = {
+        .event_id    = event_id,
+        .prio        = 0, /* 由 eventdef 强制覆盖 */
+        .key         = spi_evt_make_key(d),
+        .payload_u32 = payload,
+        .source_id   = (uint16_t)d->bus->cfg.bus_id,
+        .type_tag    = 0u,
+    };
+    (void)eb_publish(&ev);
+}
+#endif
 
 /**
  * @brief 将 port 层错误码映射为 HAL SPI 统一错误码
@@ -205,7 +266,18 @@ static void bus_unlock(hal_spi_bus_t *b) {
  * @param evt 事件载体
  */
 static inline void emit_dev_evt(const hal_spi_dev_t *d, const hal_spi_event_t *evt) {
-    if (d && d->evt_cb) d->evt_cb(d->evt_user, evt);
+    if (!d || !evt) return;
+#if defined(CFG_PARAM_SPI_EVT_USE_EVENTBUS) && (CFG_PARAM_SPI_EVT_USE_EVENTBUS == 1)
+    spi_publish_eventbus(d, evt);
+#endif
+
+    if (d->evt_cb) {
+#if defined(CFG_PARAM_SPI_CB_IN_ISR) && (CFG_PARAM_SPI_CB_IN_ISR == 1)
+        d->evt_cb(d->evt_user, evt);
+#else
+        if (!OSAL_in_isr()) d->evt_cb(d->evt_user, evt);
+#endif
+    }
 }
 /**
  * @brief 片选线选中
@@ -245,6 +317,8 @@ static void cs_deassert(hal_spi_dev_t *d) {
 static void wait_spi_idle_before_cs_deassert(const hal_spi_dev_t *d) {
 #if defined(CFG_PARAM_SPI_CS_DEASSERT_WAIT_BSY) && (CFG_PARAM_SPI_CS_DEASSERT_WAIT_BSY == 1)
     if (!d || !d->cs_valid || !d->bus) return;
+    /* ISR 路径禁止自旋等待，避免放大中断时延 */
+    if (OSAL_in_isr()) return;
     const uint32_t spin = (uint32_t)CFG_PARAM_SPI_CS_DEASSERT_WAIT_BSY_SPIN_MAX;
     const ret_code_t rc = hal_spi_port_wait_idle(&d->bus->port, spin);
     if (ret_is_err(rc)) {

@@ -34,6 +34,9 @@
 /* HAL SPI 运行策略参数 */
 #define CFG_PARAM_SPI_LOG_PORT_ERR        1 /* port->HAL 映射错误是否记录日志 */
 #define CFG_PARAM_SPI_LOG_PORT_ERR_IN_ISR 0 /* 1: ISR中也打日志(谨慎) */
+/* SPI 事件分发策略 */
+#define CFG_PARAM_SPI_EVT_USE_EVENTBUS 1 /* 1: SPI完成事件投递到eventbus（推荐） */
+#define CFG_PARAM_SPI_CB_IN_ISR 0         /* 1: 允许在ISR直调用户回调（默认关闭） */
 /* HAL UART 运行策略参数 */
 #define CFG_PARAM_UART_LOG_PORT_ERR        1 /* port->HAL 映射错误是否记录日志 */
 #define CFG_PARAM_UART_LOG_PORT_ERR_IN_ISR 0 /* 1: ISR中也打日志(谨慎) */
