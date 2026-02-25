@@ -1,4 +1,13 @@
-﻿#include "APP_config.h"
+﻿/**
+ * @file osal_cmsis2.c
+ * @brief osal抽象实现代码
+ * @details 细节
+ * @author yan
+ * @version v1.0
+ * @date 2026年-2月-25日
+ * @copyright 版权
+ */
+#include "APP_config.h"
 #include "osal.h"
 #include "osal_config.h"
 
@@ -756,6 +765,3 @@ osal_flags_t OSAL_thread_flags_wait(osal_flags_t flags, osal_flags_wait_t mode,
     return (osal_flags_t)r;
 }
 #endif
-
-
-

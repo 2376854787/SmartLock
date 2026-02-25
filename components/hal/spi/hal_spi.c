@@ -1,3 +1,12 @@
+/**
+ * @file hal_spi.c
+ * @brief hal抽象层逻辑代码
+ * @details 细节
+ * @author yan
+ * @version v1.0
+ * @date 2026年-2月-25日
+ * @copyright 版权
+ */
 #include "APP_config.h"
 #if defined(CFG_FEAT_HAL_SPI) && (CFG_FEAT_HAL_SPI == 1)
 
@@ -13,7 +22,32 @@
 #if defined(CFG_FEAT_LOG_SYSTEM) && (CFG_FEAT_LOG_SYSTEM == 1)
 #include "log.h"
 #endif
-#if defined(CFG_PARAM_SPI_EVT_USE_EVENTBUS) && (CFG_PARAM_SPI_EVT_USE_EVENTBUS == 1)
+#ifndef CFG_PARAM_SPI_EVT_DISPATCH_EVENTBUS
+#define CFG_PARAM_SPI_EVT_DISPATCH_EVENTBUS 0
+#endif
+#ifndef CFG_PARAM_SPI_EVT_DISPATCH_QUEUE
+#define CFG_PARAM_SPI_EVT_DISPATCH_QUEUE 1
+#endif
+#ifndef CFG_PARAM_SPI_EVT_DISPATCH_TASK_NOTIFY
+#define CFG_PARAM_SPI_EVT_DISPATCH_TASK_NOTIFY 2
+#endif
+#ifndef CFG_PARAM_SPI_EVT_DISPATCH_MODE
+#define CFG_PARAM_SPI_EVT_DISPATCH_MODE CFG_PARAM_SPI_EVT_DISPATCH_EVENTBUS
+#endif
+#ifndef CFG_PARAM_SPI_EVT_NOTIFY_FLAG_DONE
+#define CFG_PARAM_SPI_EVT_NOTIFY_FLAG_DONE (1u << 0)
+#endif
+#ifndef CFG_PARAM_SPI_EVT_NOTIFY_FLAG_ERROR
+#define CFG_PARAM_SPI_EVT_NOTIFY_FLAG_ERROR (1u << 1)
+#endif
+#ifndef CFG_PARAM_SPI_EVT_NOTIFY_FLAG_STREAM_HALF
+#define CFG_PARAM_SPI_EVT_NOTIFY_FLAG_STREAM_HALF (1u << 2)
+#endif
+#ifndef CFG_PARAM_SPI_EVT_NOTIFY_FLAG_STREAM_FULL
+#define CFG_PARAM_SPI_EVT_NOTIFY_FLAG_STREAM_FULL (1u << 3)
+#endif
+
+#if (CFG_PARAM_SPI_EVT_DISPATCH_MODE == CFG_PARAM_SPI_EVT_DISPATCH_EVENTBUS)
 #include "eb_api.h"
 #include "eb_event_id.h"
 #endif
@@ -65,6 +99,7 @@ struct hal_spi_dev {
 
     hal_spi_evt_cb_t evt_cb; /* 异步事件回调 */
     void *evt_user;          /* 回调用户上下文 */
+    void *evt_target;        /* 事件分发目标（queue 或 thread） */
 };
 
 /* 总线资源 */
@@ -72,7 +107,7 @@ static struct hal_spi_bus s_buses[HAL_SPI_BUS_MAX];
 /* 设备资源 */
 static struct hal_spi_dev s_devs[HAL_SPI_DEV_MAX];
 
-#if defined(CFG_PARAM_SPI_EVT_USE_EVENTBUS) && (CFG_PARAM_SPI_EVT_USE_EVENTBUS == 1)
+#if (CFG_PARAM_SPI_EVT_DISPATCH_MODE == CFG_PARAM_SPI_EVT_DISPATCH_EVENTBUS)
 /**
  * @brief 将 SPI 设备上下文编码为 eventbus key
  * @note key布局：[31:24]bus_id [23:16]cs_type [15:0]cs_gpio_id(低16位)
@@ -261,14 +296,48 @@ static void bus_unlock(hal_spi_bus_t *b) {
     (void)OSAL_mutex_unlock(b->lock);
 }
 /**
+ * @brief 将 SPI 事件类型映射到 task-notify flags
+ * @param type SPI 事件类型
+ * @return flags 掩码；0 表示不通知
+ */
+#if (CFG_PARAM_SPI_EVT_DISPATCH_MODE == CFG_PARAM_SPI_EVT_DISPATCH_TASK_NOTIFY)
+static inline osal_flags_t spi_evt_to_notify_flags(hal_spi_evt_type_t type) {
+    switch (type) {
+        case HAL_SPI_EVT_DONE:
+            return (osal_flags_t)CFG_PARAM_SPI_EVT_NOTIFY_FLAG_DONE;
+        case HAL_SPI_EVT_ERROR:
+            return (osal_flags_t)CFG_PARAM_SPI_EVT_NOTIFY_FLAG_ERROR;
+        case HAL_SPI_EVT_STREAM_HALF:
+            return (osal_flags_t)CFG_PARAM_SPI_EVT_NOTIFY_FLAG_STREAM_HALF;
+        case HAL_SPI_EVT_STREAM_FULL:
+            return (osal_flags_t)CFG_PARAM_SPI_EVT_NOTIFY_FLAG_STREAM_FULL;
+        default:
+            return 0u;
+    }
+}
+#endif
+
+/**
  * @brief SPI 设备事件分发
  * @param d 设备句柄
  * @param evt 事件载体
  */
 static inline void emit_dev_evt(const hal_spi_dev_t *d, const hal_spi_event_t *evt) {
     if (!d || !evt) return;
-#if defined(CFG_PARAM_SPI_EVT_USE_EVENTBUS) && (CFG_PARAM_SPI_EVT_USE_EVENTBUS == 1)
+#if (CFG_PARAM_SPI_EVT_DISPATCH_MODE == CFG_PARAM_SPI_EVT_DISPATCH_EVENTBUS)
     spi_publish_eventbus(d, evt);
+#elif (CFG_PARAM_SPI_EVT_DISPATCH_MODE == CFG_PARAM_SPI_EVT_DISPATCH_QUEUE)
+    if (d->evt_target != NULL) {
+        hal_spi_event_t out_evt = *evt;
+        (void)OSAL_msgq_put((osal_msgq_t)d->evt_target, (void *)&out_evt, 0u);
+    }
+#elif (CFG_PARAM_SPI_EVT_DISPATCH_MODE == CFG_PARAM_SPI_EVT_DISPATCH_TASK_NOTIFY)
+    if (d->evt_target != NULL) {
+        const osal_flags_t flags = spi_evt_to_notify_flags(evt->type);
+        if (flags != 0u) {
+            (void)OSAL_thread_flags_set((osal_thread_t)d->evt_target, flags);
+        }
+    }
 #endif
 
     if (d->evt_cb) {
@@ -545,8 +614,8 @@ static void spi_sync_abort_wait(hal_spi_bus_t *b) {
 static void spi_sync_mark_done(hal_spi_bus_t *b, ret_code_t rc_hal, uint32_t bytes) {
     if (!b) return;
 
-    bool need_notify      = false;
-    osal_crit_state_t cs  = 0u;
+    bool need_notify     = false;
+    osal_crit_state_t cs = 0u;
     OSAL_enter_critical_ex(&cs);
     if (b->sync_waiting) {
         b->sync_waiting = 0u;
@@ -583,7 +652,8 @@ static ret_code_t spi_sync_wait_done(hal_spi_bus_t *b, uint32_t wait_ms, uint32_
             return spi_map_wait_rc_to_hal(sem_rc);
         }
     } else {
-        const uint32_t deadline_ms = (wait_eff == OSAL_WAIT_FOREVER) ? 0u : (hal_get_tick_ms() + wait_eff);
+        const uint32_t deadline_ms =
+            (wait_eff == OSAL_WAIT_FOREVER) ? 0u : (hal_get_tick_ms() + wait_eff);
         while (1) {
             bool done            = false;
             osal_crit_state_t cs = 0u;
@@ -592,7 +662,8 @@ static ret_code_t spi_sync_wait_done(hal_spi_bus_t *b, uint32_t wait_ms, uint32_
             OSAL_exit_critical_ex(cs);
             if (done) break;
 
-            if ((wait_eff != OSAL_WAIT_FOREVER) && HAL_TIME_AFTER_EQ(hal_get_tick_ms(), deadline_ms)) {
+            if ((wait_eff != OSAL_WAIT_FOREVER) &&
+                HAL_TIME_AFTER_EQ(hal_get_tick_ms(), deadline_ms)) {
                 spi_sync_abort_wait(b);
                 return SPI_RC_TIMEOUT(RET_R_TIMEOUT);
             }
@@ -603,15 +674,15 @@ static ret_code_t spi_sync_wait_done(hal_spi_bus_t *b, uint32_t wait_ms, uint32_
         }
     }
 
-    ret_code_t rc_hal      = SPI_RC_STATE(RET_R_STATE_ERR);
-    osal_crit_state_t cs   = 0u;
+    ret_code_t rc_hal    = SPI_RC_STATE(RET_R_STATE_ERR);
+    osal_crit_state_t cs = 0u;
     OSAL_enter_critical_ex(&cs);
     if (b->sync_done) {
         rc_hal = b->sync_rc;
         if (done_bytes) *done_bytes = b->sync_bytes;
         b->sync_waiting = 0u;
-        b->sync_done  = 0u;
-        b->sync_bytes = 0u;
+        b->sync_done    = 0u;
+        b->sync_bytes   = 0u;
     } else {
         b->sync_waiting = 0u;
         b->sync_done    = 0u;
@@ -844,6 +915,19 @@ ret_code_t hal_spi_dev_set_evt_cb(hal_spi_dev_t *dev, hal_spi_evt_cb_t cb, void 
     if (!dev->in_use) return SPI_RC_STATE(RET_R_NOT_READY);
     dev->evt_cb   = cb;
     dev->evt_user = user;
+    return RET_OK;
+}
+
+/**
+ * @brief 注册 SPI 事件分发目标句柄
+ * @param dev 设备句柄
+ * @param target 分发目标（queue 模式=msgq，task-notify 模式=thread）
+ * @return 32位状态码
+ */
+ret_code_t hal_spi_dev_set_evt_target(hal_spi_dev_t *dev, void *target) {
+    REQUIRE_RET(dev != NULL, SPI_RC_PARAM(RET_R_NULL_PTR));
+    if (!dev->in_use) return SPI_RC_STATE(RET_R_NOT_READY);
+    dev->evt_target = target;
     return RET_OK;
 }
 /**

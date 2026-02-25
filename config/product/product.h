@@ -34,9 +34,23 @@
 /* HAL SPI 运行策略参数 */
 #define CFG_PARAM_SPI_LOG_PORT_ERR        1 /* port->HAL 映射错误是否记录日志 */
 #define CFG_PARAM_SPI_LOG_PORT_ERR_IN_ISR 0 /* 1: ISR中也打日志(谨慎) */
-/* SPI 事件分发策略 */
-#define CFG_PARAM_SPI_EVT_USE_EVENTBUS 1 /* 1: SPI完成事件投递到eventbus（推荐） */
-#define CFG_PARAM_SPI_CB_IN_ISR 0         /* 1: 允许在ISR直调用户回调（默认关闭） */
+/* SPI 事件分发策略：
+ * EVENTBUS: 投递到 eventbus
+ * QUEUE:    投递 hal_spi_event_t 到 osal_msgq_t（target 由 hal_spi_dev_set_evt_target 注册）
+ * TASK_NOTIFY: 通知 osal_thread_t（target 由 hal_spi_dev_set_evt_target 注册）
+ */
+#define CFG_PARAM_SPI_EVT_DISPATCH_EVENTBUS     0
+#define CFG_PARAM_SPI_EVT_DISPATCH_QUEUE        1
+#define CFG_PARAM_SPI_EVT_DISPATCH_TASK_NOTIFY  2
+#define CFG_PARAM_SPI_EVT_DISPATCH_MODE CFG_PARAM_SPI_EVT_DISPATCH_EVENTBUS
+/* TASK_NOTIFY 模式下，不同事件类型映射到的 flags 位 */
+#define CFG_PARAM_SPI_EVT_NOTIFY_FLAG_DONE        (1u << 0)
+#define CFG_PARAM_SPI_EVT_NOTIFY_FLAG_ERROR       (1u << 1)
+#define CFG_PARAM_SPI_EVT_NOTIFY_FLAG_STREAM_HALF (1u << 2)
+#define CFG_PARAM_SPI_EVT_NOTIFY_FLAG_STREAM_FULL (1u << 3)
+
+
+#define CFG_PARAM_SPI_CB_IN_ISR 0 /* 1: 允许在ISR直调用户回调（默认关闭） */
 /* HAL UART 运行策略参数 */
 #define CFG_PARAM_UART_LOG_PORT_ERR        1 /* port->HAL 映射错误是否记录日志 */
 #define CFG_PARAM_UART_LOG_PORT_ERR_IN_ISR 0 /* 1: ISR中也打日志(谨慎) */

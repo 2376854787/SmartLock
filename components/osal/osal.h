@@ -1,6 +1,14 @@
 #ifndef SMARTLOCK_OSAL_H
 #define SMARTLOCK_OSAL_H
-
+/**
+ * @file osal.h
+ * @brief osal抽象头文档
+ * @details api句柄定义
+ * @author yan
+ * @version v1.0
+ * @date 2026年-2月-25日
+ * @copyright 版权
+ */
 #include <stdbool.h>
 #include <stdint.h>
 

@@ -1,4 +1,13 @@
-﻿#include "APP_config.h"
+﻿/**
+ * @file memory_pool1.c
+ * @brief 内存池实现代码
+ * @details 细节
+ * @author yan
+ * @version v1.0
+ * @date 2026年-2月-25日
+ * @copyright 版权
+ */
+#include "APP_config.h"
 #if (defined(CFG_FEAT_MEMORY_POOL) && (CFG_FEAT_MEMORY_POOL == 1))
 #include <stdbool.h>
 #include <string.h>
@@ -365,7 +374,8 @@ CORE_INLINE bool ptr_in_pool(const mp_pool1_t *p, const uint8_t *blk) {
  */
 ret_code_t mp_free(mp_pool1_t *p, void *payload_ptr) {
     ASSERT_PARAM((p != NULL) && (payload_ptr != NULL));
-    REQUIRE_RET((p != NULL) && (payload_ptr != NULL), RET_MEM_CODE(RET_CLASS_PARAM, RET_R_NULL_PTR));
+    REQUIRE_RET((p != NULL) && (payload_ptr != NULL),
+                RET_MEM_CODE(RET_CLASS_PARAM, RET_R_NULL_PTR));
     /* 上锁 */
     MP_ASSERT(p->lock.unlock && p->lock.handle && p->lock.lock);
     uint32_t flags = 0;
@@ -429,5 +439,3 @@ ret_code_t mp_check_pool(mp_pool1_t *p) {
     return RET_OK;
 }
 #endif
-
-
