@@ -61,6 +61,13 @@ static const eb_eventdef_t g_defs[] = {
 
     {EB_EVT_SPI_STREAM_FULL, EB_PLANE_CONTROL, EB_PRIO_M, EB_SEM_SNAPSHOT, EB_OVERWRITE, 0u,
      EB_STORM_NONE, 0u, 0u, 0u, 0u},
+
+    /* ── I2C ── */
+    {EB_EVT_I2C_DONE, EB_PLANE_CONTROL, EB_PRIO_M, EB_SEM_EDGE, EB_DROP_NEW, 0u, EB_STORM_NONE,
+     0u, 0u, 0u, 0u},
+
+    {EB_EVT_I2C_ERROR, EB_PLANE_CONTROL, EB_PRIO_H, EB_SEM_EDGE, EB_DROP_NEW, 0u, EB_STORM_NONE,
+     0u, 0u, 0u, 0u},
 };
 STATIC_ASSERT((sizeof(g_defs) / sizeof(g_defs[0])) <= (uint32_t)UINT16_MAX,
               "event definition count exceeds uint16_t");

@@ -20,4 +20,8 @@
 #define EB_EVT_SPI_ERROR       EB_EID(EB_MOD_SPI, 0x0002)  // Control, H, Edge
 #define EB_EVT_SPI_STREAM_HALF EB_EID(EB_MOD_SPI, 0x0003)  // Control, M, Snapshot
 #define EB_EVT_SPI_STREAM_FULL EB_EID(EB_MOD_SPI, 0x0004)  // Control, M, Snapshot
+
+/* I2C */
+#define EB_EVT_I2C_DONE  EB_EID(EB_MOD_I2C, 0x0001)  // Control, M, Edge
+#define EB_EVT_I2C_ERROR EB_EID(EB_MOD_I2C, 0x0002)  // Control, H, Edge
 #endif                                                       // SMARTLOCK_EB_EVENT_ID_H
