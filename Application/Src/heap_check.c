@@ -1,14 +1,13 @@
+#include "heap_check.h"
+
 #include <string.h>
 
-#include "FreeRTOS.h"
 #include "log.h"
 #include "osal.h"
 #include "watchdog_app.h"
 #include "wdg_supervisor.h"
-#include "heap_check.h"
 
-
-#define RES_MON_MAX_TASKS             24u
+#define RES_MON_MAX_TASKS 24u
 
 static uint32_t s_res_prev_total_runtime = 0u;
 static uint32_t s_res_prev_idle_runtime  = 0u;
@@ -42,7 +41,10 @@ void vHEAP_check_task(void* argument) {
         LOG_D("stack", "当前任务:%s 最低水位: %lu Bytes", osThreadGetName(heap_check_task_handle),
               (unsigned long)uxTaskGetStackHighWaterMark((TaskHandle_t)heap_check_task_handle) * 4);
 
-        /* 【关键修复】：动态获取 LVGL 渲染线程的句柄并打印 */
+        LOG_D("stack", "当前任务:%s 最低水位: %lu Bytes", osThreadGetName(eventBusTaskHandle),
+              (unsigned long)uxTaskGetStackHighWaterMark((TaskHandle_t)eventBusTaskHandle) * 4);
+
+        /* 动态获取 LVGL 渲染线程的句柄并打印 */
         if (lvgl_draw_task_handle == NULL) {
             /* 只在找不到的时候去查名字，查到了就缓存起来，节省 CPU 资源 */
             lvgl_draw_task_handle = xTaskGetHandle("swdraw");

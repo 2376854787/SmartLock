@@ -36,6 +36,7 @@
 #include "Light_Sensor_task.h"
 #include "bh1750.h"
 #include "crc16.h"
+#include "eb_api.h"
 #include "hal_time.h"
 #include "hal_uart_port_hooks.h"
 #include "heap_check.h"
@@ -89,6 +90,13 @@ const osThreadAttr_t lcdTask_attributes = {
     .stack_size = 1024 * 4,
     .priority   = (osPriority_t)osPriorityLow,
 };
+/* 事件总线任务 */
+osThreadId_t eventBusTaskHandle;
+const osThreadAttr_t eventBusTask_attributes = {
+    .name       = "eventBusTask",
+    .stack_size = 256 * 2,
+    .priority   = (osPriority_t)osPriorityAboveNormal,
+};
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
@@ -120,6 +128,7 @@ const osThreadAttr_t heap_check_task_attributes = {
 void StartDefaultTask(void* argument);
 void StartTask02(void* argument);
 void StartTask_LCD(void* argument);
+void StartTask_EventBus(void* argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -138,7 +147,7 @@ __weak void configureTimerForRunTimeStats(void) {
 }
 
 __weak unsigned long getRunTimeCounterValue(void) {
-    return (unsigned long)DWT->CYCCNT;
+    return hal_get_cycle32();
 }
 
 /* USER CODE END 1 */
@@ -196,6 +205,7 @@ void vApplicationMallocFailedHook(void) {
  */
 void MX_FREERTOS_Init(void) {
     /* USER CODE BEGIN Init */
+    eb_init();
 
     /* USER CODE END Init */
 
@@ -224,6 +234,9 @@ void MX_FREERTOS_Init(void) {
 
     /* creation of lcdTask */
     lcdTaskHandle          = osThreadNew(StartTask_LCD, NULL, &lcdTask_attributes);
+
+    /* creation of eventBusTask */
+    eventBusTaskHandle     = osThreadNew(StartTask_EventBus, NULL, &eventBusTask_attributes);
 
     /* USER CODE BEGIN RTOS_THREADS */
     /* add threads, ... */
@@ -426,13 +439,30 @@ void StartTask_LCD(void* argument) {
             last_report_tick = hal_get_tick_ms();
         }
         /* 每 500ms 更新右上角的 label资源显示 */
-        if ((hal_get_tick_ms() - last_res_tick) >= 500U) {
+        if ((hal_get_tick_ms() - last_res_tick) >= 1000U) {
             resource_mon_update_label(res_label);
             last_res_tick = hal_get_tick_ms();
         }
         osDelay(20);
     }
     /* USER CODE END StartTask_LCD */
+}
+
+/* USER CODE BEGIN Header_StartTask_EventBus */
+/**
+ * @brief Function implementing the eventBusTask thread.
+ * @param argument: Not used
+ * @retval None
+ */
+/* USER CODE END Header_StartTask_EventBus */
+void StartTask_EventBus(void* argument) {
+    /* USER CODE BEGIN StartTask_EventBus */
+    (void)argument;
+    for (;;) {
+        eb_pump_once();
+        osDelay(1);
+    }
+    /* USER CODE END StartTask_EventBus */
 }
 
 /* Private application code --------------------------------------------------*/
