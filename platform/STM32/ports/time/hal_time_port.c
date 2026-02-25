@@ -5,6 +5,7 @@
     (defined(CFG_FEAT_HAL_TIME) && (CFG_FEAT_HAL_TIME == 1))
 #include <stdbool.h>
 #include <stdint.h>
+
 #include "assert_cus.h"
 #include "barrier.h"
 #include "cmsis_os2.h"
@@ -13,11 +14,13 @@
 #include "stm32f4xx_hal.h"
 #include "utils_def.h"
 /* dwt初始化标志位 */
-static bool dwt_inited      = false;
+static bool dwt_inited                    = false;
 /* dwt 有效标志位 */
-static bool dwt_available   = false;
+static bool dwt_available                 = false;
 /* 只打印一次失败信息 */
-static bool dwt_fail_logged = false;
+static bool dwt_fail_logged               = false;
+/* dwt 初始化期间的递归检测守卫 */
+static volatile bool dwt_init_in_progress = false;
 /* 当前主频下每 us的计数器数 */
 static uint32_t cycles_per_us;
 /* 运行时间重新校准与单调时间状态 */
@@ -28,19 +31,56 @@ static uint32_t dwt_cycle_rem   = 0u; /* 周期换算余数减少截断误差 */
 /**
  * 初始化 DWT寄存器
  */
-void dwt_init_once(void) {
-    // DWT初始化
-    BIT_SET(CoreDebug->DEMCR, 24);  // 使能DWT外设
-    DWT->CYCCNT = 0;
-    BIT_SET(DWT->CTRL, 0);
+void hal_time_init(void) {
+    /* 判断系统主频是否正常 */
+    if (CORE_UNLIKELY(SystemCoreClock == 0U)) return;
+    /* 避免递归进入 */
+    if (CORE_UNLIKELY(dwt_init_in_progress)) return;
+    /* 已初始化直接返回 */
+    if (CORE_LIKELY(dwt_inited)) return;
+
+    /* 用裸 PRIMASK 保护一次性初始化
+     * 注意：不能用 OSAL_enter_critical_ex()，因为它内部可能调用
+     * OSAL_CritMon_Enter() -> hal_get_tick_us32()，会导致递归
+     */
+    const uint32_t primask = __get_PRIMASK();
+    __disable_irq();
     mem_barrier();
-    inst_barrier();
-    cycles_per_us = SystemCoreClock / 1000000U;
-    if (cycles_per_us == 0u) cycles_per_us = 1u;
-    dwt_last_sysclk = SystemCoreClock;
-    dwt_last_cyccnt = DWT->CYCCNT;
-    dwt_us_accum    = 0u;
-    dwt_cycle_rem   = 0u;
+    if (dwt_inited == false) {
+        dwt_init_in_progress = true; /* 设置守卫：防止递归 */
+        // DWT初始化
+        BIT_SET(CoreDebug->DEMCR, 24);  // 使能DWT外设
+        DWT->CYCCNT = 0;
+        BIT_SET(DWT->CTRL, 0);
+        mem_barrier();
+        inst_barrier();
+
+        cycles_per_us = SystemCoreClock / 1000000U;
+        if (cycles_per_us == 0u) cycles_per_us = 1u;
+        dwt_last_sysclk = SystemCoreClock;
+        dwt_last_cyccnt = DWT->CYCCNT;
+        dwt_us_accum    = 0u;
+        dwt_cycle_rem   = 0u;
+
+        uint32_t c1     = DWT->CYCCNT;
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        uint32_t c2          = DWT->CYCCNT;
+        /* 判断DWT 是否运行成功 */
+        dwt_available        = (c2 != c1);
+
+        dwt_inited           = true;
+        dwt_init_in_progress = false; /* 清除守卫 */
+        mem_barrier();                /* 写入 flags 后的可见性/顺序 */
+    }
+    mem_barrier();
+    __set_PRIMASK(primask);
 }
 
 /**
@@ -50,9 +90,6 @@ void dwt_init_once(void) {
 uint32_t hal_get_tick_ms(void) {
     return HAL_GetTick();
 }
-
-/* dwt 初始化期间的递归检测守卫 */
-static volatile bool dwt_init_in_progress = false;
 
 /**
  * @brief 判断系统主频是否变化 然后更新全局参数
@@ -84,57 +121,14 @@ static void dwt_recalibrate_if_needed(void) {
  * @return 返回当前以 us 为单位的时间
  */
 uint32_t hal_get_tick_us32(void) {
-    /* 递归检测：如果正在初始化中被再次调用，直接返回降级值 */
-    if (CORE_UNLIKELY(dwt_init_in_progress)) {
-        return hal_get_tick_ms() * 1000U;
-    }
-
     /* 判断系统主频是否正常 */
     if (CORE_UNLIKELY(SystemCoreClock == 0U)) {
         return hal_get_tick_ms() * 1000U;
     }
 
-    /* ISR 不做初始化，避免拉长中断 */
+    /* 降级 */
     if (CORE_UNLIKELY(!dwt_inited)) {
-        if (OSAL_in_isr()) {
-            return hal_get_tick_ms() * 1000U;
-        }
-
-        /* 用裸 PRIMASK 保护一次性初始化
-         * 注意：不能用 OSAL_enter_critical_ex()，因为它内部调用
-         * OSAL_CritMon_Enter() -> hal_get_tick_us32()，会导致无限递归
-         */
-        const uint32_t primask = __get_PRIMASK();
-        __disable_irq();
-        mem_barrier();
-        /* 没有初始化 DWT 初始化 */
-        if (dwt_inited == false) {
-            dwt_init_in_progress = true; /* 设置守卫：防止递归 */
-            dwt_init_once();
-
-            uint32_t c1 = DWT->CYCCNT;
-            __NOP();
-            __NOP();
-            __NOP();
-            __NOP();
-            __NOP();
-            __NOP();
-            __NOP();
-            __NOP();
-            uint32_t c2 = DWT->CYCCNT;
-            /* 判断DWT 是否运行成功 */
-            if (c2 != c1) {
-                dwt_available = true;
-            } else {
-                dwt_available = false;
-            }
-
-            dwt_inited           = true;
-            dwt_init_in_progress = false; /* 清除守卫 */
-            mem_barrier();                /* 写入 flags 后的可见性/顺序 */
-        }
-        mem_barrier();
-        __set_PRIMASK(primask);
+        return hal_get_tick_ms() * 1000U;
     }
     /* 运行失败退化为 hal _get_tick_ms() *1000 */
     if (CORE_UNLIKELY(dwt_available == false)) {
@@ -196,8 +190,14 @@ void hal_time_delay_ms(uint32_t ms) {
  * @param us
  */
 void hal_time_delay_us(uint32_t us) {
-    if (CORE_UNLIKELY(!dwt_available)) {
-        hal_get_tick_us32();
+    /* 初始化语义移交给 hal_time_init()/dwt_init_once()，这里不再做隐式初始化 */
+    if (CORE_UNLIKELY(!dwt_inited)) {
+        // 粗略降级：1us 约等于 SystemCoreClock/3000000 次空循环 (针对 F4)
+        volatile uint32_t count = us * (SystemCoreClock / 3000000U);
+        while (count--) {
+            __NOP();
+        }
+        return;
     }
     /* 降级逻辑：如果 DWT 确实不可用 */
     if (CORE_UNLIKELY(!dwt_available)) {
@@ -263,6 +263,13 @@ uint32_t hal_cycles_to_us(uint32_t cyc) {
 }
 #else
 #include <stdint.h>
+
+void hal_time_init(void) {
+}
+
+void dwt_init_once(void) {
+    hal_time_init();
+}
 
 uint32_t hal_get_tick_ms(void) {
     return 0U;

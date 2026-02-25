@@ -134,7 +134,7 @@ void vApplicationMallocFailedHook(void);
 /* USER CODE BEGIN 1 */
 /* Functions needed when configGENERATE_RUN_TIME_STATS is on */
 __weak void configureTimerForRunTimeStats(void) {
-    dwt_init_once();
+    hal_time_init();
 }
 
 __weak unsigned long getRunTimeCounterValue(void) {

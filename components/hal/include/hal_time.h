@@ -55,7 +55,9 @@ uint32_t hal_get_cycles_per_us(void);
  */
 uint32_t hal_cycles_to_us(uint32_t cyc);
 /**
- * @brief 初始化DWT用作高精度时钟
+ * @brief 初始化 time 抽象（一般为DWT高精度时钟） 底层保证只会初始化一次
+ * @note 要求在 SystemClock_Config() 之后、首次调用 hal_get_tick_us32() 之前执行一次
  */
-void dwt_init_once(void);
+void hal_time_init(void);
+
 #endif  // HAL_TIME_H

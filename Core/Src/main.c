@@ -180,7 +180,7 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-    dwt_init_once();
+    hal_time_init();
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
