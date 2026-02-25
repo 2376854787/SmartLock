@@ -55,7 +55,7 @@ void esp01s_Init(void) {
     } else {
         LOG_E("ESP01S", "%s  响应失败\n", "AT");
     }
-
+    OSAL_delay_ms(ESP01S_CMD_TIMEOUT_MS);
     /* 网络联通测试 */
     if (esp01s_ping_ok()) {
         LOG_E("ESP01S", "网络联通测试成功");
