@@ -1,15 +1,14 @@
 ﻿#include "APP_config.h"
 #include "stm32_hal_config.h"
 /* hal抽象选择宏 */
-#if (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1)) && (defined(CFG_FEAT_HAL_TIME) && (CFG_FEAT_HAL_TIME == 1))
+#if (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1)) && \
+    (defined(CFG_FEAT_HAL_TIME) && (CFG_FEAT_HAL_TIME == 1))
 #include <stdbool.h>
 #include <stdint.h>
-
+#include "assert_cus.h"
 #include "barrier.h"
 #include "cmsis_os2.h"
-#include "log.h"
 #include "osal.h"
-#include "assert_cus.h"
 #include "stm32f4xx.h"
 #include "stm32f4xx_hal.h"
 #include "utils_def.h"
@@ -172,8 +171,7 @@ uint32_t hal_get_tick_us32(void) {
     return dwt_us_accum;
 }
 /**
- * @brief ms级延时
- * @param ms 需要延时的时间
+ * @brief us级延时
  * @note CMSISv2 实现下为将 ms 转换为ticks后调用osDelay 的非阻塞延时
  *       裸机为 HAL_Delay 阻塞延时
  */
@@ -181,7 +179,10 @@ uint64_t hal_get_tick_us64(void) {
     (void)hal_get_tick_us32();
     return dwt_us_accum;
 }
-
+/**
+ * @brief 启用 CFG_FEAT_OSAL_BACKEND_CMSIS_OS2=1 启用非阻塞延时 否则为阻塞延时
+ * @param ms 延时的ms数
+ */
 void hal_time_delay_ms(uint32_t ms) {
 #if (defined(CFG_FEAT_OSAL_BACKEND_CMSIS_OS2) && (CFG_FEAT_OSAL_BACKEND_CMSIS_OS2 == 1))
     OSAL_delay_ms(ms);
@@ -284,5 +285,3 @@ void hal_time_delay_us(uint32_t us) {
 }
 
 #endif
-
-

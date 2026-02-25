@@ -4,12 +4,15 @@
 #include <limits.h>
 #include <string.h>
 
+#include "assert_cus.h"
 #include "hal_gpio.h"
 #include "hal_spi.h"
 #include "hal_spi_port.h"
 #include "hal_time.h"
 #include "osal.h"
-#include "assert_cus.h"
+#if defined(CFG_FEAT_LOG_SYSTEM) && (CFG_FEAT_LOG_SYSTEM == 1)
+#include "log.h"
+#endif
 
 /* ---------- 参数/状态码 ---------- */
 #define SPI_RC_PARAM(reason_)   RET_MAKE_PARAM(RET_MOD_HAL, RET_SUB_HAL_SPI, (reason_))
@@ -21,9 +24,11 @@
 #ifndef HAL_SPI_DEV_MAX
 #define HAL_SPI_DEV_MAX 16u
 #endif
+
 #ifndef CFG_PARAM_SPI_CS_DEASSERT_WAIT_BSY
 #define CFG_PARAM_SPI_CS_DEASSERT_WAIT_BSY 1
 #endif
+
 #ifndef CFG_PARAM_SPI_CS_DEASSERT_WAIT_BSY_SPIN_MAX
 #define CFG_PARAM_SPI_CS_DEASSERT_WAIT_BSY_SPIN_MAX 100000u
 #endif
@@ -61,30 +66,62 @@ static struct hal_spi_dev s_devs[HAL_SPI_DEV_MAX];
  * @param rc_port port 层返回值
  * @return HAL 层语义错误码
  */
-static inline ret_code_t spi_map_port_to_hal(ret_code_t rc_port) {
+__attribute__((weak)) void hal_spi_on_port_error(ret_code_t rc_port, ret_code_t rc_hal,
+                                                 const char *api, uint32_t arg0, uint32_t arg1) {
+#if defined(CFG_FEAT_LOG_SYSTEM) && (CFG_FEAT_LOG_SYSTEM == 1) && \
+    defined(CFG_PARAM_SPI_LOG_PORT_ERR) && (CFG_PARAM_SPI_LOG_PORT_ERR == 1)
+#if defined(CFG_PARAM_SPI_LOG_PORT_ERR_IN_ISR) && (CFG_PARAM_SPI_LOG_PORT_ERR_IN_ISR == 1)
+    if (ret_is_err(rc_port)) {
+#else
+    if (ret_is_err(rc_port) && !OSAL_in_isr()) {
+#endif
+        LOG_E("HAL_SPI", "api:%s port:0x%08lX->hal:0x%08lX cls:%u reason:%u arg0:%lu arg1:%lu",
+              (api != NULL) ? api : "unknown", (unsigned long)rc_port, (unsigned long)rc_hal,
+              (unsigned)RET_CLASS(rc_port), (unsigned)RET_REASON(rc_port), (unsigned long)arg0,
+              (unsigned long)arg1);
+    }
+#else
+    (void)rc_port;
+    (void)rc_hal;
+    (void)api;
+    (void)arg0;
+    (void)arg1;
+#endif
+}
+
+static inline ret_code_t spi_map_port_to_hal(ret_code_t rc_port, const char *api, uint32_t arg0,
+                                             uint32_t arg1) {
     if (ret_is_ok(rc_port)) return RET_OK;
 
+    ret_code_t rc_hal = SPI_RC_IO(RET_R_IO);
+
     if (ret_is_class(rc_port, RET_CLASS_PARAM)) {
-        if (ret_is_reason(rc_port, RET_R_NULL_PTR)) return SPI_RC_PARAM(RET_R_NULL_PTR);
-        if (ret_is_reason(rc_port, RET_R_RANGE_ERR)) return SPI_RC_PARAM(RET_R_RANGE_ERR);
-        if (ret_is_reason(rc_port, RET_R_UNSUPPORTED)) return SPI_RC_PARAM(RET_R_UNSUPPORTED);
-        return SPI_RC_PARAM(RET_R_INVALID_ARG);
+        if (ret_is_reason(rc_port, RET_R_NULL_PTR))
+            rc_hal = SPI_RC_PARAM(RET_R_NULL_PTR);
+        else if (ret_is_reason(rc_port, RET_R_RANGE_ERR))
+            rc_hal = SPI_RC_PARAM(RET_R_RANGE_ERR);
+        else if (ret_is_reason(rc_port, RET_R_UNSUPPORTED))
+            rc_hal = SPI_RC_PARAM(RET_R_UNSUPPORTED);
+        else
+            rc_hal = SPI_RC_PARAM(RET_R_INVALID_ARG);
+    } else if (ret_is_class(rc_port, RET_CLASS_TIMEOUT)) {
+        rc_hal = SPI_RC_TIMEOUT(RET_R_TIMEOUT);
+    } else if (ret_is_class(rc_port, RET_CLASS_RESOURCE)) {
+        if (ret_is_reason(rc_port, RET_R_NO_MEM))
+            rc_hal = SPI_RC_RES(RET_R_NO_MEM);
+        else
+            rc_hal = SPI_RC_RES(RET_R_NO_RESOURCE);
+    } else if (ret_is_class(rc_port, RET_CLASS_STATE)) {
+        if (ret_is_reason(rc_port, RET_R_BUSY))
+            rc_hal = SPI_RC_STATE(RET_R_BUSY);
+        else if (ret_is_reason(rc_port, RET_R_NOT_READY))
+            rc_hal = SPI_RC_STATE(RET_R_NOT_READY);
+        else
+            rc_hal = SPI_RC_STATE(RET_R_STATE_ERR);
     }
 
-    if (ret_is_class(rc_port, RET_CLASS_TIMEOUT)) return SPI_RC_TIMEOUT(RET_R_TIMEOUT);
-
-    if (ret_is_class(rc_port, RET_CLASS_RESOURCE)) {
-        if (ret_is_reason(rc_port, RET_R_NO_MEM)) return SPI_RC_RES(RET_R_NO_MEM);
-        return SPI_RC_RES(RET_R_NO_RESOURCE);
-    }
-
-    if (ret_is_class(rc_port, RET_CLASS_STATE)) {
-        if (ret_is_reason(rc_port, RET_R_BUSY)) return SPI_RC_STATE(RET_R_BUSY);
-        if (ret_is_reason(rc_port, RET_R_NOT_READY)) return SPI_RC_STATE(RET_R_NOT_READY);
-        return SPI_RC_STATE(RET_R_STATE_ERR);
-    }
-
-    return SPI_RC_IO(RET_R_IO);
+    hal_spi_on_port_error(rc_port, rc_hal, api, arg0, arg1);
+    return rc_hal;
 }
 
 /**
@@ -233,8 +270,9 @@ static ret_code_t cfg_check_dev(const hal_spi_dev_cfg_t *cfg) {
     /* 模式合法检查 */
     REQUIRE_RET(cfg->mode <= HAL_SPI_MODE3, SPI_RC_PARAM(RET_R_INVALID_ARG));
     /* 大小端合法检查 */
-    REQUIRE_RET((cfg->bit_order == HAL_SPI_BITORDER_MSB) || (cfg->bit_order == HAL_SPI_BITORDER_LSB),
-                SPI_RC_PARAM(RET_R_INVALID_ARG));
+    REQUIRE_RET(
+        (cfg->bit_order == HAL_SPI_BITORDER_MSB) || (cfg->bit_order == HAL_SPI_BITORDER_LSB),
+        SPI_RC_PARAM(RET_R_INVALID_ARG));
     /* 最大速率 大于0 */
     REQUIRE_RET(cfg->max_hz != 0u, SPI_RC_PARAM(RET_R_RANGE_ERR));
     /* 位宽合法检查 */
@@ -272,12 +310,10 @@ static ret_code_t validate_api_xfer_common(const hal_spi_dev_t *dev, const hal_s
     REQUIRE_RET((xfer->tx != NULL) || (xfer->rx != NULL), SPI_RC_PARAM(RET_R_INVALID_ARG));
     /* 硬件流api调用必查看是不是 end事务*/
     if (hw_stream_api) {
-        REQUIRE_RET((xfer->flags & HAL_SPI_XFER_STREAM_END) == 0u,
-                    SPI_RC_PARAM(RET_R_INVALID_ARG));
+        REQUIRE_RET((xfer->flags & HAL_SPI_XFER_STREAM_END) == 0u, SPI_RC_PARAM(RET_R_INVALID_ARG));
     } else {
         /* 非硬件api 就不能有硬件流事务*/
-        REQUIRE_RET((xfer->flags & HAL_SPI_XFER_HW_STREAM) == 0u,
-                    SPI_RC_PARAM(RET_R_UNSUPPORTED));
+        REQUIRE_RET((xfer->flags & HAL_SPI_XFER_HW_STREAM) == 0u, SPI_RC_PARAM(RET_R_UNSUPPORTED));
         /* 非硬件流 且是流结束事务 && 不是软件流 返回错误 */
         if ((xfer->flags & HAL_SPI_XFER_STREAM_END) && !(xfer->flags & HAL_SPI_XFER_STREAM))
             return SPI_RC_PARAM(RET_R_INVALID_ARG);
@@ -388,7 +424,7 @@ static void spi_port_evt_cb(void *user, const hal_spi_port_evt_t *evt) {
         hevt.done.bytes = bytes;
     } else {
         hevt.type   = HAL_SPI_EVT_ERROR;
-        hevt.err.rc = spi_map_port_to_hal(rc_port);
+        hevt.err.rc = spi_map_port_to_hal(rc_port, "spi_port_evt_cb", (uint32_t)evt->type, bytes);
     }
     /* 上报事件 给用户回调函数 */
     emit_dev_evt(dev, &hevt);
@@ -424,14 +460,14 @@ ret_code_t hal_spi_bus_open(const hal_spi_bus_cfg_t *cfg, hal_spi_bus_t **out_bu
     rc             = hal_spi_port_open(cfg, &b->port);
     if (ret_is_err(rc)) {
         b->initialized = false;
-        return spi_map_port_to_hal(rc);
+        return spi_map_port_to_hal(rc, "hal_spi_port_open", cfg->bus_id, cfg->default_hz);
     }
     /* 注册 port 异步完成回调 */
     rc = hal_spi_port_set_evt_cb(&b->port, spi_port_evt_cb, b);
     if (ret_is_err(rc)) {
         (void)hal_spi_port_close(&b->port);
         b->initialized = false;
-        return spi_map_port_to_hal(rc);
+        return spi_map_port_to_hal(rc, "hal_spi_port_set_evt_cb", cfg->bus_id, 0u);
     }
 
     /* RTOS 环境下创建互斥锁 */
@@ -459,7 +495,7 @@ ret_code_t hal_spi_bus_close(hal_spi_bus_t *bus) {
 
     /* 释放资源 SPI句柄、DMA、*/
     const ret_code_t rc = hal_spi_port_close(&bus->port);
-    if (ret_is_err(rc)) return spi_map_port_to_hal(rc);
+    if (ret_is_err(rc)) return spi_map_port_to_hal(rc, "hal_spi_port_close", bus->cfg.bus_id, 0u);
 
     /* 有互斥锁就删除掉 */
     if (bus->lock_valid) {
@@ -577,7 +613,7 @@ static ret_code_t spi_xfer_guarded(hal_spi_dev_t *d, const hal_spi_xfer_t *x) {
     rc = hal_spi_port_apply(&b->port, &d->cfg, b->cfg.default_hz);
     if (ret_is_err(rc)) {
         bus_release_active_xfer(b);
-        return spi_map_port_to_hal(rc);
+        return spi_map_port_to_hal(rc, "hal_spi_port_apply", b->cfg.bus_id, x->len);
     }
 
     /* CS 选中 */
@@ -589,7 +625,7 @@ static ret_code_t spi_xfer_guarded(hal_spi_dev_t *d, const hal_spi_xfer_t *x) {
         if (!no_cs) cs_deassert(d);
         /* 发起失败时回滚活跃状态 */
         bus_release_active_xfer(b);
-        return spi_map_port_to_hal(rc);
+        return spi_map_port_to_hal(rc, "hal_spi_port_xfer", b->cfg.bus_id, x->len);
     }
     return RET_OK;
 }
@@ -614,7 +650,7 @@ static ret_code_t spi_stream_start_guarded(hal_spi_dev_t *d, const hal_spi_xfer_
     if (ret_is_err(rc)) {
         /* 释放事务 */
         bus_release_active_xfer(b);
-        return spi_map_port_to_hal(rc);
+        return spi_map_port_to_hal(rc, "hal_spi_port_apply", b->cfg.bus_id, x->len);
     }
     /* 没有no_cs 事务就选中cs */
     const bool no_cs = (flags & HAL_SPI_XFER_NO_CS) != 0u;
@@ -624,7 +660,7 @@ static ret_code_t spi_stream_start_guarded(hal_spi_dev_t *d, const hal_spi_xfer_
     if (ret_is_err(rc)) {
         if (!no_cs) cs_deassert(d);
         bus_release_active_xfer(b);
-        return spi_map_port_to_hal(rc);
+        return spi_map_port_to_hal(rc, "hal_spi_port_stream_start", b->cfg.bus_id, x->len);
     }
     return RET_OK;
 }
@@ -643,7 +679,9 @@ static ret_code_t spi_stream_stop_guarded(hal_spi_dev_t *d, bool disable_spi) {
     if ((b->active_flags & HAL_SPI_XFER_HW_STREAM) == 0u) return SPI_RC_STATE(RET_R_NOT_READY);
     /* 调用port 函数 */
     const ret_code_t rc = hal_spi_port_stream_stop(&b->port, disable_spi);
-    if (ret_is_err(rc)) return spi_map_port_to_hal(rc);
+    if (ret_is_err(rc))
+        return spi_map_port_to_hal(rc, "hal_spi_port_stream_stop", b->cfg.bus_id,
+                                   disable_spi ? 1u : 0u);
     /* 根据事务 决定是否取消 选中 cs线 */
     const bool no_cs = (b->active_flags & HAL_SPI_XFER_NO_CS) != 0u;
     if (!no_cs) cs_deassert(d);

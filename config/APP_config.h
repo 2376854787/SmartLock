@@ -73,6 +73,12 @@
 #if ((CFG_FEAT_OSAL_CRITICAL_FREERTOS != 0) && (CFG_FEAT_OSAL_CRITICAL_FREERTOS != 1))
 #error "CFG_FEAT_OSAL_CRITICAL_FREERTOS 必须为 0 或 1。"
 #endif
+#if ((CFG_PARAM_SPI_LOG_PORT_ERR != 0) && (CFG_PARAM_SPI_LOG_PORT_ERR != 1))
+#error "CFG_PARAM_SPI_LOG_PORT_ERR 必须为 0 或 1。"
+#endif
+#if ((CFG_PARAM_SPI_LOG_PORT_ERR_IN_ISR != 0) && (CFG_PARAM_SPI_LOG_PORT_ERR_IN_ISR != 1))
+#error "CFG_PARAM_SPI_LOG_PORT_ERR_IN_ISR 必须为 0 或 1。"
+#endif
 
 /* 依赖关系检查 */
 #if (defined(CFG_FEAT_SOFT_I2C) && (CFG_FEAT_SOFT_I2C == 1)) && \

@@ -134,9 +134,7 @@ void vApplicationMallocFailedHook(void);
 /* USER CODE BEGIN 1 */
 /* Functions needed when configGENERATE_RUN_TIME_STATS is on */
 __weak void configureTimerForRunTimeStats(void) {
-    /* Keep CYCCNT monotonic: only enable, do not reset counter. */
-    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
-    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+    dwt_init_once();
 }
 
 __weak unsigned long getRunTimeCounterValue(void) {
