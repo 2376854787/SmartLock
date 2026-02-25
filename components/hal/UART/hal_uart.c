@@ -11,6 +11,7 @@
 #include "log.h"
 #endif
 
+/* ---------- HAL UART 统一错误码构造 ---------- */
 #define UART_HAL_PARAM(reason_)   RET_MAKE_PARAM(RET_MOD_HAL, RET_SUB_HAL_UART, (reason_))
 #define UART_HAL_STATE(reason_)   RET_MAKE_STATE(RET_MOD_HAL, RET_SUB_HAL_UART, (reason_))
 #define UART_HAL_TIMEOUT(reason_) RET_MAKE_TIMEOUT(RET_MOD_HAL, RET_SUB_HAL_UART, (reason_))
@@ -21,6 +22,15 @@
 
 #if (defined(CFG_FEAT_HAL_UART) && (CFG_FEAT_HAL_UART == 1))
 
+/**
+ * @brief port 层错误上报钩子（默认弱实现，可在外部重写）
+ * @param rc_port port 层原始错误码
+ * @param rc_hal  映射后的 HAL 错误码
+ * @param api     触发错误的 HAL API 名称
+ * @param arg0    辅助参数0（调用点上下文）
+ * @param arg1    辅助参数1（调用点上下文）
+ * @note 是否在 ISR 中打印由 CFG_PARAM_UART_LOG_PORT_ERR_IN_ISR 决定
+ */
 __attribute__((weak)) void hal_uart_on_port_error(ret_code_t rc_port, ret_code_t rc_hal,
                                                   const char* api, uint32_t arg0,
                                                   uint32_t arg1) {
@@ -44,6 +54,14 @@ __attribute__((weak)) void hal_uart_on_port_error(ret_code_t rc_port, ret_code_t
 #endif
 }
 
+/**
+ * @brief 将 port 层错误码映射为 HAL UART 统一错误码
+ * @param rc_port port 层返回值
+ * @param api     触发映射的 HAL API 名称
+ * @param arg0    辅助参数0（用于日志定位）
+ * @param arg1    辅助参数1（用于日志定位）
+ * @return 映射后的 HAL 错误码；当 rc_port 为成功时返回 RET_OK
+ */
 static inline ret_code_t uart_map_port_to_hal(ret_code_t rc_port, const char* api, uint32_t arg0,
                                               uint32_t arg1) {
     if (ret_is_ok(rc_port)) return RET_OK;
@@ -94,6 +112,13 @@ static inline ret_code_t uart_map_port_to_hal(ret_code_t rc_port, const char* ap
     return rc_hal;
 }
 
+/**
+ * @brief 打开 UART 句柄并完成板级资源绑定
+ * @param id   板级 UART 编号
+ * @param cfg  UART 配置
+ * @param out  返回 UART 句柄
+ * @return RET_OK 或统一错误码
+ */
 ret_code_t hal_uart_open(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_uart_t** out) {
     ASSERT_PARAM((cfg != NULL) && (out != NULL));
     REQUIRE_RET((cfg != NULL) && (out != NULL), UART_HAL_PARAM(RET_R_INVALID_ARG));
@@ -106,6 +131,11 @@ ret_code_t hal_uart_open(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_uart_t
     return RET_OK;
 }
 
+/**
+ * @brief 关闭 UART 句柄并释放对应资源
+ * @param h UART 句柄
+ * @return RET_OK 或统一错误码
+ */
 ret_code_t hal_uart_close(hal_uart_t* h) {
     ASSERT_PARAM(h != NULL);
     REQUIRE_RET(h != NULL, UART_HAL_PARAM(RET_R_INVALID_ARG));
@@ -116,6 +146,11 @@ ret_code_t hal_uart_close(hal_uart_t* h) {
     return RET_OK;
 }
 
+/**
+ * @brief 启动 UART 接收路径（通常为 DMA/中断接收）
+ * @param h UART 句柄
+ * @return RET_OK 或统一错误码
+ */
 ret_code_t hal_uart_rx_start(hal_uart_t* h) {
     ASSERT_PARAM(h != NULL);
     REQUIRE_RET(h != NULL, UART_HAL_PARAM(RET_R_INVALID_ARG));
@@ -126,6 +161,13 @@ ret_code_t hal_uart_rx_start(hal_uart_t* h) {
     return RET_OK;
 }
 
+/**
+ * @brief 异步发送数据
+ * @param h   UART 句柄
+ * @param buf 发送缓存地址
+ * @param len 发送长度（字节）
+ * @return RET_OK 或统一错误码
+ */
 ret_code_t hal_uart_send_async(hal_uart_t* h, const uint8_t* buf, uint32_t len) {
     ASSERT_PARAM((h != NULL) && (buf != NULL) && (len != 0u));
     REQUIRE_RET((h != NULL) && (buf != NULL) && (len != 0u), UART_HAL_PARAM(RET_R_INVALID_ARG));
@@ -137,6 +179,14 @@ ret_code_t hal_uart_send_async(hal_uart_t* h, const uint8_t* buf, uint32_t len) 
     return RET_OK;
 }
 
+/**
+ * @brief 从接收缓冲区拷贝读取数据
+ * @param h     UART 句柄
+ * @param out   输出缓冲区
+ * @param want  期望读取字节数
+ * @param nread 实际读取字节数
+ * @return RET_OK 或统一错误码
+ */
 ret_code_t hal_uart_read(hal_uart_t* h, uint8_t* out, uint32_t want, uint32_t* nread) {
     if (nread) *nread = 0u;
     ASSERT_PARAM((h != NULL) && (out != NULL) && (nread != NULL));
@@ -150,6 +200,14 @@ ret_code_t hal_uart_read(hal_uart_t* h, uint8_t* out, uint32_t want, uint32_t* n
     return RET_OK;
 }
 
+/**
+ * @brief 申请接收环形缓冲区可读窗口（零拷贝读取）
+ * @param h     UART 句柄
+ * @param want  期望读取字节数；由 port 层决定最终授予大小
+ * @param out   返回可读窗口
+ * @param nread 实际可读字节数
+ * @return RET_OK 或统一错误码
+ */
 ret_code_t hal_uart_read_reserve(hal_uart_t* h, uint32_t want, hal_uart_read_span_t* out,
                                  uint32_t* nread) {
     if (nread) *nread = 0u;
@@ -163,6 +221,12 @@ ret_code_t hal_uart_read_reserve(hal_uart_t* h, uint32_t want, hal_uart_read_spa
     return RET_OK;
 }
 
+/**
+ * @brief 提交零拷贝读取后已消费的字节数
+ * @param h     UART 句柄
+ * @param nread 已消费字节数
+ * @return RET_OK 或统一错误码
+ */
 ret_code_t hal_uart_read_commit(hal_uart_t* h, uint32_t nread) {
     ASSERT_PARAM(h != NULL);
     REQUIRE_RET(h != NULL, UART_HAL_PARAM(RET_R_INVALID_ARG));
@@ -174,6 +238,13 @@ ret_code_t hal_uart_read_commit(hal_uart_t* h, uint32_t nread) {
     return RET_OK;
 }
 
+/**
+ * @brief 注册 UART 事件回调
+ * @param h    UART 句柄
+ * @param cb   事件回调
+ * @param user 用户上下文
+ * @return RET_OK 或统一错误码
+ */
 ret_code_t hal_uart_set_evt_cb(hal_uart_t* h, hal_uart_evt_cb_t cb, void* user) {
     ASSERT_PARAM(h != NULL);
     REQUIRE_RET(h != NULL, UART_HAL_PARAM(RET_R_INVALID_ARG));
@@ -187,6 +258,7 @@ ret_code_t hal_uart_set_evt_cb(hal_uart_t* h, hal_uart_evt_cb_t cb, void* user) 
 
 #else /* !CFG_FEAT_HAL_UART */
 
+/* 功能关闭时统一返回 UNSUPPORTED，保证上层可编译链接 */
 ret_code_t hal_uart_open(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_uart_t** out) {
     (void)id;
     (void)cfg;
