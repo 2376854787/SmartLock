@@ -49,8 +49,23 @@
 #define CFG_PARAM_SPI_EVT_NOTIFY_FLAG_STREAM_HALF (1u << 2)
 #define CFG_PARAM_SPI_EVT_NOTIFY_FLAG_STREAM_FULL (1u << 3)
 
-
 #define CFG_PARAM_SPI_CB_IN_ISR 0 /* 1: 允许在ISR直调用户回调（默认关闭） */
+/* HAL I2C 运行策略参数 */
+#define CFG_PARAM_I2C_LOG_PORT_ERR        1 /* port->HAL 映射错误是否记录日志 */
+#define CFG_PARAM_I2C_LOG_PORT_ERR_IN_ISR 0 /* 1: ISR中也打日志(谨慎) */
+/* I2C 事件分发策略：
+ * EVENTBUS: 投递到 eventbus
+ * QUEUE:    投递 hal_i2c_event_t 到 osal_msgq_t（target 由 hal_i2c_dev_set_evt_target 注册）
+ * TASK_NOTIFY: 通知 osal_thread_t（target 由 hal_i2c_dev_set_evt_target 注册）
+ */
+#define CFG_PARAM_I2C_EVT_DISPATCH_EVENTBUS    0
+#define CFG_PARAM_I2C_EVT_DISPATCH_QUEUE        1
+#define CFG_PARAM_I2C_EVT_DISPATCH_TASK_NOTIFY  2
+#define CFG_PARAM_I2C_EVT_DISPATCH_MODE CFG_PARAM_I2C_EVT_DISPATCH_EVENTBUS
+/* TASK_NOTIFY 模式下，不同事件类型映射到的 flags 位 */
+#define CFG_PARAM_I2C_EVT_NOTIFY_FLAG_DONE  (1u << 0)
+#define CFG_PARAM_I2C_EVT_NOTIFY_FLAG_ERROR (1u << 1)
+#define CFG_PARAM_I2C_CB_IN_ISR 0 /* 1: 允许在ISR直调用户回调（默认关闭） */
 /* HAL UART 运行策略参数 */
 #define CFG_PARAM_UART_LOG_PORT_ERR        1 /* port->HAL 映射错误是否记录日志 */
 #define CFG_PARAM_UART_LOG_PORT_ERR_IN_ISR 0 /* 1: ISR中也打日志(谨慎) */

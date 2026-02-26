@@ -328,15 +328,15 @@ float BH1750_Get_LX(void) {
 }
 /* =========================================== HAL 库回调
  * =========================================== */
-void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *hi2c) {
-  if (hi2c->Instance == I2C1) {
-    g_bh1750.tx_state = BH1750_TX_OK;
-  }
-}
-
-void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c) {
-  if (hi2c->Instance == I2C1) {
-    g_bh1750.last_error = hi2c->ErrorCode;
-    g_bh1750.tx_state = BH1750_TX_ERR;
-  }
-}
+// void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *hi2c) {
+//   if (hi2c->Instance == I2C1) {
+//     g_bh1750.tx_state = BH1750_TX_OK;
+//   }
+// }
+//
+// void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c) {
+//   if (hi2c->Instance == I2C1) {
+//     g_bh1750.last_error = hi2c->ErrorCode;
+//     g_bh1750.tx_state = BH1750_TX_ERR;
+//   }
+// }
