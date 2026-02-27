@@ -8,7 +8,7 @@
 #define EB_CFG_ENABLE_EVENTMAP 1 /* 哈希查找表 加速事件定义查找 */
 
 #ifndef EB_MAX_EVENTS
-#define EB_MAX_EVENTS 16u /* 事件种类数 订阅表尺寸 */
+#define EB_MAX_EVENTS 24u /* 事件种类数 订阅表尺寸 */
 #endif
 
 /* 分发时单个事件一次最多返回的订阅信息数 */

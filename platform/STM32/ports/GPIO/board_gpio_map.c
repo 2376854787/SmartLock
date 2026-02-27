@@ -25,6 +25,10 @@ static const board_gpio_map_entry_t s_map[] = {
     {.id = HAL_GPIO_ID_CT_SDA, .hw = {.port = GPIOF, .pin = 11}}, /* T_MOSI → PF11 */
     {.id = HAL_GPIO_ID_CT_RST, .hw = {.port = GPIOC, .pin = 13}}, /* T_CS   → PC13 */
     {.id = HAL_GPIO_ID_CT_INT, .hw = {.port = GPIOB, .pin = 1}},  /* T_PEN  → PB1  */
+    /* RC522 引脚 (SPI1) */
+    {.id = HAL_GPIO_ID_RC522_CS, .hw = {.port = GPIOA, .pin = 4}},  /* NSS/CS   → PA4 */
+    {.id = HAL_GPIO_ID_RC522_RST, .hw = {.port = GPIOC, .pin = 4}}, /* RST      → PC4 */
+    {.id = HAL_GPIO_ID_RC522_IRQ, .hw = {.port = GPIOC, .pin = 5}}, /* IRQ/EXTI → PC5 */
 };
 
 ret_code_t board_gpio_lookup(uint32_t id, board_gpio_hw_t* out) {

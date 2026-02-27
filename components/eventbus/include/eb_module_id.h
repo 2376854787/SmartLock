@@ -12,6 +12,7 @@ typedef enum {
     EB_MOD_STORAGE = 0x0008,
     EB_MOD_SPI     = 0x0009,
     EB_MOD_I2C     = 0x000A,
+    EB_MOD_RC522   = 0x000B,
 } eb_module_id_t;
 
 #define EB_EID(mod, local) (((uint32_t)(mod) << 16) | ((uint32_t)(local) & 0xFFFFu))

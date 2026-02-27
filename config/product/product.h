@@ -29,6 +29,7 @@
 #define CFG_FEAT_GT911          1 /* GT911 电容触控驱动 */
 #define CFG_FEAT_HAL_SPI        1 /* 启动SPI抽象 */
 #define CFG_FEAT_HAL_I2C        1 /* 启动 I2C 抽象 */
+#define CFG_FEAT_RC522          1 /* RC522 RFID 驱动 */
 #define CFG_FEAT_HAL_ERROR_CATCH 0 /* 统一 HAL 错误钩子覆盖(1: 启用外部覆盖) */
 
 /* HAL SPI 运行策略参数 */
@@ -49,7 +50,7 @@
 #define CFG_PARAM_SPI_EVT_NOTIFY_FLAG_STREAM_HALF (1u << 2)
 #define CFG_PARAM_SPI_EVT_NOTIFY_FLAG_STREAM_FULL (1u << 3)
 
-#define CFG_PARAM_SPI_CB_IN_ISR 0 /* 1: 允许在ISR直调用户回调（默认关闭） */
+#define CFG_PARAM_SPI_CB_IN_ISR 1 /* 1: 允许在ISR直调用户回调（默认关闭） */
 /* HAL I2C 运行策略参数 */
 #define CFG_PARAM_I2C_LOG_PORT_ERR        1 /* port->HAL 映射错误是否记录日志 */
 #define CFG_PARAM_I2C_LOG_PORT_ERR_IN_ISR 0 /* 1: ISR中也打日志(谨慎) */

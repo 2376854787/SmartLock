@@ -24,4 +24,10 @@
 /* I2C */
 #define EB_EVT_I2C_DONE  EB_EID(EB_MOD_I2C, 0x0001)  // Control, M, Edge
 #define EB_EVT_I2C_ERROR EB_EID(EB_MOD_I2C, 0x0002)  // Control, H, Edge
+
+/* RC522 */
+#define EB_EVT_RC522_READY     EB_EID(EB_MOD_RC522, 0x0001)  // Control, M, Snapshot
+#define EB_EVT_RC522_CARD      EB_EID(EB_MOD_RC522, 0x0002)  // Control, M, Snapshot
+#define EB_EVT_RC522_CARD_LOST EB_EID(EB_MOD_RC522, 0x0003)  // Control, M, Edge
+#define EB_EVT_RC522_ERROR     EB_EID(EB_MOD_RC522, 0x0004)  // Control, H, Edge
 #endif                                                       // SMARTLOCK_EB_EVENT_ID_H
