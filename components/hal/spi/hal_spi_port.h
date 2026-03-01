@@ -58,7 +58,7 @@ typedef struct {
     hal_spi_bitorder_t cur_order;  /* 大小端序 */
     hal_spi_frame_bits_t cur_bits; /* 位宽 */
     uint32_t cur_hz;               /* 当前的频率 */
-    bool opened;                   /* 端口是否已打开 */
+    bool opened;                   /* 端口是否已初始化 */
     volatile uint8_t xfer_busy;    /* 当前是否正在异步传输 */
     /* ======== 当前异步传输上下文 =========== */
     hal_spi_port_req_t req_type;
@@ -71,9 +71,9 @@ typedef struct {
     void *evt_user;               /* 回调用户上下文 */
 } hal_spi_port_ctx_t;
 
-/* 根据 bus 配置打开底层端口，并完成 DMA/IRQ 相关硬件准备 */
-ret_code_t hal_spi_port_open(const hal_spi_bus_cfg_t *cfg, hal_spi_port_ctx_t *out);
-ret_code_t hal_spi_port_close(hal_spi_port_ctx_t *ctx);
+/* 根据 bus 配置初始化底层端口，并完成 DMA/IRQ 相关硬件准备 */
+ret_code_t hal_spi_port_init(const hal_spi_bus_cfg_t *cfg, hal_spi_port_ctx_t *out);
+ret_code_t hal_spi_port_deinit(hal_spi_port_ctx_t *ctx);
 ret_code_t hal_spi_port_set_evt_cb(hal_spi_port_ctx_t *ctx, hal_spi_port_evt_cb_t cb, void *user);
 
 /* 应用 device 配置到硬件 */

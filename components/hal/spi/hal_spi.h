@@ -36,7 +36,7 @@ extern "C" {
  * @warning 调用建议:
  * - 主机硬件流（发或收），一律优先配为 2LINES 全双工模式。
  * - 主机仅接收的硬件流（如ADC），必须开双路 DMA Circular。
- * - 关闭DMA、SPI、中断使能、以及内部信息 调用顺序 hal_spi_stream_stop(dev, true) -> hal_spi_dev_detach(dev) -> hal_spi_bus_close(bus)
+ * - 关闭DMA、SPI、中断使能、以及内部信息 调用顺序 hal_spi_stream_stop(dev, true) -> hal_spi_dev_detach(dev) -> hal_spi_bus_deinit(bus)
  * ========================================================================================= */
 /* clang-format on */
 
@@ -159,20 +159,20 @@ typedef struct {
 } hal_spi_xfer_t;
 
 /**
- * @brief 打开 SPI 总线 填充 bus port成员 并在port层 句柄池也保存一份这个port
+ * @brief 初始化 SPI 总线 填充 bus port成员 并在port层 句柄池也保存一份这个port
  * @param cfg     总线配置（bus_id、DMA/IRQ、默认频率）
  * @param out_bus 返回总线句柄
  * @return RET_OK 或错误码
  */
-ret_code_t hal_spi_bus_open(const hal_spi_bus_cfg_t *cfg, hal_spi_bus_t **out_bus);
+ret_code_t hal_spi_bus_init(const hal_spi_bus_cfg_t *cfg, hal_spi_bus_t **out_bus);
 
 /**
- * @brief 关闭 SPI 总线 DeInit & 中断使能 复位bus port成员
+ * @brief 反初始化 SPI 总线 DeInit & 中断使能 复位bus port成员
  * @param bus 总线句柄
  * @return RET_OK 或错误码
  * @note 若仍有设备挂载或事务进行中会返回 BUSY
  */
-ret_code_t hal_spi_bus_close(hal_spi_bus_t *bus);
+ret_code_t hal_spi_bus_deinit(hal_spi_bus_t *bus);
 
 /**
  * @brief 挂载 SPI 设备到总线 hal 设备资源池选择一个设备对象进行填充 并指向bus 并根据 cs类型决定hal
@@ -232,6 +232,7 @@ ret_code_t hal_spi_transceive(hal_spi_dev_t *dev, const hal_spi_xfer_t *xfer);
  * @param wait_ms 等待完成超时（ms），传 0 表示永久等待
  * @return RET_OK 或错误码
  * @note 该接口仅封装一次性事务，不包含 stream 语义
+ * @note 实现在 hal_spi_sync.c（与异步核心解耦）
  */
 ret_code_t hal_spi_transceive_sync(hal_spi_dev_t *dev, const void *tx, void *rx, uint32_t len,
                                    uint32_t wait_ms);
@@ -270,7 +271,7 @@ ret_code_t hal_spi_stream_start(hal_spi_dev_t *dev, const hal_spi_xfer_t *xfer);
  * @param disable_spi true: 中止后反初始化 SPI；false: 仅中止事务
  * @return RET_OK 或错误码
  * @note 仅能中止“当前活跃设备”的事务；若总线忙于其他设备会返回 BUSY
- * 非 NO_CS 会释放 cs 底层调用  HAL_SPI_Abort （暂时）暂停DMA/IT 不会关闭NVIC 只能close 函数关闭
+ * 非 NO_CS 会释放 cs 底层调用 HAL_SPI_Abort（暂时）暂停DMA/IT，不会关闭NVIC，需通过 deinit 接口关闭
  */
 ret_code_t hal_spi_abort(hal_spi_dev_t *dev, bool disable_spi);
 

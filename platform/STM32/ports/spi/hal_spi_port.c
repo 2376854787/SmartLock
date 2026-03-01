@@ -16,7 +16,7 @@
 #define SPI_PORT_IO(reason_)      RET_MAKE_IO(RET_MOD_PORT, RET_SUB_PORT_SPI, (reason_))
 #define SPI_PORT_RES(reason_)     RET_MAKE_RESOURCE(RET_MOD_PORT, RET_SUB_PORT_SPI, (reason_))
 
-/* 打开的 SPI 端口注册表：用于在 HAL 回调里反查 ctx */
+/* 已初始化的 SPI 端口注册表：用于在 HAL 回调里反查 ctx */
 static hal_spi_port_ctx_t *s_spi_ctxs[HAL_SPI_BUS_MAX];
 
 __WEAK ret_code_t stm32_spi_bsp_get(uint8_t bus_id, stm32_spi_bsp_t *out) {
@@ -333,7 +333,7 @@ static void emit_port_evt(hal_spi_port_ctx_t *ctx, hal_spi_port_evt_type_t type,
  * @return 32位状态码
  * @note DMA / IRQ 开关由 cfg 控制
  */
-ret_code_t hal_spi_port_open(const hal_spi_bus_cfg_t *cfg, hal_spi_port_ctx_t *out) {
+ret_code_t hal_spi_port_init(const hal_spi_bus_cfg_t *cfg, hal_spi_port_ctx_t *out) {
     REQUIRE_RET((cfg != NULL) && (out != NULL), SPI_PORT_PARAM(RET_R_NULL_PTR));
     memset(out, 0, sizeof(*out));
 
@@ -368,7 +368,7 @@ ret_code_t hal_spi_port_open(const hal_spi_bus_cfg_t *cfg, hal_spi_port_ctx_t *o
         HAL_NVIC_SetPriority(out->bsp.spi_irq, out->bsp.irq_prio, out->bsp.irq_sub_prio);
         HAL_NVIC_EnableIRQ(out->bsp.spi_irq);
     }
-    /* 注册port（临界区保护，避免并发 open 抢同一槽位） */
+    /* 注册port（临界区保护，避免并发 init 抢同一槽位） */
     int32_t slot         = -1;
     osal_crit_state_t cs = 0u;
     OSAL_enter_critical_ex(&cs);
@@ -381,11 +381,11 @@ ret_code_t hal_spi_port_open(const hal_spi_bus_cfg_t *cfg, hal_spi_port_ctx_t *o
     return RET_OK;
 }
 /**
- * @brief 关闭端口占用的底层资源并复位上下文
+ * @brief 反初始化端口占用的底层资源并复位上下文
  * @param ctx 底层port上下文
  * @return 32位状态码
  */
-ret_code_t hal_spi_port_close(hal_spi_port_ctx_t *ctx) {
+ret_code_t hal_spi_port_deinit(hal_spi_port_ctx_t *ctx) {
     /* 参数检查 */
     REQUIRE_RET(ctx != NULL, SPI_PORT_PARAM(RET_R_NULL_PTR));
     if (!ctx->opened) return SPI_PORT_STATE(RET_R_NOT_READY);
