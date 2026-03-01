@@ -27,7 +27,7 @@ struct hal_uart {
     char rb_name[32];         /* 软件 RB 名称 */
     RingBuffer rb;            /* 软件 RB：用于上层 read */
     bool rb_ready;            /* 软件 RB 是否已初始化 */
-    bool opened;              /* 端口是否已打开 */
+    bool initialized;         /* 端口是否已初始化 */
     uint32_t rx_last_pos;     /* 上次处理的 DMA 写指针 */
     volatile uint8_t tx_busy; /* 0/1 */
     uint32_t last_tx_len;     /* 上次DMA的位置 */
@@ -197,7 +197,7 @@ static void rx_commit_delta(hal_uart_t* u) {
 void hal_uart_txCp_case(const UART_HandleTypeDef* huart) {
     for (int i = 0; i < (int)HAL_UART_ID_MAX; i++) {
         hal_uart_t* u = &g_uarts[i];
-        if (u->opened && u->bsp.huart == huart) {
+        if (u->initialized && u->bsp.huart == huart) {
             hal_uart_event_t evt = {.type = HAL_UART_EVT_TX_DONE};
             /* 接收完成 获取长度清理busy 以及dma 位置更新为 0*/
             evt.tx.bytes         = uart_take_tx_len_and_clear_busy(u);
@@ -215,7 +215,7 @@ void hal_uart_txCp_case(const UART_HandleTypeDef* huart) {
 void hal_uart_error_case(const UART_HandleTypeDef* huart) {
     for (int i = 0; i < (int)HAL_UART_ID_MAX; i++) {
         hal_uart_t* u = &g_uarts[i];
-        if (u->opened && u->bsp.huart == huart) {
+        if (u->initialized && u->bsp.huart == huart) {
             (void)uart_take_tx_len_and_clear_busy(u);
             emit_err_evt(u, uart_map_hal_error((uint32_t)huart->ErrorCode));
             return;
@@ -234,7 +234,7 @@ void hal_uart_rx_event_case(const UART_HandleTypeDef* huart, uint16_t Size) {
     (void)Size;
     for (int i = 0; i < (int)HAL_UART_ID_MAX; i++) {
         hal_uart_t* u = &g_uarts[i];
-        if (u->opened && u->bsp.huart == huart) {
+        if (u->initialized && u->bsp.huart == huart) {
             rx_commit_delta(u);
             return;
         }
@@ -248,7 +248,7 @@ void hal_uart_rx_event_case(const UART_HandleTypeDef* huart, uint16_t Size) {
 void hal_uart_rx_dma_progress_case(const UART_HandleTypeDef* huart) {
     for (int i = 0; i < (int)HAL_UART_ID_MAX; i++) {
         hal_uart_t* u = &g_uarts[i];
-        if (u->opened && u->bsp.huart == huart) {
+        if (u->initialized && u->bsp.huart == huart) {
             rx_commit_delta(u);
             return;
         }
@@ -275,7 +275,7 @@ static void handle_idle_irq(hal_uart_t* u) {
 void stm32_uart_irq_usart(hal_uart_id_t id) {
     if (id >= HAL_UART_ID_MAX) return;
     hal_uart_t* u = &g_uarts[id];
-    if (!u->opened || !u->bsp.huart) return;
+    if (!u->initialized || !u->bsp.huart) return;
 
     HAL_UART_IRQHandler(u->bsp.huart);
     handle_idle_irq(u);
@@ -288,7 +288,7 @@ void stm32_uart_irq_usart(hal_uart_id_t id) {
 void stm32_uart_irq_dma_rx(hal_uart_id_t id) {
     if (id >= HAL_UART_ID_MAX) return;
     const hal_uart_t* u = &g_uarts[id];
-    if (!u->opened) return;
+    if (!u->initialized) return;
     if (u->bsp.hdma_rx) HAL_DMA_IRQHandler(u->bsp.hdma_rx);
 }
 
@@ -299,26 +299,26 @@ void stm32_uart_irq_dma_rx(hal_uart_id_t id) {
 void stm32_uart_irq_dma_tx(hal_uart_id_t id) {
     if (id >= HAL_UART_ID_MAX) return;
     const hal_uart_t* u = &g_uarts[id];
-    if (!u->opened) return;
+    if (!u->initialized) return;
     if (u->bsp.hdma_tx) HAL_DMA_IRQHandler(u->bsp.hdma_tx);
 }
 
 /**
- * @brief 将bsp实现  串口参数 填入本地参数然后通过 hal_uart_t **out 返回
+ * @brief 初始化 UART port 并完成 BSP 资源绑定
  * @param id 串口id
  * @param cfg 串口配置
  * @param out 返回配置好的串口句柄
  * @return 返回状态码
  * @note 这里的中断以及优先级配置是 串口Dma rx/tx是一致的
  */
-ret_code_t hal_uart_port_open(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_uart_t** out) {
+ret_code_t hal_uart_port_init(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_uart_t** out) {
     /* 参数错误检查 */
     REQUIRE_RET((cfg != NULL) && (out != NULL), UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
     REQUIRE_RET(id < HAL_UART_ID_MAX, UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
 
     /* 获取到该id 对应的静态数组（全局资源）地址 */
     hal_uart_t* u = &g_uarts[id];
-    if (u->opened) return UART_RET(RET_CLASS_STATE, RET_R_BUSY);
+    if (u->initialized) return UART_RET(RET_CLASS_STATE, RET_R_BUSY);
     u->id                = id;
 
     stm32_uart_bsp_t bsp = {0};
@@ -352,7 +352,7 @@ ret_code_t hal_uart_port_open(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_u
     u->tx_busy                   = 0u;
     u->last_tx_len               = 0u;
     u->rx_last_pos               = 0u;
-    u->opened                    = false;
+    u->initialized               = false;
 
     /* 串口参数配置 */
     u->bsp.huart->Init.BaudRate  = cfg->baud;
@@ -382,25 +382,25 @@ ret_code_t hal_uart_port_open(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_u
     u->rx_last_pos = 0u;
     u->tx_busy     = 0u;
     u->last_tx_len = 0u;
-    u->opened      = true;
+    u->initialized = true;
 
     *out           = (hal_uart_t*)u;
     return RET_OK;
 }
 
 /**
- * @brief 将串口恢复默认配置
+ * @brief 反初始化 UART port 并恢复默认配置
  * @param h 串口句柄
  */
-ret_code_t hal_uart_port_close(hal_uart_t* h) {
+ret_code_t hal_uart_port_deinit(hal_uart_t* h) {
     REQUIRE_RET(h != NULL, UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
     hal_uart_t* u = (hal_uart_t*)h;
-    if (!u->opened) return UART_RET(RET_CLASS_STATE, RET_R_NOT_READY);
+    if (!u->initialized) return UART_RET(RET_CLASS_STATE, RET_R_NOT_READY);
 
     (void)HAL_UART_DMAStop(u->bsp.huart);
     if (HAL_UART_DeInit(u->bsp.huart) != HAL_OK) return UART_RET(RET_CLASS_IO, RET_R_IO);
 
-    u->opened      = false;
+    u->initialized = false;
     u->cb          = NULL;
     u->cb_user     = NULL;
     u->tx_busy     = 0u;
@@ -421,7 +421,7 @@ ret_code_t hal_uart_port_close(hal_uart_t* h) {
 ret_code_t hal_uart_port_set_evt_cb(hal_uart_t* h, hal_uart_evt_cb_t cb, void* user) {
     REQUIRE_RET(h != NULL, UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
     hal_uart_t* u = (hal_uart_t*)h;
-    if (!u->opened) return UART_RET(RET_CLASS_STATE, RET_R_NOT_READY);
+    if (!u->initialized) return UART_RET(RET_CLASS_STATE, RET_R_NOT_READY);
     u->cb      = cb;
     u->cb_user = user;
     return RET_OK;
@@ -435,7 +435,7 @@ ret_code_t hal_uart_port_set_evt_cb(hal_uart_t* h, hal_uart_evt_cb_t cb, void* u
 ret_code_t hal_uart_port_rx_start(hal_uart_t* h) {
     REQUIRE_RET(h != NULL, UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
     hal_uart_t* u = (hal_uart_t*)h;
-    if (!u->opened) return UART_RET(RET_CLASS_STATE, RET_R_NOT_READY);
+    if (!u->initialized) return UART_RET(RET_CLASS_STATE, RET_R_NOT_READY);
 
 #if (defined(CFG_PARAM_UART_RX_USE_DMA_IDLE) && (CFG_PARAM_UART_RX_USE_DMA_IDLE == 1))
     /* DMA + IDLE 方式接收方式 */
@@ -473,7 +473,7 @@ ret_code_t hal_uart_port_send_async(hal_uart_t* h, const uint8_t* buf, uint32_t 
     REQUIRE_RET((h != NULL) && (buf != NULL) && (len != 0u),
                 UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
     hal_uart_t* u = (hal_uart_t*)h;
-    if (!u->opened) return UART_RET(RET_CLASS_STATE, RET_R_NOT_READY);
+    if (!u->initialized) return UART_RET(RET_CLASS_STATE, RET_R_NOT_READY);
     REQUIRE_RET(len <= (uint32_t)UINT16_MAX, UART_RET(RET_CLASS_PARAM, RET_R_RANGE_ERR));
 
     osal_crit_state_t cs = 0u;
@@ -510,7 +510,7 @@ ret_code_t hal_uart_port_read(hal_uart_t* h, uint8_t* out, uint32_t want, uint32
     REQUIRE_RET((h != NULL) && (out != NULL) && (want != 0u) && (nread != NULL),
                 UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
     hal_uart_t* u = (hal_uart_t*)h;
-    if (!u->opened) return UART_RET(RET_CLASS_STATE, RET_R_NOT_READY);
+    if (!u->initialized) return UART_RET(RET_CLASS_STATE, RET_R_NOT_READY);
     hal_uart_read_span_t span = {0};
     uint32_t granted          = 0u;
     ret_code_t rc             = hal_uart_port_read_reserve(u, want, &span, &granted);
@@ -536,7 +536,7 @@ ret_code_t hal_uart_port_read_reserve(hal_uart_t* h, uint32_t want, hal_uart_rea
     REQUIRE_RET((h != NULL) && (out != NULL) && (nread != NULL),
                 UART_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
     hal_uart_t* u = (hal_uart_t*)h;
-    if (!u->opened) return UART_RET(RET_CLASS_STATE, RET_R_NOT_READY);
+    if (!u->initialized) return UART_RET(RET_CLASS_STATE, RET_R_NOT_READY);
 
     uint32_t want_local = want;
     if (want_local == 0u) {
@@ -576,7 +576,7 @@ ret_code_t hal_uart_port_read_commit(hal_uart_t* h, uint32_t nread) {
     if (nread == 0u) return RET_OK;
 
     hal_uart_t* u = (hal_uart_t*)h;
-    if (!u->opened) return UART_RET(RET_CLASS_STATE, RET_R_NOT_READY);
+    if (!u->initialized) return UART_RET(RET_CLASS_STATE, RET_R_NOT_READY);
     return RingBuffer_ReadCommit_SPSC(&u->rb, nread);
 }
 

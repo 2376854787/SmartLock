@@ -3,8 +3,8 @@
 
 #include "hal_uart.h"
 
-ret_code_t hal_uart_port_open(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_uart_t** out);
-ret_code_t hal_uart_port_close(hal_uart_t* h);
+ret_code_t hal_uart_port_init(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_uart_t** out);
+ret_code_t hal_uart_port_deinit(hal_uart_t* h);
 ret_code_t hal_uart_port_rx_start(hal_uart_t* h);
 ret_code_t hal_uart_port_send_async(hal_uart_t* h, const uint8_t* buf, uint32_t len);
 ret_code_t hal_uart_port_read(hal_uart_t* h, uint8_t* out, uint32_t max, uint32_t* nread);

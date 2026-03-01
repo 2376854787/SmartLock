@@ -114,17 +114,17 @@ static ret_code_t AT_StartHalUart(AT_Manager_t* at_device, hal_uart_id_t id,
     /* 配置串口参数 */
 
     if (at_device->uart_hal) {
-        (void)hal_uart_close(at_device->uart_hal);
+        (void)hal_uart_deinit(at_device->uart_hal);
         at_device->uart_hal = NULL;
     }
 
     /* 初始化串口 */
-    ret_code_t rc = hal_uart_open(id, cfg, &at_device->uart_hal);
+    ret_code_t rc = hal_uart_init(id, cfg, &at_device->uart_hal);
     if (ret_is_err(rc)) return rc;
     /* 设置串口回调函数 */
     rc = hal_uart_set_evt_cb(at_device->uart_hal, AT_UartEvtCb, at_device);
     if (ret_is_err(rc)) {
-        (void)hal_uart_close(at_device->uart_hal);
+        (void)hal_uart_deinit(at_device->uart_hal);
         at_device->uart_hal = NULL;
         return rc;
     }
@@ -132,7 +132,7 @@ static ret_code_t AT_StartHalUart(AT_Manager_t* at_device, hal_uart_id_t id,
     /* 开启接受 */
     rc = hal_uart_rx_start(at_device->uart_hal);
     if (ret_is_err(rc)) {
-        (void)hal_uart_close(at_device->uart_hal);
+        (void)hal_uart_deinit(at_device->uart_hal);
         at_device->uart_hal = NULL;
         return rc;
     }

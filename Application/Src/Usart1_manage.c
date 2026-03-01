@@ -41,7 +41,7 @@ bool MyUart_Init(void) {
             .isCompatible = true,
         };
 
-        if (ret_is_err(hal_uart_open(USART1_HAL_PORT_ID, &cfg, &s_uart1_hal))) {
+        if (ret_is_err(hal_uart_init(USART1_HAL_PORT_ID, &cfg, &s_uart1_hal))) {
             printf("UART HAL init failed\n");
             return false;
         }

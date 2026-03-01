@@ -113,36 +113,36 @@ static inline ret_code_t uart_map_port_to_hal(ret_code_t rc_port, const char* ap
 }
 
 /**
- * @brief 打开 UART 句柄并完成板级资源绑定
+ * @brief 初始化 UART 句柄并完成板级资源绑定
  * @param id   板级 UART 编号
  * @param cfg  UART 配置
  * @param out  返回 UART 句柄
  * @return RET_OK 或统一错误码
  */
-ret_code_t hal_uart_open(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_uart_t** out) {
+ret_code_t hal_uart_init(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_uart_t** out) {
     ASSERT_PARAM((cfg != NULL) && (out != NULL));
     REQUIRE_RET((cfg != NULL) && (out != NULL), UART_HAL_PARAM(RET_R_INVALID_ARG));
     *out = NULL;
 
-    const ret_code_t rc = hal_uart_port_open(id, cfg, out);
-    if (ret_is_err(rc)) return uart_map_port_to_hal(rc, "hal_uart_open", (uint32_t)id, 0u);
+    const ret_code_t rc = hal_uart_port_init(id, cfg, out);
+    if (ret_is_err(rc)) return uart_map_port_to_hal(rc, "hal_uart_init", (uint32_t)id, 0u);
 
     if (*out == NULL) return UART_HAL_STATE(RET_R_STATE_ERR);
     return RET_OK;
 }
 
 /**
- * @brief 关闭 UART 句柄并释放对应资源
+ * @brief 反初始化 UART 句柄并释放对应资源
  * @param h UART 句柄
  * @return RET_OK 或统一错误码
  */
-ret_code_t hal_uart_close(hal_uart_t* h) {
+ret_code_t hal_uart_deinit(hal_uart_t* h) {
     ASSERT_PARAM(h != NULL);
     REQUIRE_RET(h != NULL, UART_HAL_PARAM(RET_R_INVALID_ARG));
 
-    const ret_code_t rc = hal_uart_port_close(h);
+    const ret_code_t rc = hal_uart_port_deinit(h);
     if (ret_is_err(rc))
-        return uart_map_port_to_hal(rc, "hal_uart_close", (uint32_t)hal_uart_port_get_id(h), 0u);
+        return uart_map_port_to_hal(rc, "hal_uart_deinit", (uint32_t)hal_uart_port_get_id(h), 0u);
     return RET_OK;
 }
 
@@ -256,17 +256,25 @@ ret_code_t hal_uart_set_evt_cb(hal_uart_t* h, hal_uart_evt_cb_t cb, void* user) 
     return RET_OK;
 }
 
+ret_code_t hal_uart_open(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_uart_t** out) {
+    return hal_uart_init(id, cfg, out);
+}
+
+ret_code_t hal_uart_close(hal_uart_t* h) {
+    return hal_uart_deinit(h);
+}
+
 #else /* !CFG_FEAT_HAL_UART */
 
 /* 功能关闭时统一返回 UNSUPPORTED，保证上层可编译链接 */
-ret_code_t hal_uart_open(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_uart_t** out) {
+ret_code_t hal_uart_init(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_uart_t** out) {
     (void)id;
     (void)cfg;
     (void)out;
     return UART_HAL_PARAM(RET_R_UNSUPPORTED);
 }
 
-ret_code_t hal_uart_close(hal_uart_t* h) {
+ret_code_t hal_uart_deinit(hal_uart_t* h) {
     (void)h;
     return UART_HAL_PARAM(RET_R_UNSUPPORTED);
 }
@@ -311,6 +319,14 @@ ret_code_t hal_uart_set_evt_cb(hal_uart_t* h, hal_uart_evt_cb_t cb, void* user) 
     (void)cb;
     (void)user;
     return UART_HAL_PARAM(RET_R_UNSUPPORTED);
+}
+
+ret_code_t hal_uart_open(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_uart_t** out) {
+    return hal_uart_init(id, cfg, out);
+}
+
+ret_code_t hal_uart_close(hal_uart_t* h) {
+    return hal_uart_deinit(h);
 }
 
 #endif /* CFG_FEAT_HAL_UART */

@@ -69,20 +69,20 @@ typedef struct hal_uart hal_uart_t; /* 实现文件具体内容 */
 typedef void (*hal_uart_rx_cb_t)(void* user_ctx, uint8_t* data, uint16_t len);
 
 /**
- * @brief 将板级ID、参数映射后返回统一操作指针变量
+ * @brief 初始化 UART 句柄并完成板级资源绑定
  * @param id 板级串口id
  * @param cfg 串口配置
- * @param out 将底层内部静态串口配置变量的地址返回
+ * @param out 返回 UART 句柄
  * @return 状态码
  * @note 必须在map文件 映射板级资源
  */
-ret_code_t hal_uart_open(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_uart_t** out);
+ret_code_t hal_uart_init(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_uart_t** out);
 /**
- * @brief 将串口配置、DMA、中断配置为默认状态
+ * @brief 反初始化 UART 句柄并释放对应资源
  * @param h 串口句柄
  * @return 状态码
  */
-ret_code_t hal_uart_close(hal_uart_t* h);
+ret_code_t hal_uart_deinit(hal_uart_t* h);
 
 /**
  * @brief 启动对应串口的接收功能 一般是 DMA + 半满　＋ 全满 ＋IDLE
@@ -137,6 +137,18 @@ ret_code_t hal_uart_send_async(hal_uart_t* h, const uint8_t* buf, uint32_t len);
  * @return
  */
 ret_code_t hal_uart_set_evt_cb(hal_uart_t* h, hal_uart_evt_cb_t cb, void* user);
+
+/**
+ * @brief 兼容旧命名：等价于 hal_uart_init()
+ * @note 仅用于平滑迁移，后续应统一改用 hal_uart_init
+ */
+ret_code_t hal_uart_open(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_uart_t** out);
+
+/**
+ * @brief 兼容旧命名：等价于 hal_uart_deinit()
+ * @note 仅用于平滑迁移，后续应统一改用 hal_uart_deinit
+ */
+ret_code_t hal_uart_close(hal_uart_t* h);
 
 /**
  * @brief 内部错误弱钩子函数
