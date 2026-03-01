@@ -84,7 +84,7 @@ void Log_PortInit(void) {
             .flow_ctrl    = LOG_UART_FLOW_CTRL,
             .isCompatible = true,
         };
-        if (ret_is_ok(hal_uart_open(LOG_UART_PORT_ID, &cfg, &s_log_uart))) {
+        if (ret_is_ok(hal_uart_init(LOG_UART_PORT_ID, &cfg, &s_log_uart))) {
             (void)hal_uart_rx_start(s_log_uart);
         }
     }
