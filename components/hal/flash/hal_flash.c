@@ -304,7 +304,7 @@ ret_code_t hal_flash_init(const hal_flash_cfg_t *cfg) {
         s_flash.cfg.worker_stack_size        = 0u;
     }
 
-    ret_code_t rc = hal_flash_port_set_evt_cb(flash_port_evt_handler, NULL);
+    const ret_code_t rc = hal_flash_port_set_evt_cb(flash_port_evt_handler, NULL);
     if (ret_is_err(rc)) return flash_map_port_to_hal(rc, "hal_flash_port_set_evt_cb", 0u, 0u);
     /* RTOS 环境创建互斥锁 */
     if (OSAL_kernel_is_running()) {
