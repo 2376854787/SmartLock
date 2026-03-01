@@ -160,13 +160,13 @@ static ret_code_t map_alternate(uint32_t in_af, uint32_t* out_af) {
 }
 
 /**
- * @brief 从板级GPIO映射表获取 具体的GPIO
+ * @brief 从板级 GPIO 映射表获取具体 GPIO 句柄
  * @param out 存储具体的port/Pin
  * @param id 板级映射
  * @return 返回状态码
- * @note 调用后必须 调用 hal_gpio_port_config 初始化
+ * @note 该接口只做映射；硬件配置由 hal_gpio_port_config 完成
  */
-ret_code_t hal_gpio_port_open(hal_gpio_t** out, uint32_t id) {
+ret_code_t hal_gpio_port_acquire(hal_gpio_t** out, uint32_t id) {
     ASSERT_PARAM(out != NULL);
     REQUIRE_RET(out != NULL, PORT_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG));
     board_gpio_hw_t hw;
@@ -278,12 +278,12 @@ ret_code_t hal_gpio_port_config(hal_gpio_t* h, const hal_gpio_cfg_t* cfg) {
 }
 
 /**
- * @brief 关闭GPIO
+ * @brief 释放 GPIO 句柄
  * @param h
  * @return
  */
-ret_code_t hal_gpio_port_close(const hal_gpio_t* h) {
-    /* 静态句柄方案：关闭可做 no-op */
+ret_code_t hal_gpio_port_release(const hal_gpio_t* h) {
+    /* 静态句柄方案：release 可做 no-op */
     (void)h;
     return RET_OK;
 }

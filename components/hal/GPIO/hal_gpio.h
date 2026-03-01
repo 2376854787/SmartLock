@@ -61,12 +61,12 @@ typedef struct {
 } hal_gpio_cfg_t;
 
 /**
- * @brief 通过 board id 打开 GPIO 句柄
+ * @brief 通过 board id 获取 GPIO 句柄
  * @param out   输出句柄
  * @param id    板级编号（由 board_gpio_map.c 定义）
- * @note  必须放在Init单线程时初始化
+ * @note 该接口只做句柄映射，不执行硬件配置；硬件配置请调用 hal_gpio_config
  */
-ret_code_t hal_gpio_open(hal_gpio_t** out, uint32_t id);
+ret_code_t hal_gpio_acquire(hal_gpio_t** out, uint32_t id);
 
 /**
  * @brief 配置 GPIO（低频路径：返回状态码）
@@ -75,9 +75,9 @@ ret_code_t hal_gpio_open(hal_gpio_t** out, uint32_t id);
 ret_code_t hal_gpio_config(hal_gpio_t* h, const hal_gpio_cfg_t* cfg);
 
 /**
- * @brief 关闭句柄（做静态句柄映射，可实现为 no-op）
+ * @brief 释放 GPIO 句柄（对静态句柄映射实现可为 no-op）
  */
-ret_code_t hal_gpio_close(hal_gpio_t* h);
+ret_code_t hal_gpio_release(hal_gpio_t* h);
 
 /* ---------------- 热路径 API：不返回状态码 ---------------- */
 
@@ -126,6 +126,18 @@ ret_code_t hal_gpio_register_irq(hal_gpio_t* h, hal_gpio_irq_cb_t cb, void* user
  * @note   会自动禁用 NVIC (如果该中断线上无其他引脚使用)
  */
 ret_code_t hal_gpio_unregister_irq(hal_gpio_t* h);
+
+/**
+ * @brief 兼容旧命名：等价于 hal_gpio_acquire()
+ * @note 仅用于平滑迁移，后续应统一改用 hal_gpio_acquire
+ */
+ret_code_t hal_gpio_open(hal_gpio_t** out, uint32_t id);
+
+/**
+ * @brief 兼容旧命名：等价于 hal_gpio_release()
+ * @note 仅用于平滑迁移，后续应统一改用 hal_gpio_release
+ */
+ret_code_t hal_gpio_close(hal_gpio_t* h);
 
 /**
  * @brief 内部错误弱钩子函数

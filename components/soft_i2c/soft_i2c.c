@@ -237,11 +237,11 @@ ret_code_t soft_i2c_init(soft_i2c_t* bus, const soft_i2c_cfg_t* cfg) {
     }
 
     /* 打开 GPIO 句柄 */
-    ret_code_t rc = hal_gpio_open(&bus->scl, cfg->gpio_id_scl);
+    ret_code_t rc = hal_gpio_acquire(&bus->scl, cfg->gpio_id_scl);
     if (rc != RET_OK) return rc;
-    rc = hal_gpio_open(&bus->sda, cfg->gpio_id_sda);
+    rc = hal_gpio_acquire(&bus->sda, cfg->gpio_id_sda);
     if (rc != RET_OK) {
-        (void)hal_gpio_close(bus->scl);
+        (void)hal_gpio_release(bus->scl);
         bus->scl = NULL;
         return rc;
     }
@@ -259,8 +259,8 @@ ret_code_t soft_i2c_init(soft_i2c_t* bus, const soft_i2c_cfg_t* cfg) {
 
     rc = hal_gpio_config(bus->scl, &gpio_cfg);
     if (rc != RET_OK) {
-        (void)hal_gpio_close(bus->sda);
-        (void)hal_gpio_close(bus->scl);
+        (void)hal_gpio_release(bus->sda);
+        (void)hal_gpio_release(bus->scl);
         bus->sda = NULL;
         bus->scl = NULL;
         return rc;
@@ -268,8 +268,8 @@ ret_code_t soft_i2c_init(soft_i2c_t* bus, const soft_i2c_cfg_t* cfg) {
 
     rc = hal_gpio_config(bus->sda, &gpio_cfg);
     if (rc != RET_OK) {
-        (void)hal_gpio_close(bus->sda);
-        (void)hal_gpio_close(bus->scl);
+        (void)hal_gpio_release(bus->sda);
+        (void)hal_gpio_release(bus->scl);
         bus->sda = NULL;
         bus->scl = NULL;
         return rc;
@@ -283,8 +283,8 @@ ret_code_t soft_i2c_init(soft_i2c_t* bus, const soft_i2c_cfg_t* cfg) {
     /* 创建 RTOS 互斥锁（递归 + 优先级继承） */
     rc = OSAL_mutex_create(&bus->mutex, "si2c", true, true);
     if (rc != RET_OK) {
-        (void)hal_gpio_close(bus->sda);
-        (void)hal_gpio_close(bus->scl);
+        (void)hal_gpio_release(bus->sda);
+        (void)hal_gpio_release(bus->scl);
         bus->sda = NULL;
         bus->scl = NULL;
         return rc;

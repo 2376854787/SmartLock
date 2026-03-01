@@ -18,11 +18,11 @@
 /**
  * 平台接口
  */
-ret_code_t hal_gpio_port_open(hal_gpio_t** out, uint32_t id);
+ret_code_t hal_gpio_port_acquire(hal_gpio_t** out, uint32_t id);
 
 ret_code_t hal_gpio_port_config(hal_gpio_t* h, const hal_gpio_cfg_t* cfg);
 
-ret_code_t hal_gpio_port_close(const hal_gpio_t* h);
+ret_code_t hal_gpio_port_release(const hal_gpio_t* h);
 
 void hal_gpio_port_write(const hal_gpio_t* h, hal_gpio_level_t level);
 
@@ -93,17 +93,17 @@ static inline ret_code_t gpio_map_port_to_hal(ret_code_t rc_port, const char* ap
 }
 
 /**
- * @brief 从port实现函数返回映射的指定GPIO port与PIN结构体到内部资源池并返回这个GPIO的地址
+ * @brief 从 port 层获取 GPIO 句柄映射
  * @param out 接收结构体的地址
  * @param id  全局引脚id
  * @return
  */
-ret_code_t hal_gpio_open(hal_gpio_t** out, uint32_t id) {
+ret_code_t hal_gpio_acquire(hal_gpio_t** out, uint32_t id) {
     ASSERT_PARAM(out != NULL);
     if (out != NULL) *out = NULL;
     REQUIRE_RET(out != NULL, GPIO_HAL_PARAM(RET_R_NULL_PTR));
-    const ret_code_t rc = hal_gpio_port_open(out, id);
-    if (ret_is_err(rc)) return gpio_map_port_to_hal(rc, "hal_gpio_open", id, 0u);
+    const ret_code_t rc = hal_gpio_port_acquire(out, id);
+    if (ret_is_err(rc)) return gpio_map_port_to_hal(rc, "hal_gpio_acquire", id, 0u);
     return RET_OK;
 }
 
@@ -122,15 +122,15 @@ ret_code_t hal_gpio_config(hal_gpio_t* h, const hal_gpio_cfg_t* cfg) {
 }
 
 /**
- * @brief 关闭GPIO
+ * @brief 释放 GPIO 句柄
  * @param h 句柄
  * @return 32位状态码
  */
-ret_code_t hal_gpio_close(hal_gpio_t* h) {
+ret_code_t hal_gpio_release(hal_gpio_t* h) {
     ASSERT_PARAM(h != NULL);
     REQUIRE_RET(h != NULL, GPIO_HAL_PARAM(RET_R_INVALID_ARG));
-    const ret_code_t rc = hal_gpio_port_close(h);
-    if (ret_is_err(rc)) return gpio_map_port_to_hal(rc, "hal_gpio_close", 0u, 0u);
+    const ret_code_t rc = hal_gpio_port_release(h);
+    if (ret_is_err(rc)) return gpio_map_port_to_hal(rc, "hal_gpio_release", 0u, 0u);
     return RET_OK;
 }
 
@@ -187,8 +187,16 @@ ret_code_t hal_gpio_unregister_irq(hal_gpio_t* h) {
     if (ret_is_err(rc)) return gpio_map_port_to_hal(rc, "hal_gpio_unregister_irq", 0u, 0u);
     return RET_OK;
 }
-#else
+
 ret_code_t hal_gpio_open(hal_gpio_t** out, uint32_t id) {
+    return hal_gpio_acquire(out, id);
+}
+
+ret_code_t hal_gpio_close(hal_gpio_t* h) {
+    return hal_gpio_release(h);
+}
+#else
+ret_code_t hal_gpio_acquire(hal_gpio_t** out, uint32_t id) {
     (void)out;
     (void)id;
     return GPIO_HAL_PARAM(RET_R_UNSUPPORTED);
@@ -200,7 +208,7 @@ ret_code_t hal_gpio_config(hal_gpio_t* h, const hal_gpio_cfg_t* cfg) {
     return GPIO_HAL_PARAM(RET_R_UNSUPPORTED);
 }
 
-ret_code_t hal_gpio_close(hal_gpio_t* h) {
+ret_code_t hal_gpio_release(hal_gpio_t* h) {
     (void)h;
     return GPIO_HAL_PARAM(RET_R_UNSUPPORTED);
 }
@@ -229,5 +237,13 @@ ret_code_t hal_gpio_register_irq(hal_gpio_t* h, hal_gpio_irq_cb_t cb, void* user
 ret_code_t hal_gpio_unregister_irq(hal_gpio_t* h) {
     (void)h;
     return GPIO_HAL_PARAM(RET_R_UNSUPPORTED);
+}
+
+ret_code_t hal_gpio_open(hal_gpio_t** out, uint32_t id) {
+    return hal_gpio_acquire(out, id);
+}
+
+ret_code_t hal_gpio_close(hal_gpio_t* h) {
+    return hal_gpio_release(h);
 }
 #endif
