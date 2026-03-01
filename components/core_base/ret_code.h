@@ -151,6 +151,7 @@ typedef enum {
     RET_SUB_PORT_I2C    = 0x04u,
     RET_SUB_PORT_WDG    = 0x05u,
     RET_SUB_PORT_TIME   = 0x06u,
+    RET_SUB_PORT_FLASH  = 0x07u,
 } ret_sub_port_t;
 
 /* ---- APP 子模块---- */
@@ -177,6 +178,8 @@ typedef enum {
     RET_SUB_STOR_KV    = 0x01u,
     RET_SUB_STOR_FS    = 0x02u,
     RET_SUB_STOR_PARAM = 0x03u,
+    RET_SUB_STOR_PART  = 0x04u,
+    RET_SUB_STOR_NVS   = 0x05u,
 } ret_sub_stor_t;
 
 /* ---- OTA 子模块 ---- */
@@ -262,6 +265,7 @@ typedef enum {
     RET_R_DATA_OVERFLOW   = 0x052u, /* 数据溢出：长度超限/解析写爆/计数溢出 */
     RET_R_DATA_NOT_ENOUGH = 0x053u, /* 数据不足：解析需要更多字节（常用于流式解析器） */
     RET_R_PARSE_ERR       = 0x054u, /* 解析错误：格式不合法/字段不符合协议规范 */
+    RET_R_DATA_MISMATCH   = 0x055u, /* 数据不匹配：比较/校验目标内容与期望值不一致 */
 
     /* SECURITY (0x7xx) */
     RET_R_AUTH_FAIL       = 0x060u, /* 鉴权失败：口令/签名/令牌不通过 */

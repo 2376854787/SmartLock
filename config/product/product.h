@@ -25,6 +25,9 @@
 #define CFG_FEAT_HAL_GPIO       1 /* 启动GPIO */
 #define CFG_FEAT_HAL_UART       1 /* 启动串口 */
 #define CFG_FEAT_HAL_TIME       1 /* 启动time */
+#define CFG_FEAT_HAL_FLASH      1 /* 启动 Flash 抽象 */
+#define CFG_FEAT_FLASH_PARTITION 1 /* 启动 Flash 分区抽象 */
+#define CFG_FEAT_NV_STORAGE      1 /* 启动 NV 存储抽象 */
 #define CFG_FEAT_SOFT_I2C       1 /* 软件 I2C && CFG_FEAT_HAL_GPIO */
 #define CFG_FEAT_GT911          1 /* GT911 电容触控驱动 */
 #define CFG_FEAT_HAL_SPI        1 /* 启动SPI抽象 */
@@ -76,6 +79,9 @@
 /* HAL WDG 运行策略参数 */
 #define CFG_PARAM_WDG_LOG_PORT_ERR        1 /* port->HAL 映射错误是否记录日志 */
 #define CFG_PARAM_WDG_LOG_PORT_ERR_IN_ISR 0 /* 1: ISR中也打日志(谨慎) */
+/* HAL FLASH 运行策略参数 */
+#define CFG_PARAM_FLASH_LOG_PORT_ERR        1 /* port->HAL 映射错误是否记录日志 */
+#define CFG_PARAM_FLASH_LOG_PORT_ERR_IN_ISR 0 /* 1: ISR中也打日志(谨慎) */
 
 /* 协议标准配置宏  取消注释即开启整个项目的RTOS执行标准 */
 /* 启动CMSIS v2 标准 */
