@@ -19,10 +19,9 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "FreeRTOS.h"
-
-#include "cmsis_os.h"
-#include "main.h"
 #include "task.h"
+#include "main.h"
+#include "cmsis_os.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -72,24 +71,27 @@
 /* Definitions for KeyScanTask */
 osThreadId_t KeyScanTaskHandle;
 const osThreadAttr_t KeyScanTask_attributes = {
-    .name       = "KeyScanTask",
-    .stack_size = 300 * 4,
-    .priority   = (osPriority_t)osPriorityNormal,
+  .name = "KeyScanTask",
+  .stack_size = 300 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for uartTask */
 osThreadId_t uartTaskHandle;
 const osThreadAttr_t uartTask_attributes = {
-    .name       = "uartTask",
-    .stack_size = 256 * 4,
-    .priority   = (osPriority_t)osPriorityLow,
+  .name = "uartTask",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t) osPriorityLow,
 };
 /* Definitions for lcdTask */
 osThreadId_t lcdTaskHandle;
 const osThreadAttr_t lcdTask_attributes = {
-    .name       = "lcdTask",
-    .stack_size = 1024 * 4,
-    .priority   = (osPriority_t)osPriorityLow,
+  .name = "lcdTask",
+  .stack_size = 1024 * 4,
+  .priority = (osPriority_t) osPriorityLow,
 };
+
+/* Private function prototypes -----------------------------------------------*/
+/* USER CODE BEGIN FunctionPrototypes */
 /* 事件总线任务 */
 osThreadId_t eventBusTaskHandle;
 const osThreadAttr_t eventBusTask_attributes = {
@@ -97,10 +99,6 @@ const osThreadAttr_t eventBusTask_attributes = {
     .stack_size = 256 * 2,
     .priority   = (osPriority_t)osPriorityAboveNormal,
 };
-
-/* Private function prototypes -----------------------------------------------*/
-/* USER CODE BEGIN FunctionPrototypes */
-
 osThreadId_t LightSensor_TaskHandle;
 /* 光敏传感器任务 */
 const osThreadAttr_t LightSensor_Task_attributes = {
@@ -125,10 +123,9 @@ const osThreadAttr_t heap_check_task_attributes = {
 };
 /* USER CODE END FunctionPrototypes */
 
-void StartDefaultTask(void* argument);
-void StartTask02(void* argument);
-void StartTask_LCD(void* argument);
-void StartTask_EventBus(void* argument);
+void StartDefaultTask(void *argument);
+void StartTask02(void *argument);
+void StartTask_LCD(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -137,7 +134,7 @@ void configureTimerForRunTimeStats(void);
 unsigned long getRunTimeCounterValue(void);
 void vApplicationIdleHook(void);
 void vApplicationTickHook(void);
-void vApplicationStackOverflowHook(xTaskHandle xTask, signed char* pcTaskName);
+void vApplicationStackOverflowHook(xTaskHandle xTask, signed char *pcTaskName);
 void vApplicationMallocFailedHook(void);
 
 /* USER CODE BEGIN 1 */
@@ -199,46 +196,43 @@ void vApplicationMallocFailedHook(void) {
 /* USER CODE END 5 */
 
 /**
- * @brief  FreeRTOS initialization
- * @param  None
- * @retval None
- */
+  * @brief  FreeRTOS initialization
+  * @param  None
+  * @retval None
+  */
 void MX_FREERTOS_Init(void) {
-    /* USER CODE BEGIN Init */
+  /* USER CODE BEGIN Init */
     eb_init();
 
-    /* USER CODE END Init */
+  /* USER CODE END Init */
 
-    /* USER CODE BEGIN RTOS_MUTEX */
+  /* USER CODE BEGIN RTOS_MUTEX */
     /* add mutexes, ... */
-    /* USER CODE END RTOS_MUTEX */
+  /* USER CODE END RTOS_MUTEX */
 
-    /* USER CODE BEGIN RTOS_SEMAPHORES */
+  /* USER CODE BEGIN RTOS_SEMAPHORES */
     /* add semaphores, ... */
-    /* USER CODE END RTOS_SEMAPHORES */
+  /* USER CODE END RTOS_SEMAPHORES */
 
-    /* USER CODE BEGIN RTOS_TIMERS */
+  /* USER CODE BEGIN RTOS_TIMERS */
     /* start timers, add new ones, ... */
-    /* USER CODE END RTOS_TIMERS */
+  /* USER CODE END RTOS_TIMERS */
 
-    /* USER CODE BEGIN RTOS_QUEUES */
+  /* USER CODE BEGIN RTOS_QUEUES */
     /* add queues, ... */
-    /* USER CODE END RTOS_QUEUES */
+  /* USER CODE END RTOS_QUEUES */
 
-    /* Create the thread(s) */
-    /* creation of KeyScanTask */
-    KeyScanTaskHandle      = osThreadNew(StartDefaultTask, NULL, &KeyScanTask_attributes);
+  /* Create the thread(s) */
+  /* creation of KeyScanTask */
+  KeyScanTaskHandle = osThreadNew(StartDefaultTask, NULL, &KeyScanTask_attributes);
 
-    /* creation of uartTask */
-    uartTaskHandle         = osThreadNew(StartTask02, NULL, &uartTask_attributes);
+  /* creation of uartTask */
+  uartTaskHandle = osThreadNew(StartTask02, NULL, &uartTask_attributes);
 
-    /* creation of lcdTask */
-    lcdTaskHandle          = osThreadNew(StartTask_LCD, NULL, &lcdTask_attributes);
+  /* creation of lcdTask */
+  lcdTaskHandle = osThreadNew(StartTask_LCD, NULL, &lcdTask_attributes);
 
-    /* creation of eventBusTask */
-    eventBusTaskHandle     = osThreadNew(StartTask_EventBus, NULL, &eventBusTask_attributes);
-
-    /* USER CODE BEGIN RTOS_THREADS */
+  /* USER CODE BEGIN RTOS_THREADS */
     /* add threads, ... */
 
     /* 光敏传感器 */
@@ -258,12 +252,13 @@ void MX_FREERTOS_Init(void) {
         Error_Handler();
     }
 
-    /* USER CODE END RTOS_THREADS */
+  /* USER CODE END RTOS_THREADS */
 
-    /* USER CODE BEGIN RTOS_EVENTS */
+  /* USER CODE BEGIN RTOS_EVENTS */
     /* add events, ... */
 
-    /* USER CODE END RTOS_EVENTS */
+  /* USER CODE END RTOS_EVENTS */
+
 }
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -273,8 +268,9 @@ void MX_FREERTOS_Init(void) {
  * @retval None
  */
 /* USER CODE END Header_StartDefaultTask */
-void StartDefaultTask(void* argument) {
-    /* USER CODE BEGIN StartDefaultTask */
+void StartDefaultTask(void *argument)
+{
+  /* USER CODE BEGIN StartDefaultTask */
     /* Infinite loop */
     /* 注册看门狗挑战任务：deadline = 2倍任务周期 + 监督周期抖动 + 计算时间 + 余量 */
     uint8_t id = 0;
@@ -297,7 +293,7 @@ void StartDefaultTask(void* argument) {
         wdg_sup_task_service(id);
         osDelay(30);
     }
-    /* USER CODE END StartDefaultTask */
+  /* USER CODE END StartDefaultTask */
 }
 
 /* USER CODE BEGIN Header_StartTask02 */
@@ -307,8 +303,9 @@ void StartDefaultTask(void* argument) {
  * @retval None
  */
 /* USER CODE END Header_StartTask02 */
-void StartTask02(void* argument) {
-    /* USER CODE BEGIN StartTask02 */
+void StartTask02(void *argument)
+{
+  /* USER CODE BEGIN StartTask02 */
     /* Infinite loop */
     /* UART任务存在阻塞风险，deadline按2倍任务周期预留 */
     uint8_t id = 0;
@@ -321,7 +318,7 @@ void StartTask02(void* argument) {
         wdg_sup_task_service(id);
         osDelay(250);
     }
-    /* USER CODE END StartTask02 */
+  /* USER CODE END StartTask02 */
 }
 
 /* USER CODE BEGIN Header_StartTask_LCD */
@@ -331,8 +328,9 @@ void StartTask02(void* argument) {
  * @retval None
  */
 /* USER CODE END Header_StartTask_LCD */
-void StartTask_LCD(void* argument) {
-    /* USER CODE BEGIN StartTask_LCD */
+void StartTask_LCD(void *argument)
+{
+  /* USER CODE BEGIN StartTask_LCD */
     /* Infinite loop */
     lv_init();
     lv_tick_set_cb(hal_get_tick_ms);
@@ -445,24 +443,7 @@ void StartTask_LCD(void* argument) {
         }
         osDelay(20);
     }
-    /* USER CODE END StartTask_LCD */
-}
-
-/* USER CODE BEGIN Header_StartTask_EventBus */
-/**
- * @brief Function implementing the eventBusTask thread.
- * @param argument: Not used
- * @retval None
- */
-/* USER CODE END Header_StartTask_EventBus */
-void StartTask_EventBus(void* argument) {
-    /* USER CODE BEGIN StartTask_EventBus */
-    (void)argument;
-    for (;;) {
-        eb_pump_once();
-        osDelay(1);
-    }
-    /* USER CODE END StartTask_EventBus */
+  /* USER CODE END StartTask_LCD */
 }
 
 /* Private application code --------------------------------------------------*/
@@ -471,3 +452,4 @@ void StartTask_EventBus(void* argument) {
 
 
 /* USER CODE END Application */
+
