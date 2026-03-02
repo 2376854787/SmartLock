@@ -152,6 +152,9 @@ typedef enum {
     RET_SUB_PORT_WDG    = 0x05u,
     RET_SUB_PORT_TIME   = 0x06u,
     RET_SUB_PORT_FLASH  = 0x07u,
+    RET_SUB_PORT_ADC    = 0x08u,
+    RET_SUB_PORT_RTC    = 0x09u,
+    RET_SUB_PORT_PWR    = 0x0Au,
 } ret_sub_port_t;
 
 /* ---- APP 子模块---- */
