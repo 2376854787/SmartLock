@@ -1,32 +1,36 @@
-﻿#ifndef STM32_UART_BSP_H
+#ifndef STM32_UART_BSP_H
 #define STM32_UART_BSP_H
+
 #include "APP_config.h"
 #include "stm32_hal_config.h"
-#if (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1)) && (defined(CFG_FEAT_HAL_UART) && (CFG_FEAT_HAL_UART == 1))
+
+#if (defined(CFG_TARGET_PLATFORM_STM32_HAL) && (CFG_TARGET_PLATFORM_STM32_HAL == 1)) && \
+    (defined(CFG_FEAT_HAL_UART) && (CFG_FEAT_HAL_UART == 1))
+
 #include <stdint.h>
 
 #include "hal_uart.h"
 #include "stm32_hal.h"
 
-/* BSP 提供每路 UART 的绑定资源（实例/DMA/缓存/优先级） */
+/**
+ * @brief BSP 提供每路 UART 的硬件绑定和 HAL 接收缓冲建议值
+ */
 typedef struct {
-    UART_HandleTypeDef* huart;   // HAL UART 句柄（需已配置 Instance）
-    DMA_HandleTypeDef* hdma_rx;  // 可为 NULL（不启用 DMA RX）
-    DMA_HandleTypeDef* hdma_tx;  // 可为 NULL（不启用 DMA TX）
-    IRQn_Type usart_irq;         // USARTx_IRQn
-    IRQn_Type dma_rx_irq;        // DMA RX IRQ（可选）
-    IRQn_Type dma_tx_irq;        // DMA TX IRQ（可选）
-    uint8_t* rx_dma_buf;         // DMA 环形缓冲
-    uint32_t rx_dma_len;         // 环形缓冲长度 必须为2的幂 否则出错
-    uint32_t sw_rb_len;          // 软件 RB 长度 默认1024
-    uint32_t irq_prio;           // NVIC 抢占优先级
-    uint32_t irq_sub_prio;       // 次优先级
+    UART_HandleTypeDef* huart;
+    DMA_HandleTypeDef* hdma_rx;
+    DMA_HandleTypeDef* hdma_tx;
+    IRQn_Type usart_irq;
+    IRQn_Type dma_rx_irq;
+    IRQn_Type dma_tx_irq;
+    uint8_t* rx_dma_buf;
+    uint32_t rx_dma_len;
+    uint32_t hal_rx_buffer_len;
+    uint32_t irq_prio;
+    uint32_t irq_sub_prio;
 } stm32_uart_bsp_t;
 
-/* 板级实现 */
 ret_code_t stm32_uart_bsp_get(hal_uart_id_t id, stm32_uart_bsp_t* out);
 
 #endif
 
 #endif
-

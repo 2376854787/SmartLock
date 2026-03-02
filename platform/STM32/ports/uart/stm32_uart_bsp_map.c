@@ -44,7 +44,7 @@ ret_code_t stm32_uart_bsp_get(hal_uart_id_t id, stm32_uart_bsp_t* out) {
             out->dma_tx_irq   = DMA2_Stream7_IRQn;
             out->rx_dma_buf   = g_uart1_rx_dma;         /* DMA 内存侧地址 */
             out->rx_dma_len   = sizeof(g_uart1_rx_dma); /* 长度必须为2的幂次大小 */
-            out->sw_rb_len    = 2048;                   /* 软件RB容量 */
+            out->hal_rx_buffer_len = 2048;              /* HAL 接收缓冲容量 */
             out->irq_prio     = 5;                      /* 抢占优先级 */
             out->irq_sub_prio = 0;                      /* 次优先级 */
             return RET_OK;
@@ -57,7 +57,7 @@ ret_code_t stm32_uart_bsp_get(hal_uart_id_t id, stm32_uart_bsp_t* out) {
             out->dma_tx_irq   = DMA1_Stream3_IRQn;
             out->rx_dma_buf   = g_uart3_rx_dma;
             out->rx_dma_len   = sizeof(g_uart3_rx_dma);
-            out->sw_rb_len    = 2048;
+            out->hal_rx_buffer_len = 2048;
             out->irq_prio     = 5;
             out->irq_sub_prio = 0;
             return RET_OK;
