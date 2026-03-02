@@ -73,6 +73,15 @@
 #if ((CFG_FEAT_HAL_FLASH != 0) && (CFG_FEAT_HAL_FLASH != 1))
 #error "CFG_FEAT_HAL_FLASH 必须为 0 或 1。"
 #endif
+#if ((CFG_FEAT_HAL_ADC != 0) && (CFG_FEAT_HAL_ADC != 1))
+#error "CFG_FEAT_HAL_ADC 必须为 0 或 1。"
+#endif
+#if ((CFG_FEAT_HAL_RTC != 0) && (CFG_FEAT_HAL_RTC != 1))
+#error "CFG_FEAT_HAL_RTC 必须为 0 或 1。"
+#endif
+#if ((CFG_FEAT_HAL_PWR != 0) && (CFG_FEAT_HAL_PWR != 1))
+#error "CFG_FEAT_HAL_PWR 必须为 0 或 1。"
+#endif
 #if ((CFG_FEAT_FLASH_PARTITION != 0) && (CFG_FEAT_FLASH_PARTITION != 1))
 #error "CFG_FEAT_FLASH_PARTITION 必须为 0 或 1。"
 #endif
@@ -155,6 +164,24 @@
 #endif
 #if ((CFG_PARAM_FLASH_LOG_PORT_ERR_IN_ISR != 0) && (CFG_PARAM_FLASH_LOG_PORT_ERR_IN_ISR != 1))
 #error "CFG_PARAM_FLASH_LOG_PORT_ERR_IN_ISR 必须为 0 或 1。"
+#endif
+#if ((CFG_PARAM_ADC_LOG_PORT_ERR != 0) && (CFG_PARAM_ADC_LOG_PORT_ERR != 1))
+#error "CFG_PARAM_ADC_LOG_PORT_ERR 必须为 0 或 1。"
+#endif
+#if ((CFG_PARAM_ADC_LOG_PORT_ERR_IN_ISR != 0) && (CFG_PARAM_ADC_LOG_PORT_ERR_IN_ISR != 1))
+#error "CFG_PARAM_ADC_LOG_PORT_ERR_IN_ISR 必须为 0 或 1。"
+#endif
+#if ((CFG_PARAM_RTC_LOG_PORT_ERR != 0) && (CFG_PARAM_RTC_LOG_PORT_ERR != 1))
+#error "CFG_PARAM_RTC_LOG_PORT_ERR 必须为 0 或 1。"
+#endif
+#if ((CFG_PARAM_RTC_LOG_PORT_ERR_IN_ISR != 0) && (CFG_PARAM_RTC_LOG_PORT_ERR_IN_ISR != 1))
+#error "CFG_PARAM_RTC_LOG_PORT_ERR_IN_ISR 必须为 0 或 1。"
+#endif
+#if ((CFG_PARAM_PWR_LOG_PORT_ERR != 0) && (CFG_PARAM_PWR_LOG_PORT_ERR != 1))
+#error "CFG_PARAM_PWR_LOG_PORT_ERR 必须为 0 或 1。"
+#endif
+#if ((CFG_PARAM_PWR_LOG_PORT_ERR_IN_ISR != 0) && (CFG_PARAM_PWR_LOG_PORT_ERR_IN_ISR != 1))
+#error "CFG_PARAM_PWR_LOG_PORT_ERR_IN_ISR 必须为 0 或 1。"
 #endif
 
 /* 依赖关系检查 */
