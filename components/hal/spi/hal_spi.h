@@ -122,11 +122,6 @@ typedef enum {
     HAL_SPI_EVT_STREAM_HALF = 3, /* stream.bytes: DMA 半满进度 */
     HAL_SPI_EVT_STREAM_FULL = 4, /* stream.bytes: DMA 全满进度 */
 } hal_spi_evt_type_t;
-/* eventbus 语义：
- * - DONE/STREAM_*: payload_u32 = bytes
- * - ERROR:         payload_u32 = ret_code_t
- * - key: [31:24]bus_id [23:16]cs_type [15:0]cs_gpio_id(低16位) */
-
 /* SPI 事件载体 */
 typedef struct {
     hal_spi_evt_type_t type;
@@ -144,9 +139,7 @@ typedef struct {
 } hal_spi_event_t;
 
 /* SPI 设备事件回调
- * @note 当 CFG_PARAM_SPI_CB_IN_ISR=0 时，ISR 上下文不会直调该回调。
- *       分发模式由 CFG_PARAM_SPI_EVT_DISPATCH_MODE 决定：
- *       eventbus / queue / task-notify。 */
+ * @note 当 CFG_PARAM_SPI_CB_IN_ISR=0 时，ISR 上下文不会直调该回调。 */
 typedef void (*hal_spi_evt_cb_t)(void *user, const hal_spi_event_t *evt);
 
 /* 数据传输载体 */
@@ -198,21 +191,9 @@ ret_code_t hal_spi_dev_detach(hal_spi_dev_t *dev);
  * @param cb   回调函数
  * @param user 用户上下文
  * @return RET_OK 或错误码
- * @note 分发模式与回调并行：即使投递到 eventbus/queue/task-notify，回调仍可启用。
+ * @note eventbus/queue/task-notify 等系统分发应在上层基于该回调自行桥接
  */
 ret_code_t hal_spi_dev_set_evt_cb(hal_spi_dev_t *dev, hal_spi_evt_cb_t cb, void *user);
-
-/**
- * @brief 注册 SPI 事件分发目标句柄
- * @param dev    设备句柄
- * @param target 分发目标
- * @return RET_OK 或错误码
- * @note CFG_PARAM_SPI_EVT_DISPATCH_MODE=QUEUE 时，target 需为 osal_msgq_t，队列 item 为
- * hal_spi_event_t。
- * @note CFG_PARAM_SPI_EVT_DISPATCH_MODE=TASK_NOTIFY 时，target 需为 osal_thread_t。
- * @note CFG_PARAM_SPI_EVT_DISPATCH_MODE=EVENTBUS 时，该句柄不会被使用。
- */
-ret_code_t hal_spi_dev_set_evt_target(hal_spi_dev_t *dev, void *target);
 
 /**
  * @brief 发起一次异步事务（非阻塞）
