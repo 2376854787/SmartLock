@@ -2,8 +2,8 @@
 
 #include <stdio.h>
 
+#include "hal_uart.h"
 #include "ret_code.h"
-
 static hal_uart_t* s_uart1_hal = NULL;
 
 #ifndef USART1_HAL_PORT_ID
@@ -15,11 +15,11 @@ static hal_uart_t* s_uart1_hal = NULL;
 #endif
 
 #ifndef USART1_DATA_BITS
-#define USART1_DATA_BITS WORDLENGTH_8B
+#define USART1_DATA_BITS HAL_UART_DATA_BITS_8
 #endif
 
 #ifndef USART1_STOP_BITS
-#define USART1_STOP_BITS STOPBITS_1
+#define USART1_STOP_BITS HAL_UART_STOP_BITS_1
 #endif
 
 #ifndef USART1_PARITY
@@ -33,12 +33,11 @@ static hal_uart_t* s_uart1_hal = NULL;
 bool MyUart_Init(void) {
     if (s_uart1_hal == NULL) {
         const hal_uart_cfg_t cfg = {
-            .baud         = USART1_BAUD,
-            .data_bits    = USART1_DATA_BITS,
-            .stop_bits    = USART1_STOP_BITS,
-            .parity       = (uint8_t)USART1_PARITY,
-            .flow_ctrl    = USART1_FLOW_CTRL,
-            .isCompatible = true,
+            .baud      = USART1_BAUD,
+            .data_bits = USART1_DATA_BITS,
+            .stop_bits = USART1_STOP_BITS,
+            .parity    = (uint8_t)USART1_PARITY,
+            .flow_ctrl = USART1_FLOW_CTRL,
         };
 
         if (ret_is_err(hal_uart_init(USART1_HAL_PORT_ID, &cfg, &s_uart1_hal))) {

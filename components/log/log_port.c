@@ -1,8 +1,9 @@
+#include "log_port.h"
+
 #include <stddef.h>
 
 #include "assert_cus.h"
 #include "log.h"
-#include "log_port.h"
 #include "ret_code.h"
 
 static volatile uint8_t s_uart_tx_busy = 0u;
@@ -20,15 +21,15 @@ static hal_uart_t* s_log_uart          = NULL;
 #endif
 
 #ifndef LOG_UART_DATA_BITS
-#define LOG_UART_DATA_BITS WORDLENGTH_8B
+#define LOG_UART_DATA_BITS HAL_UART_DATA_BITS_8
 #endif
 
 #ifndef LOG_UART_STOP_BITS
-#define LOG_UART_STOP_BITS STOPBITS_1
+#define LOG_UART_STOP_BITS HAL_UART_STOP_BITS_1
 #endif
 
 #ifndef LOG_UART_PARITY
-#define LOG_UART_PARITY 0u
+#define LOG_UART_PARITY HAL_UART_PARITY_NONE
 #endif
 
 #ifndef LOG_UART_FLOW_CTRL
@@ -61,7 +62,7 @@ static int Log_uart_send_async(const uint8_t* d, uint16_t n, void* user) {
     if (!s_log_uart) return LOG_PORT_RET(RET_CLASS_STATE, RET_R_NOT_READY);
     if (s_uart_tx_busy) return LOG_PORT_RET(RET_CLASS_STATE, RET_R_BUSY);
 
-    s_uart_tx_busy = 1u;
+    s_uart_tx_busy      = 1u;
     const ret_code_t rc = hal_uart_send_async(s_log_uart, d, (uint32_t)n);
     if (ret_is_ok(rc)) return RET_OK;
 
@@ -77,12 +78,11 @@ void Log_PortInit(void) {
 
     if (!s_log_uart) {
         const hal_uart_cfg_t cfg = {
-            .baud         = LOG_UART_BAUD,
-            .data_bits    = LOG_UART_DATA_BITS,
-            .stop_bits    = LOG_UART_STOP_BITS,
-            .parity       = (uint8_t)LOG_UART_PARITY,
-            .flow_ctrl    = LOG_UART_FLOW_CTRL,
-            .isCompatible = true,
+            .baud      = LOG_UART_BAUD,
+            .data_bits = LOG_UART_DATA_BITS,
+            .stop_bits = LOG_UART_STOP_BITS,
+            .parity    = LOG_UART_PARITY,
+            .flow_ctrl = LOG_UART_FLOW_CTRL,
         };
         if (ret_is_ok(hal_uart_init(LOG_UART_PORT_ID, &cfg, &s_log_uart))) {
             (void)hal_uart_rx_start(s_log_uart);

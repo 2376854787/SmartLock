@@ -107,12 +107,11 @@ void at_core_task_init(AT_Manager_t* at) {
     }
 
     const hal_uart_cfg_t uart_cfg = {
-        .baud         = AT_UART_BAUD,
-        .data_bits    = AT_UART_DATA_BITS,
-        .stop_bits    = AT_UART_STOP_BITS,
-        .parity       = (uint8_t)AT_UART_PARITY,
-        .flow_ctrl    = AT_UART_FLOW_CTRL,
-        .isCompatible = true,
+        .baud      = AT_UART_BAUD,
+        .data_bits = AT_UART_DATA_BITS,
+        .stop_bits = AT_UART_STOP_BITS,
+        .parity    = AT_UART_PARITY,
+        .flow_ctrl = AT_UART_FLOW_CTRL,
     };
     AT_Core_Init(at, AT_UART_PORT_ID, &uart_cfg, Uart_send);
 }
@@ -149,5 +148,3 @@ static bool Uart_send(AT_Manager_t* mgr, const uint8_t* data, uint16_t len) {
 }
 
 #endif
-
-
