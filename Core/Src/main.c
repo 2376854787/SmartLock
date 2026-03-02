@@ -23,6 +23,7 @@
 #include "dma.h"
 #include "i2c.h"
 #include "iwdg.h"
+#include "rtc.h"
 #include "spi.h"
 #include "tim.h"
 #include "usart.h"
@@ -194,6 +195,7 @@ int main(void)
   MX_I2C1_Init();
   MX_IWDG_Init();
   MX_SPI1_Init();
+  MX_RTC_Init();
   /* USER CODE BEGIN 2 */
     /* 直接寄存器发送测试（不依赖HAL超时） */
     // BB_Info_Printf(); /* 打印复位/崩溃信息 */
