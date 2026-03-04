@@ -178,10 +178,10 @@ ret_code_t gt911_init(gt911_dev_t* dev, const gt911_cfg_t* cfg) {
     dev->max_y    = cfg->max_y;
 
     /* 打开 RST / INT 引脚句柄 */
-    ret_code_t rc = hal_gpio_open(&dev->rst, cfg->gpio_id_rst);
+    ret_code_t rc = hal_gpio_acquire(&dev->rst, cfg->gpio_id_rst);
     if (ret_is_err(rc)) return gt911_wrap_lower_rc(rc);
 
-    rc = hal_gpio_open(&dev->intr, cfg->gpio_id_int);
+    rc = hal_gpio_acquire(&dev->intr, cfg->gpio_id_int);
     if (ret_is_err(rc)) return gt911_wrap_lower_rc(rc);
 
     /* 硬件复位 + I2C 地址选择 */
