@@ -1,8 +1,9 @@
+#include "AT.h"
 #include "board_gpio_ids.h"
 #include "disp_config.h"
 #include "gt911.h"
+#include "log.h"
 #include "lvgl.h"
-
 
 /* -------------------------------------------------------------------------
  * 静态变量定义
@@ -30,11 +31,14 @@ void lv_port_indev_init(void) {
                              .i2c_addr     = GT911_ADDR_HIGH,
                              .max_x        = DISP_PHYS_W, /* GT911 始终用物理分辨率 480 */
                              .max_y        = DISP_PHYS_H, /* GT911 始终用物理分辨率 800 */
-                             .refresh_rate = 100};
+                             .refresh_rate = 10};
 
     const ret_code_t ret  = gt911_init(&s_lv_gt911_dev, &cfg);
     if (ret != RET_OK) {
+        LOG_E("INDEV", "GT911 init FAIL rc=0x%08lX", (unsigned long)ret);
         return;
+    } else {
+        LOG_I("INDEV", "GT911 init OK");
     }
 
     /* 2. 注册 LVGL 输入设备 (v9 写法) */
