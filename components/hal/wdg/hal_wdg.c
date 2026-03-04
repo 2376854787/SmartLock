@@ -1,5 +1,6 @@
-#include "APP_config.h"
 #include "hal_wdg.h"
+
+#include "APP_config.h"
 
 #define WDG_HAL_PARAM(reason_)   RET_MAKE_PARAM(RET_MOD_HAL, RET_SUB_HAL_WDT, (reason_))
 #define WDG_HAL_STATE(reason_)   RET_MAKE_STATE(RET_MOD_HAL, RET_SUB_HAL_WDT, (reason_))
@@ -95,6 +96,8 @@ static inline ret_code_t wdg_map_port_to_hal(ret_code_t rc_port, const char* api
 static ret_code_t wdg_cfg_check(const hal_wdg_cfg_t* cfg) {
     ASSERT_PARAM(cfg != NULL);
     REQUIRE_RET(cfg != NULL, WDG_HAL_PARAM(RET_R_NULL_PTR));
+    REQUIRE_RET((cfg->mode == HAL_WDG_MODE_IWDG) || (cfg->mode == HAL_WDG_MODE_WWDG),
+                WDG_HAL_PARAM(RET_R_INVALID_ARG));
     REQUIRE_RET(cfg->timeout_ms != 0u, WDG_HAL_PARAM(RET_R_RANGE_ERR));
 
     /*　窗口看门狗　且　超时时间大于窗口　或　等于０　*/
@@ -118,6 +121,7 @@ ret_code_t hal_wdg_init(const hal_wdg_cfg_t* cfg) {
     /* 检查参数 */
     ret_code_t rc = wdg_cfg_check(cfg);
     if (ret_is_err(rc)) return rc;
+    REQUIRE_RET(!s_inited, WDG_HAL_STATE(RET_R_BUSY));
 
     /* 初始化 看门狗 */
     rc = hal_wdg_port_init(cfg);
@@ -141,6 +145,15 @@ ret_code_t hal_wdg_kick(void) {
 }
 
 #else
+
+void hal_wdg_on_port_error(ret_code_t rc_port, ret_code_t rc_hal, const char* api, uint32_t arg0,
+                           uint32_t arg1) {
+    (void)rc_port;
+    (void)rc_hal;
+    (void)api;
+    (void)arg0;
+    (void)arg1;
+}
 
 bool hal_wdg_is_inited(void) {
     return false;
