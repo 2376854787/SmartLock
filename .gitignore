@@ -2,7 +2,7 @@
 build/
 Debug/
 Release/
-
+tests/unit/bin
 # 忽略 STM32CubeMX 产生的临时文件
 mx.scratch
 *.swp
