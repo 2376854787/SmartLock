@@ -425,7 +425,7 @@ void StartTask_LCD(void *argument)
         }
         /* 等待屏幕刷新超过 20次 初始化esp */
         if (!esp_init_done && lv_port_disp_get_flush_count() > 20) {
-            esp01s_Init();
+            //esp01s_Init();
             esp_init_done = 1;
             LOG_I("StartTask_LCD", "ESP init done");
         }
