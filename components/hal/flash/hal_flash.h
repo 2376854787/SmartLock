@@ -48,15 +48,14 @@ typedef struct {
     uint32_t size;  /* region 大小，单位字节 */
 } hal_flash_region_t;
 
-/* 对于 IT 驱动完成的 erase/write，通知回调可能运行在 ISR 上下文。 */
+/* 对齐 Fls JobEndNotification/JobErrorNotification 语义。
+ * 对于 IT 驱动完成的 erase/write，通知回调可能运行在 ISR 上下文。 */
 typedef void (*hal_flash_job_notify_t)(void *user, hal_flash_job_result_t result);
 
 typedef struct {
     hal_flash_job_notify_t job_end_notify;   /* Job 成功完成通知，NULL=不注册 */
     hal_flash_job_notify_t job_error_notify; /* Job 失败/取消通知，NULL=不注册 */
     void *user;                              /* 回调透传用户上下文 */
-    bool enable_background_worker;           /* RTOS 场景下是否自动创建后台 worker 推进 read/compare/blank_check job */
-    uint32_t worker_stack_size;              /* 后台 worker 栈大小；0 表示使用模块默认值 */
 } hal_flash_cfg_t;
 
 /**
@@ -64,6 +63,7 @@ typedef struct {
  * @param cfg 模块配置；传 NULL 使用默认配置
  * @return RET_OK 或错误码
  * @note 模块为单例，重复初始化会返回 BUSY
+ * @note 作业推进由上层显式调用 hal_flash_main_function()，HAL 不负责创建 worker/task
  */
 ret_code_t hal_flash_init(const hal_flash_cfg_t *cfg);
 
@@ -118,7 +118,7 @@ ret_code_t hal_flash_cancel(void);
 
 /**
  * @brief Flash 模块主处理函数
- * @note 裸机/无后台 worker 场景下，需要周期性调用以推进 pending job
+ * @note 上层系统服务/调度层需周期性调用，以推进 pending job
  * @note 当前 erase/write 会在这里启动 IT，然后由 Flash IRQ 回调收尾
  */
 void hal_flash_main_function(void);
@@ -199,6 +199,11 @@ ret_code_t hal_flash_compare_sync(uint32_t addr, const void *src, uint32_t len);
  */
 ret_code_t hal_flash_blank_check_sync(uint32_t addr, uint32_t len, bool *out);
 
+/**
+ * @brief 同步判断目标区域是否处于擦除态
+ * @note 当前为 hal_flash_blank_check_sync() 的语义化别名
+ */
+ret_code_t hal_flash_is_erased(uint32_t addr, uint32_t len, bool *out);
 
 /**
  * @brief 内部错误弱钩子函数替换内部默认实现

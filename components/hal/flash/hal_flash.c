@@ -20,11 +20,6 @@
 #include "log.h"
 #endif
 
-#ifndef CFG_PARAM_FLASH_WORKER_STACK_SIZE
-#define CFG_PARAM_FLASH_WORKER_STACK_SIZE 1024u /* RTOS 任务栈大小 */
-#endif
-
-#define FLASH_WORKER_FLAG_RUN    (1u << 0)
 #define FLASH_COMPARE_SLOW_CHUNK 32u
 #define FLASH_COMPARE_FAST_CHUNK 128u
 
@@ -49,13 +44,10 @@ typedef struct {
 
 typedef struct {
     bool initialized;                  /* 模块是否已完成 init */
-    bool dispatching;                  /* 当前 job 是否已被 MainFunction/worker 接管执行 */
-    bool worker_enabled;               /* 是否启用后台 worker 模式 */
-    bool worker_created;               /* 后台 worker 是否已成功创建 */
+    bool job_processing;               /* 当前 job 是否已被 MainFunction 接管执行 */
     volatile uint8_t cancel_requested; /* 取消请求标记；执行中仅做 best-effort 收敛 */
     osal_mutex_t lock;                 /* 保护控制块和 job 状态的互斥锁 */
     bool lock_valid;                   /* lock 是否可用；裸机场景可能为 false */
-    osal_thread_t worker;              /* 后台执行异步 job 的 worker 线程句柄 */
     hal_flash_status_t status;         /* 模块状态：UNINIT/IDLE/BUSY */
     hal_flash_job_result_t job_result; /* 当前或最近一次作业结果 */
     hal_flash_mode_t mode;             /* 当前作业模式 */
@@ -181,14 +173,14 @@ static void flash_port_evt_handler(void *user, hal_flash_port_evt_t evt) {
     else
         OSAL_enter_critical_ex(&cs);
 
-    if (s_flash.initialized && s_flash.dispatching &&
+    if (s_flash.initialized && s_flash.job_processing &&
         (s_flash.job_result == HAL_FLASH_JOB_PENDING) &&
         ((s_flash.job.type == HAL_FLASH_JOB_TYPE_ERASE) ||
          (s_flash.job.type == HAL_FLASH_JOB_TYPE_WRITE))) {
         s_flash.status     = HAL_FLASH_STATUS_IDLE;
         s_flash.job_result = result;
         flash_clear_job_locked();
-        s_flash.dispatching      = false;
+        s_flash.job_processing   = false;
         s_flash.cancel_requested = 0u;
 
         if ((result == HAL_FLASH_JOB_OK) && (s_flash.cfg.job_end_notify != NULL))
@@ -251,13 +243,13 @@ static bool flash_try_take_job(hal_flash_job_t *out) {
     bool ready = false;
 
     if (flash_lock(OSAL_WAIT_FOREVER) != RET_OK) return false;
-    /* 已经初始化 & 必须是有任务且未完成任务 &  任务没有被 接管*/
+    /* 已初始化且存在 pending job，并且该 job 尚未被 MainFunction 接管。 */
     if (s_flash.initialized && (s_flash.status == HAL_FLASH_STATUS_BUSY) &&
-        (s_flash.job_result == HAL_FLASH_JOB_PENDING) && !s_flash.dispatching &&
+        (s_flash.job_result == HAL_FLASH_JOB_PENDING) && !s_flash.job_processing &&
         (s_flash.job.type != HAL_FLASH_JOB_TYPE_NONE)) {
-        s_flash.dispatching = true;        /* 标记已接管 */
-        *out                = s_flash.job; /* 输出工作内容 */
-        ready               = true;        /* 告诉调用方 有任务需要被接管处理 */
+        s_flash.job_processing = true;
+        *out                   = s_flash.job;
+        ready                  = true;
     }
     flash_unlock();
     return ready;
@@ -269,7 +261,7 @@ static void flash_finish_job(hal_flash_job_result_t result) {
         s_flash.status     = HAL_FLASH_STATUS_IDLE;
         s_flash.job_result = result;
         flash_clear_job_locked();
-        s_flash.dispatching      = false;
+        s_flash.job_processing   = false;
         s_flash.cancel_requested = 0u;
         flash_unlock();
     }
@@ -277,13 +269,6 @@ static void flash_finish_job(hal_flash_job_result_t result) {
     flash_emit_notify(result);
 }
 
-static void flash_worker_entry(void *arg) {
-    (void)arg;
-    for (;;) {
-        (void)OSAL_thread_flags_wait(FLASH_WORKER_FLAG_RUN, OSAL_FLAGS_WAIT_ANY, OSAL_WAIT_FOREVER);
-        hal_flash_main_function();
-    }
-}
 /**
  * @brief 初始化全局配置
  * @param cfg 配置
@@ -299,9 +284,6 @@ ret_code_t hal_flash_init(const hal_flash_cfg_t *cfg) {
     /*　NULL 设置默认状态　*/
     if (cfg != NULL) {
         s_flash.cfg = *cfg;
-    } else {
-        s_flash.cfg.enable_background_worker = true;
-        s_flash.cfg.worker_stack_size        = 0u;
     }
 
     const ret_code_t rc = hal_flash_port_set_evt_cb(flash_port_evt_handler, NULL);
@@ -311,28 +293,6 @@ ret_code_t hal_flash_init(const hal_flash_cfg_t *cfg) {
         const ret_code_t rc_lock = OSAL_mutex_create(&s_flash.lock, "hal_flash", false, true);
         if (ret_is_err(rc_lock)) return FLASH_HAL_RES(RET_R_NO_RESOURCE);
         s_flash.lock_valid = true;
-    }
-    /* 使能RTOS 任务 & RTOS 内核运行  -->  创建任务*/
-    if (s_flash.cfg.enable_background_worker && OSAL_kernel_is_running()) {
-        const osal_thread_attr_t attr = {
-            .name       = "flash",
-            .stack_size = (s_flash.cfg.worker_stack_size != 0u) ? s_flash.cfg.worker_stack_size
-                                                                : CFG_PARAM_FLASH_WORKER_STACK_SIZE,
-            .priority   = OSAL_PRIO_NORMAL,
-        };
-        const ret_code_t rc_thread =
-            OSAL_thread_create(&s_flash.worker, flash_worker_entry, NULL, &attr);
-        /* 处理失败的场景 */
-        if (ret_is_err(rc_thread)) {
-            if (s_flash.lock_valid) {
-                (void)OSAL_mutex_delete(s_flash.lock);
-                s_flash.lock       = NULL;
-                s_flash.lock_valid = false;
-            }
-            return FLASH_HAL_RES(RET_R_NO_RESOURCE);
-        }
-        s_flash.worker_created = true;
-        s_flash.worker_enabled = true;
     }
 
     s_flash.initialized = true;
@@ -394,17 +354,17 @@ ret_code_t hal_flash_cancel(void) {
         flash_unlock();
         return FLASH_HAL_STATE(RET_R_NOT_READY);
     }
-    if (s_flash.dispatching && ((s_flash.job.type == HAL_FLASH_JOB_TYPE_ERASE) ||
-                                (s_flash.job.type == HAL_FLASH_JOB_TYPE_WRITE))) {
+    if (s_flash.job_processing && ((s_flash.job.type == HAL_FLASH_JOB_TYPE_ERASE) ||
+                                   (s_flash.job.type == HAL_FLASH_JOB_TYPE_WRITE))) {
         flash_unlock();
         return FLASH_HAL_STATE(RET_R_BUSY);
     }
-    /* 裸机下的主任务 手动处理  */
-    if (!s_flash.dispatching) {
+    /* MainFunction 尚未接管时，允许直接取消待处理 job。 */
+    if (!s_flash.job_processing) {
         s_flash.status     = HAL_FLASH_STATUS_IDLE;
         s_flash.job_result = HAL_FLASH_JOB_CANCELED;
         flash_clear_job_locked();
-        s_flash.dispatching      = false;
+        s_flash.job_processing   = false;
         s_flash.cancel_requested = 0u;
         flash_unlock();
         flash_emit_notify(HAL_FLASH_JOB_CANCELED);
@@ -437,24 +397,18 @@ static ret_code_t flash_schedule_job(hal_flash_job_type_t type, uint32_t addr, u
         return FLASH_HAL_STATE(RET_R_BUSY);
     }
     /* 提交事务 */
-    s_flash.job.type           = type;
-    s_flash.job.addr           = addr;
-    s_flash.job.len            = len;
-    s_flash.job.dst            = dst;
-    s_flash.job.src            = src;
-    s_flash.job.blank_out      = blank_out;
-    s_flash.job_result         = HAL_FLASH_JOB_PENDING;
-    s_flash.status             = HAL_FLASH_STATUS_BUSY;
-    s_flash.dispatching        = false;
-    s_flash.cancel_requested   = 0u;
+    s_flash.job.type         = type;
+    s_flash.job.addr         = addr;
+    s_flash.job.len          = len;
+    s_flash.job.dst          = dst;
+    s_flash.job.src          = src;
+    s_flash.job.blank_out    = blank_out;
+    s_flash.job_result       = HAL_FLASH_JOB_PENDING;
+    s_flash.status           = HAL_FLASH_STATUS_BUSY;
+    s_flash.job_processing   = false;
+    s_flash.cancel_requested = 0u;
 
-    /* 检查 work函数是否被创建 和 使能 */
-    const bool signal_worker   = s_flash.worker_enabled && s_flash.worker_created;
-    const osal_thread_t worker = s_flash.worker;
     flash_unlock();
-
-    /* 任务通知唤醒 */
-    if (signal_worker) (void)OSAL_thread_flags_set(worker, FLASH_WORKER_FLAG_RUN);
     return RET_OK;
 }
 
@@ -483,7 +437,8 @@ ret_code_t hal_flash_blank_check(uint32_t addr, uint32_t len, bool *out) {
     return flash_schedule_job(HAL_FLASH_JOB_TYPE_BLANK_CHECK, addr, len, NULL, NULL, out);
 }
 /**
- * @brief 检查是否有任务需要被处理 根据工作内容选择不同的处理函数进行处理
+ * @brief 推进当前 pending job
+ * @note 语义对齐 Fls_MainFunction：上层调度周期性调用，HAL 在此启动或推进作业
  */
 void hal_flash_main_function(void) {
     /* 初始化检查 */
@@ -499,7 +454,7 @@ void hal_flash_main_function(void) {
     }
 
     ret_code_t rc = FLASH_HAL_STATE(RET_R_STATE_ERR);
-    /* 根据设备的工作 类型调用对应的 处理函数 */
+    /* 根据当前 job 类型执行对应动作。 */
     switch (job.type) {
         case HAL_FLASH_JOB_TYPE_READ:
             rc = flash_read_direct(job.addr, job.dst, job.len);
@@ -524,7 +479,7 @@ void hal_flash_main_function(void) {
             rc = FLASH_HAL_PARAM(RET_R_INVALID_ARG);
             break;
     }
-    /* 返回工作的结果 */
+    /* 同步完成的 job 在本次 MainFunction 内收尾。 */
     if (s_flash.cancel_requested != 0u) {
         flash_finish_job(HAL_FLASH_JOB_CANCELED);
     } else if (ret_is_ok(rc)) {
@@ -553,7 +508,7 @@ ret_code_t hal_flash_read_sync(uint32_t addr, void *dst, uint32_t len) {
     /* 更新状态机 */
     s_flash.status           = HAL_FLASH_STATUS_BUSY;
     s_flash.job_result       = HAL_FLASH_JOB_PENDING;
-    s_flash.dispatching      = true; /* 防止被 work函数进行处理 */
+    s_flash.job_processing   = true; /* 防止被 MainFunction 二次接管 */
     s_flash.cancel_requested = 0u;
     flash_unlock();
     /* 读取 数据 */
@@ -562,7 +517,7 @@ ret_code_t hal_flash_read_sync(uint32_t addr, void *dst, uint32_t len) {
     if (flash_lock(OSAL_WAIT_FOREVER) == RET_OK) {
         s_flash.status           = HAL_FLASH_STATUS_IDLE;
         s_flash.job_result       = ret_is_ok(rc) ? HAL_FLASH_JOB_OK : HAL_FLASH_JOB_FAILED;
-        s_flash.dispatching      = false;
+        s_flash.job_processing   = false;
         s_flash.cancel_requested = 0u;
         flash_unlock();
     }
@@ -587,7 +542,7 @@ ret_code_t hal_flash_erase_sync(uint32_t addr, uint32_t len) {
     /* 更新状态机 */
     s_flash.status           = HAL_FLASH_STATUS_BUSY;
     s_flash.job_result       = HAL_FLASH_JOB_PENDING;
-    s_flash.dispatching      = true;
+    s_flash.job_processing   = true;
     s_flash.cancel_requested = 0u;
     flash_unlock();
     /* 擦除数据 */
@@ -596,7 +551,7 @@ ret_code_t hal_flash_erase_sync(uint32_t addr, uint32_t len) {
     if (flash_lock(OSAL_WAIT_FOREVER) == RET_OK) {
         s_flash.status           = HAL_FLASH_STATUS_IDLE;
         s_flash.job_result       = ret_is_ok(rc) ? HAL_FLASH_JOB_OK : HAL_FLASH_JOB_FAILED;
-        s_flash.dispatching      = false;
+        s_flash.job_processing   = false;
         s_flash.cancel_requested = 0u;
         flash_unlock();
     }
@@ -622,7 +577,7 @@ ret_code_t hal_flash_write_sync(uint32_t addr, const void *src, uint32_t len) {
     /* 更新状态机 */
     s_flash.status           = HAL_FLASH_STATUS_BUSY;
     s_flash.job_result       = HAL_FLASH_JOB_PENDING;
-    s_flash.dispatching      = true;
+    s_flash.job_processing   = true;
     s_flash.cancel_requested = 0u;
     flash_unlock();
     /* 写入数据 */
@@ -631,7 +586,7 @@ ret_code_t hal_flash_write_sync(uint32_t addr, const void *src, uint32_t len) {
     if (flash_lock(OSAL_WAIT_FOREVER) == RET_OK) {
         s_flash.status           = HAL_FLASH_STATUS_IDLE;
         s_flash.job_result       = ret_is_ok(rc) ? HAL_FLASH_JOB_OK : HAL_FLASH_JOB_FAILED;
-        s_flash.dispatching      = false;
+        s_flash.job_processing   = false;
         s_flash.cancel_requested = 0u;
         flash_unlock();
     }
@@ -657,7 +612,7 @@ ret_code_t hal_flash_compare_sync(uint32_t addr, const void *src, uint32_t len) 
     /* 状态机 */
     s_flash.status           = HAL_FLASH_STATUS_BUSY;
     s_flash.job_result       = HAL_FLASH_JOB_PENDING;
-    s_flash.dispatching      = true;
+    s_flash.job_processing   = true;
     s_flash.cancel_requested = 0u;
     flash_unlock();
 
@@ -666,7 +621,7 @@ ret_code_t hal_flash_compare_sync(uint32_t addr, const void *src, uint32_t len) 
     if (flash_lock(OSAL_WAIT_FOREVER) == RET_OK) {
         s_flash.status           = HAL_FLASH_STATUS_IDLE;
         s_flash.job_result       = ret_is_ok(rc) ? HAL_FLASH_JOB_OK : HAL_FLASH_JOB_FAILED;
-        s_flash.dispatching      = false;
+        s_flash.job_processing   = false;
         s_flash.cancel_requested = 0u;
         flash_unlock();
     }
@@ -686,7 +641,7 @@ ret_code_t hal_flash_blank_check_sync(uint32_t addr, uint32_t len, bool *out) {
     /* 更新状态机 */
     s_flash.status           = HAL_FLASH_STATUS_BUSY;
     s_flash.job_result       = HAL_FLASH_JOB_PENDING;
-    s_flash.dispatching      = true;
+    s_flash.job_processing   = true;
     s_flash.cancel_requested = 0u;
     flash_unlock();
 
@@ -695,7 +650,7 @@ ret_code_t hal_flash_blank_check_sync(uint32_t addr, uint32_t len, bool *out) {
     if (flash_lock(OSAL_WAIT_FOREVER) == RET_OK) {
         s_flash.status           = HAL_FLASH_STATUS_IDLE;
         s_flash.job_result       = ret_is_ok(rc) ? HAL_FLASH_JOB_OK : HAL_FLASH_JOB_FAILED;
-        s_flash.dispatching      = false;
+        s_flash.job_processing   = false;
         s_flash.cancel_requested = 0u;
         flash_unlock();
     }
@@ -707,6 +662,15 @@ ret_code_t hal_flash_is_erased(uint32_t addr, uint32_t len, bool *out) {
 }
 
 #else
+
+void hal_flash_on_port_error(ret_code_t rc_port, ret_code_t rc_hal, const char *api, uint32_t arg0,
+                             uint32_t arg1) {
+    (void)rc_port;
+    (void)rc_hal;
+    (void)api;
+    (void)arg0;
+    (void)arg1;
+}
 
 ret_code_t hal_flash_init(const hal_flash_cfg_t *cfg) {
     (void)cfg;
