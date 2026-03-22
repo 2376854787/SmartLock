@@ -34,18 +34,27 @@ void FaultCapture_FromStack_cm(uint32_t* sp, bb_crash_type_t type) {
     }
     /* 直接从栈指针偏移读取，避免结构体对齐问题 */
     fault_ctx_t ctx;
-    ctx.pc    = sp[STACK_FRAME_PC];
-    ctx.lr    = sp[STACK_FRAME_LR];
-    ctx.sp    = (uint32_t)(uintptr_t)sp;
-    ctx.psr   = sp[STACK_FRAME_PSR];
+    ctx.pc  = sp[STACK_FRAME_PC];
+    ctx.lr  = sp[STACK_FRAME_LR];
+    ctx.sp  = (uint32_t)(uintptr_t)sp;
+    ctx.psr = sp[STACK_FRAME_PSR];
 
     /* SCB 错误寄存器 */
+#if (__CORTEX_M >= 3)
     ctx.cfsr  = SCB->CFSR;
     ctx.hfsr  = SCB->HFSR;
     ctx.dfsr  = SCB->DFSR;
     ctx.mmfar = SCB->MMFAR;
     ctx.bfar  = SCB->BFAR;
     ctx.afsr  = SCB->AFSR;
+#elif (__CORTEX_M < 3)
+    ctx.cfsr  = 0;
+    ctx.hfsr  = 0;
+    ctx.dfsr  = 0;
+    ctx.mmfar = 0;
+    ctx.bfar  = 0;
+    ctx.afsr  = 0;
+#endif
 
     /* 平台无关提交 */
     FaultRecord_Commit(type, &ctx);
