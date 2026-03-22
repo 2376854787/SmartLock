@@ -31,59 +31,61 @@ extern "C" {
  * ========================================================================================= */
 
 typedef enum {
-    HAL_I2C_PORT_EVT_DONE  = 1,
-    HAL_I2C_PORT_EVT_ERROR = 2,
+    HAL_I2C_PORT_EVT_DONE  = 1, /* 异步事务正常完成 */
+    HAL_I2C_PORT_EVT_ERROR = 2, /* 异步事务异常结束 */
 } hal_i2c_port_evt_type_t;
 
+/* I2C port 层事件载体。 */
 typedef struct {
-    hal_i2c_port_evt_type_t type;
-    ret_code_t rc_port;
-    uint32_t tx_bytes;
-    uint32_t rx_bytes;
+    hal_i2c_port_evt_type_t type; /* 事件类型 */
+    ret_code_t rc_port;           /* port 语义错误码 */
+    uint32_t tx_bytes;            /* 已发送字节数 */
+    uint32_t rx_bytes;            /* 已接收字节数 */
 } hal_i2c_port_evt_t;
 
 typedef void (*hal_i2c_port_evt_cb_t)(void *user, const hal_i2c_port_evt_t *evt);
 
+/* 单条 I2C 总线在 port 层的运行时上下文。 */
 typedef struct {
     stm32_i2c_bsp_t bsp; /* 板级资源映射 */
     bool use_dma;        /* 该总线是否启用 DMA 异步路径 */
     bool use_irq;        /* 该总线是否启用 IT 异步路径 */
 
-    bool cfg_cache_valid;             /* 最近一次 apply 配置是否有效 */
+    bool cfg_cache_valid;              /* 最近一次 apply 配置是否有效 */
     hal_i2c_addr_mode_t cur_addr_mode; /* 当前缓存地址模式 */
-    uint32_t cur_hz;                  /* 当前缓存频率 */
-    bool cur_no_stretch;              /* 当前缓存 no-stretch */
-    bool cur_general_call;            /* 当前缓存 general-call */
+    uint32_t cur_hz;                   /* 当前缓存频率 */
+    bool cur_no_stretch;               /* 当前缓存 no-stretch */
+    bool cur_general_call;             /* 当前缓存 general-call */
 
-    bool opened;               /* port 是否已打开 */
+    bool opened;                /* port 是否已初始化 */
     volatile uint8_t xfer_busy; /* 是否存在在途异步事务 */
 
-    uint16_t active_dev_addr;             /* 当前活跃设备地址（HAL 格式） */
-    uint32_t active_tx_len;               /* 当前活跃事务 tx 字节数 */
-    uint32_t active_rx_len;               /* 当前活跃事务 rx 字节数 */
-    const uint8_t *active_tx;             /* 当前活跃 tx 缓冲区 */
-    uint8_t *active_rx;                   /* 当前活跃 rx 缓冲区 */
+    uint16_t active_dev_addr; /* 当前活跃设备地址（HAL 格式） */
+    uint32_t active_tx_len;   /* 当前活跃事务 tx 字节数 */
+    uint32_t active_rx_len;   /* 当前活跃事务 rx 字节数 */
+    const uint8_t *active_tx; /* 当前活跃 tx 缓冲区 */
+    uint8_t *active_rx;       /* 当前活跃 rx 缓冲区 */
 
     hal_i2c_port_evt_cb_t evt_cb; /* port 事件回调 */
     void *evt_user;               /* 回调用户上下文 */
 } hal_i2c_port_ctx_t;
 
 /**
- * @brief 打开 I2C port
+ * @brief 初始化 I2C port
  * @param cfg 总线配置
  * @param out 返回 port 上下文
  * @return RET_OK 或错误码
- * @note 打开后会完成 BSP 资源关联与可选 NVIC 配置
+ * @note 初始化后会完成 BSP 资源关联与可选 NVIC 配置
  */
-ret_code_t hal_i2c_port_open(const hal_i2c_bus_cfg_t *cfg, hal_i2c_port_ctx_t *out);
+ret_code_t hal_i2c_port_init(const hal_i2c_bus_cfg_t *cfg, hal_i2c_port_ctx_t *out);
 
 /**
- * @brief 关闭 I2C port
+ * @brief 反初始化 I2C port
  * @param ctx port 句柄
  * @return RET_OK 或错误码
  * @note 若仍有事务进行中会返回 BUSY
  */
-ret_code_t hal_i2c_port_close(hal_i2c_port_ctx_t *ctx);
+ret_code_t hal_i2c_port_deinit(hal_i2c_port_ctx_t *ctx);
 
 /**
  * @brief 注册 port 事件回调

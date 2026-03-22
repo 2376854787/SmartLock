@@ -15,7 +15,7 @@
 #define I2C_PORT_IO(reason_)      RET_MAKE_IO(RET_MOD_PORT, RET_SUB_PORT_I2C, (reason_))
 #define I2C_PORT_RES(reason_)     RET_MAKE_RESOURCE(RET_MOD_PORT, RET_SUB_PORT_I2C, (reason_))
 
-/* 打开的 I2C 端口注册表：用于在 HAL 回调里反查 ctx */
+/* 已初始化的 I2C 端口注册表：用于在 HAL 回调里反查 ctx */
 static hal_i2c_port_ctx_t *s_i2c_ctxs[HAL_I2C_BUS_MAX];
 
 /**
@@ -60,12 +60,12 @@ static inline uint16_t i2c_to_hal_addr(const hal_i2c_dev_cfg_t *dev_cfg) {
 static inline void clear_xfer_ctx(hal_i2c_port_ctx_t *ctx) {
     CORE_ASSERT(ctx != NULL);
     if (!ctx) return;
-    ctx->xfer_busy      = 0u;
+    ctx->xfer_busy       = 0u;
     ctx->active_dev_addr = 0u;
-    ctx->active_tx_len  = 0u;
-    ctx->active_rx_len  = 0u;
-    ctx->active_tx      = NULL;
-    ctx->active_rx      = NULL;
+    ctx->active_tx_len   = 0u;
+    ctx->active_rx_len   = 0u;
+    ctx->active_tx       = NULL;
+    ctx->active_rx       = NULL;
 }
 
 /**
@@ -185,21 +185,23 @@ static ret_code_t validate_xfer_runtime(const hal_i2c_port_ctx_t *ctx, const hal
     if (!ctx->use_dma && !ctx->use_irq) return I2C_PORT_PARAM(RET_R_UNSUPPORTED);
 
     if (ctx->use_dma) {
-        if ((xfer->tx_len > 0u) && (ctx->bsp.hdma_tx == NULL)) return I2C_PORT_STATE(RET_R_NOT_READY);
-        if ((xfer->rx_len > 0u) && (ctx->bsp.hdma_rx == NULL)) return I2C_PORT_STATE(RET_R_NOT_READY);
+        if ((xfer->tx_len > 0u) && (ctx->bsp.hdma_tx == NULL))
+            return I2C_PORT_STATE(RET_R_NOT_READY);
+        if ((xfer->rx_len > 0u) && (ctx->bsp.hdma_rx == NULL))
+            return I2C_PORT_STATE(RET_R_NOT_READY);
     }
     return RET_OK;
 }
 
 /**
- * @brief 打开 I2C port 并完成 DMA/IRQ 资源绑定
+ * @brief 初始化 I2C port 并完成 DMA/IRQ 资源绑定
  * @details
  * 1. 获取 BSP 资源映射；
  * 2. 按配置关联 DMA 句柄与 Parent；
  * 3. 按配置设置/使能 NVIC；
  * 4. 注册到全局 ctx 表，供 HAL 回调反查。
  */
-ret_code_t hal_i2c_port_open(const hal_i2c_bus_cfg_t *cfg, hal_i2c_port_ctx_t *out) {
+ret_code_t hal_i2c_port_init(const hal_i2c_bus_cfg_t *cfg, hal_i2c_port_ctx_t *out) {
     /* 非空检查 */
     REQUIRE_RET((cfg != NULL) && (out != NULL), I2C_PORT_PARAM(RET_R_NULL_PTR));
     memset(out, 0, sizeof(*out));
@@ -218,12 +220,12 @@ ret_code_t hal_i2c_port_open(const hal_i2c_bus_cfg_t *cfg, hal_i2c_port_ctx_t *o
                     I2C_PORT_STATE(RET_R_NOT_READY));
 
         if (out->bsp.hdma_tx && (out->bsp.hi2c->hdmatx == NULL)) {
-            out->bsp.hi2c->hdmatx     = out->bsp.hdma_tx;
-            out->bsp.hdma_tx->Parent  = out->bsp.hi2c;
+            out->bsp.hi2c->hdmatx    = out->bsp.hdma_tx;
+            out->bsp.hdma_tx->Parent = out->bsp.hi2c;
         }
         if (out->bsp.hdma_rx && (out->bsp.hi2c->hdmarx == NULL)) {
-            out->bsp.hi2c->hdmarx     = out->bsp.hdma_rx;
-            out->bsp.hdma_rx->Parent  = out->bsp.hi2c;
+            out->bsp.hi2c->hdmarx    = out->bsp.hdma_rx;
+            out->bsp.hdma_rx->Parent = out->bsp.hi2c;
         }
     }
 
@@ -249,10 +251,10 @@ ret_code_t hal_i2c_port_open(const hal_i2c_bus_cfg_t *cfg, hal_i2c_port_ctx_t *o
 }
 
 /**
- * @brief 关闭 I2C port，释放注册槽和 NVIC 配置
- * @note 仅在无活跃事务时允许关闭
+ * @brief 反初始化 I2C port，释放注册槽和 NVIC 配置
+ * @note 仅在无活跃事务时允许反初始化
  */
-ret_code_t hal_i2c_port_close(hal_i2c_port_ctx_t *ctx) {
+ret_code_t hal_i2c_port_deinit(hal_i2c_port_ctx_t *ctx) {
     REQUIRE_RET(ctx != NULL, I2C_PORT_PARAM(RET_R_NULL_PTR));
     if (!ctx->opened) return I2C_PORT_STATE(RET_R_NOT_READY);
     if (ctx->xfer_busy) return I2C_PORT_STATE(RET_R_BUSY);
@@ -317,18 +319,19 @@ ret_code_t hal_i2c_port_apply(hal_i2c_port_ctx_t *ctx, const hal_i2c_dev_cfg_t *
     h->Init.DutyCycle       = (hz > 100000u) ? I2C_DUTYCYCLE_16_9 : I2C_DUTYCYCLE_2;
     h->Init.OwnAddress1     = 0u;
     h->Init.AddressingMode  = (dev_cfg->addr_mode == HAL_I2C_ADDR_10BIT) ? I2C_ADDRESSINGMODE_10BIT
-                                                                          : I2C_ADDRESSINGMODE_7BIT;
+                                                                         : I2C_ADDRESSINGMODE_7BIT;
     h->Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
     h->Init.OwnAddress2     = 0u;
-    h->Init.GeneralCallMode = dev_cfg->general_call ? I2C_GENERALCALL_ENABLE : I2C_GENERALCALL_DISABLE;
-    h->Init.NoStretchMode   = dev_cfg->no_stretch ? I2C_NOSTRETCH_ENABLE : I2C_NOSTRETCH_DISABLE;
+    h->Init.GeneralCallMode =
+        dev_cfg->general_call ? I2C_GENERALCALL_ENABLE : I2C_GENERALCALL_DISABLE;
+    h->Init.NoStretchMode = dev_cfg->no_stretch ? I2C_NOSTRETCH_ENABLE : I2C_NOSTRETCH_DISABLE;
 
     if (HAL_I2C_Init(h) != HAL_OK) return I2C_PORT_IO(RET_R_HW_FAULT);
 
-    ctx->cfg_cache_valid = true;
-    ctx->cur_addr_mode   = dev_cfg->addr_mode;
-    ctx->cur_hz          = hz;
-    ctx->cur_no_stretch  = dev_cfg->no_stretch;
+    ctx->cfg_cache_valid  = true;
+    ctx->cur_addr_mode    = dev_cfg->addr_mode;
+    ctx->cur_hz           = hz;
+    ctx->cur_no_stretch   = dev_cfg->no_stretch;
     ctx->cur_general_call = dev_cfg->general_call;
     return RET_OK;
 }
@@ -343,7 +346,8 @@ ret_code_t hal_i2c_port_apply(hal_i2c_port_ctx_t *ctx, const hal_i2c_dev_cfg_t *
  */
 ret_code_t hal_i2c_port_xfer(hal_i2c_port_ctx_t *ctx, const hal_i2c_dev_cfg_t *dev_cfg,
                              const hal_i2c_xfer_t *xfer) {
-    REQUIRE_RET((ctx != NULL) && (dev_cfg != NULL) && (xfer != NULL), I2C_PORT_PARAM(RET_R_NULL_PTR));
+    REQUIRE_RET((ctx != NULL) && (dev_cfg != NULL) && (xfer != NULL),
+                I2C_PORT_PARAM(RET_R_NULL_PTR));
     if (!ctx->opened) return I2C_PORT_STATE(RET_R_NOT_READY);
     if (ctx->xfer_busy) return I2C_PORT_STATE(RET_R_BUSY);
     if (!ctx->bsp.hi2c) return I2C_PORT_STATE(RET_R_NOT_READY);
@@ -351,7 +355,7 @@ ret_code_t hal_i2c_port_xfer(hal_i2c_port_ctx_t *ctx, const hal_i2c_dev_cfg_t *d
     const ret_code_t vrc = validate_xfer_runtime(ctx, dev_cfg, xfer);
     if (ret_is_err(vrc)) return vrc;
 
-    I2C_HandleTypeDef *h = ctx->bsp.hi2c;
+    I2C_HandleTypeDef *h        = ctx->bsp.hi2c;
     const uint16_t hal_dev_addr = i2c_to_hal_addr(dev_cfg);
 
     if (ctx->use_dma) {

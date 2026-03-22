@@ -10,35 +10,11 @@
 
 #include "assert_cus.h"
 #include "hal_i2c.h"
+#include "hal_i2c_internal.h"
 #include "hal_i2c_port.h"
-#include "hal_time.h"
 #include "osal.h"
 #if defined(CFG_FEAT_LOG_SYSTEM) && (CFG_FEAT_LOG_SYSTEM == 1)
 #include "log.h"
-#endif
-
-#ifndef CFG_PARAM_I2C_EVT_DISPATCH_EVENTBUS
-#define CFG_PARAM_I2C_EVT_DISPATCH_EVENTBUS 0
-#endif
-#ifndef CFG_PARAM_I2C_EVT_DISPATCH_QUEUE
-#define CFG_PARAM_I2C_EVT_DISPATCH_QUEUE 1
-#endif
-#ifndef CFG_PARAM_I2C_EVT_DISPATCH_TASK_NOTIFY
-#define CFG_PARAM_I2C_EVT_DISPATCH_TASK_NOTIFY 2
-#endif
-#ifndef CFG_PARAM_I2C_EVT_DISPATCH_MODE
-#define CFG_PARAM_I2C_EVT_DISPATCH_MODE CFG_PARAM_I2C_EVT_DISPATCH_EVENTBUS
-#endif
-#ifndef CFG_PARAM_I2C_EVT_NOTIFY_FLAG_DONE
-#define CFG_PARAM_I2C_EVT_NOTIFY_FLAG_DONE (1u << 0)
-#endif
-#ifndef CFG_PARAM_I2C_EVT_NOTIFY_FLAG_ERROR
-#define CFG_PARAM_I2C_EVT_NOTIFY_FLAG_ERROR (1u << 1)
-#endif
-
-#if (CFG_PARAM_I2C_EVT_DISPATCH_MODE == CFG_PARAM_I2C_EVT_DISPATCH_EVENTBUS)
-#include "eb_api.h"
-#include "eb_event_id.h"
 #endif
 
 #define I2C_RC_PARAM(reason_)   RET_MAKE_PARAM(RET_MOD_HAL, RET_SUB_HAL_I2C, (reason_))
@@ -51,98 +27,32 @@
 #define HAL_I2C_DEV_MAX 16u
 #endif
 
-/* 总线资源：生命周期 = bus_open ~ bus_close */
+/* 总线资源：生命周期 = bus_init ~ bus_deinit */
 struct hal_i2c_bus {
     bool initialized;        /* 总线是否已初始化 */
     hal_i2c_bus_cfg_t cfg;   /* 总线静态配置 */
     osal_mutex_t lock;       /* 发起路径互斥锁 */
     bool lock_valid;         /* 锁句柄是否有效（RTOS场景） */
-    osal_sem_t sync_sem;     /* 同步事务完成信号量 */
-    bool sync_sem_valid;     /* 信号量句柄是否有效 */
     hal_i2c_port_ctx_t port; /* 底层 port 上下文 */
 
     volatile uint8_t xfer_busy; /* 当前是否有事务进行中 */
     hal_i2c_dev_t *active_dev;  /* 当前活跃设备 */
     uint32_t active_flags;      /* 当前事务 flags 缓存 */
-
-    volatile uint8_t sync_waiting; /* 是否存在同步等待方 */
-    volatile uint8_t sync_done;    /* 同步事务是否完成 */
-    ret_code_t sync_rc;            /* 同步完成返回码 */
-    uint32_t sync_tx_bytes;        /* 同步完成 tx 字节数 */
-    uint32_t sync_rx_bytes;        /* 同步完成 rx 字节数 */
 };
 
 /* 设备资源：生命周期 = dev_attach ~ dev_detach */
 struct hal_i2c_dev {
-    bool in_use;           /* 设备槽是否占用 */
-    hal_i2c_bus_t *bus;    /* 所属总线 */
-    hal_i2c_dev_cfg_t cfg; /* 设备配置快照 */
-    hal_i2c_evt_cb_t evt_cb; /* 设备事件回调 */
-    void *evt_user;          /* 回调用户上下文 */
-    void *evt_target;        /* 事件分发目标（queue/thread） */
+    bool in_use;                      /* 设备槽是否占用 */
+    hal_i2c_bus_t *bus;               /* 所属总线 */
+    hal_i2c_dev_cfg_t cfg;            /* 设备配置快照 */
+    hal_i2c_evt_cb_t evt_cb;          /* 设备事件回调 */
+    void *evt_user;                   /* 回调用户上下文 */
+    hal_i2c_sync_observer_t sync_obs; /* 同步观察者（供 sync 模块等待） */
+    void *sync_obs_user;              /* 同步观察者上下文 */
 };
 
 static struct hal_i2c_bus s_buses[HAL_I2C_BUS_MAX];
 static struct hal_i2c_dev s_devs[HAL_I2C_DEV_MAX];
-
-#if (CFG_PARAM_I2C_EVT_DISPATCH_MODE == CFG_PARAM_I2C_EVT_DISPATCH_EVENTBUS)
-/**
- * @brief 将 I2C 设备上下文编码为 eventbus key
- * @note key 布局：[31:24]bus_id [23:16]addr_mode [15:0]dev_addr
- */
-static uint32_t i2c_evt_make_key(const hal_i2c_dev_t *d) {
-    if (!d || !d->bus) return 0u;
-    const uint32_t bus_id = ((uint32_t)d->bus->cfg.bus_id) & 0xFFu;
-    const uint32_t mode   = ((uint32_t)d->cfg.addr_mode) & 0xFFu;
-    const uint32_t addr   = ((uint32_t)d->cfg.dev_addr) & 0xFFFFu;
-    return (bus_id << 24) | (mode << 16) | addr;
-}
-
-/**
- * @brief 将 DONE 事件字节数压缩为 eventbus payload
- * @note payload 布局：[31:16]=tx_bytes(低16位) [15:0]=rx_bytes(低16位)
- */
-static uint32_t i2c_done_payload(const hal_i2c_event_t *evt) {
-    const uint32_t tx = evt->done.tx_bytes & 0xFFFFu;
-    const uint32_t rx = evt->done.rx_bytes & 0xFFFFu;
-    return (tx << 16) | rx;
-}
-
-/**
- * @brief 将 I2C 事件投递到 eventbus
- * @param d   设备句柄
- * @param evt 事件载体
- * @note 投递失败不影响 I2C 主流程
- */
-static void i2c_publish_eventbus(const hal_i2c_dev_t *d, const hal_i2c_event_t *evt) {
-    if (!d || !d->bus || !evt) return;
-
-    uint32_t event_id = 0u;
-    uint32_t payload  = 0u;
-    switch (evt->type) {
-        case HAL_I2C_EVT_DONE:
-            event_id = EB_EVT_I2C_DONE;
-            payload  = i2c_done_payload(evt);
-            break;
-        case HAL_I2C_EVT_ERROR:
-            event_id = EB_EVT_I2C_ERROR;
-            payload  = (uint32_t)evt->err.rc;
-            break;
-        default:
-            return;
-    }
-
-    const eb_event_t ev = {
-        .event_id    = event_id,
-        .prio        = 0,
-        .key         = i2c_evt_make_key(d),
-        .payload_u32 = payload,
-        .source_id   = (uint16_t)d->bus->cfg.bus_id,
-        .type_tag    = 0u,
-    };
-    (void)eb_publish(&ev);
-}
-#endif
 
 /**
  * @brief port 错误映射日志钩子（弱定义）
@@ -153,7 +63,7 @@ static void i2c_publish_eventbus(const hal_i2c_dev_t *d, const hal_i2c_event_t *
  * @param arg1    调试参数1
  */
 __attribute__((weak)) void hal_i2c_on_port_error(ret_code_t rc_port, ret_code_t rc_hal,
-                                                  const char *api, uint32_t arg0, uint32_t arg1) {
+                                                 const char *api, uint32_t arg0, uint32_t arg1) {
 #if defined(CFG_FEAT_LOG_SYSTEM) && (CFG_FEAT_LOG_SYSTEM == 1) && \
     defined(CFG_PARAM_I2C_LOG_PORT_ERR) && (CFG_PARAM_I2C_LOG_PORT_ERR == 1)
 #if defined(CFG_PARAM_I2C_LOG_PORT_ERR_IN_ISR) && (CFG_PARAM_I2C_LOG_PORT_ERR_IN_ISR == 1)
@@ -216,6 +126,39 @@ static inline ret_code_t i2c_map_port_to_hal(ret_code_t rc_port, const char *api
 
     hal_i2c_on_port_error(rc_port, rc_hal, api, arg0, arg1);
     return rc_hal;
+}
+
+static ret_code_t i2c_map_runtime_to_hal(ret_code_t rc_runtime) {
+    if (ret_is_ok(rc_runtime)) return RET_OK;
+
+    if (ret_is_class(rc_runtime, RET_CLASS_PARAM)) {
+        if (ret_is_reason(rc_runtime, RET_R_NULL_PTR))
+            return I2C_RC_PARAM(RET_R_NULL_PTR);
+        else if (ret_is_reason(rc_runtime, RET_R_RANGE_ERR))
+            return I2C_RC_PARAM(RET_R_RANGE_ERR);
+        else
+            return I2C_RC_PARAM(RET_R_INVALID_ARG);
+    }
+
+    if (ret_is_class(rc_runtime, RET_CLASS_TIMEOUT)) return I2C_RC_TIMEOUT(RET_R_TIMEOUT);
+
+    if (ret_is_class(rc_runtime, RET_CLASS_RESOURCE)) {
+        if (ret_is_reason(rc_runtime, RET_R_NO_MEM))
+            return I2C_RC_RES(RET_R_NO_MEM);
+        else
+            return I2C_RC_RES(RET_R_NO_RESOURCE);
+    }
+
+    if (ret_is_class(rc_runtime, RET_CLASS_STATE)) {
+        if (ret_is_reason(rc_runtime, RET_R_BUSY))
+            return I2C_RC_STATE(RET_R_BUSY);
+        else if (ret_is_reason(rc_runtime, RET_R_NOT_READY))
+            return I2C_RC_STATE(RET_R_NOT_READY);
+        else
+            return I2C_RC_STATE(RET_R_STATE_ERR);
+    }
+
+    return I2C_RC_IO(RET_R_IO);
 }
 
 /**
@@ -297,46 +240,17 @@ static void bus_unlock(hal_i2c_bus_t *b) {
     (void)OSAL_mutex_unlock(b->lock);
 }
 
-#if (CFG_PARAM_I2C_EVT_DISPATCH_MODE == CFG_PARAM_I2C_EVT_DISPATCH_TASK_NOTIFY)
-/**
- * @brief I2C 事件类型到 task-notify flags 的映射
- * @param type I2C 事件类型
- * @return flags；0 表示不通知
- */
-static inline osal_flags_t i2c_evt_to_notify_flags(hal_i2c_evt_type_t type) {
-    switch (type) {
-        case HAL_I2C_EVT_DONE:
-            return (osal_flags_t)CFG_PARAM_I2C_EVT_NOTIFY_FLAG_DONE;
-        case HAL_I2C_EVT_ERROR:
-            return (osal_flags_t)CFG_PARAM_I2C_EVT_NOTIFY_FLAG_ERROR;
-        default:
-            return 0u;
-    }
-}
-#endif
-
 /**
  * @brief 统一设备事件分发出口
  * @param d   设备句柄
  * @param evt 事件载体
- * @note 会按配置分发到 eventbus/queue/task-notify，并按策略直调回调
+ * @note HAL 只负责同步观察者和设备回调；系统事件分发由上层封装
  */
 static inline void emit_dev_evt(const hal_i2c_dev_t *d, const hal_i2c_event_t *evt) {
     if (!d || !evt) return;
-
-#if (CFG_PARAM_I2C_EVT_DISPATCH_MODE == CFG_PARAM_I2C_EVT_DISPATCH_EVENTBUS)
-    i2c_publish_eventbus(d, evt);
-#elif (CFG_PARAM_I2C_EVT_DISPATCH_MODE == CFG_PARAM_I2C_EVT_DISPATCH_QUEUE)
-    if (d->evt_target != NULL) {
-        hal_i2c_event_t out_evt = *evt;
-        (void)OSAL_msgq_put((osal_msgq_t)d->evt_target, (void *)&out_evt, 0u);
-    }
-#elif (CFG_PARAM_I2C_EVT_DISPATCH_MODE == CFG_PARAM_I2C_EVT_DISPATCH_TASK_NOTIFY)
-    if (d->evt_target != NULL) {
-        const osal_flags_t flags = i2c_evt_to_notify_flags(evt->type);
-        if (flags != 0u) (void)OSAL_thread_flags_set((osal_thread_t)d->evt_target, flags);
-    }
-#endif
+    /* 先通知同步观察者，保证同步等待稳定捕获 DONE/ERROR 终态，
+     * 再走设备级回调。 */
+    if (d->sync_obs) d->sync_obs(d->sync_obs_user, evt);
 
     if (d->evt_cb) {
 #if defined(CFG_PARAM_I2C_CB_IN_ISR) && (CFG_PARAM_I2C_CB_IN_ISR == 1)
@@ -445,203 +359,18 @@ static void bus_release_active_xfer(hal_i2c_bus_t *b) {
 }
 
 /**
- * @brief 将等待接口返回码映射为 HAL I2C 错误码
- * @param rc 等待接口返回码
- * @return HAL I2C 错误码
- */
-static ret_code_t i2c_map_wait_rc_to_hal(ret_code_t rc) {
-    if (ret_is_ok(rc)) return RET_OK;
-
-    if (ret_is_class(rc, RET_CLASS_PARAM)) {
-        if (ret_is_reason(rc, RET_R_NULL_PTR))
-            return I2C_RC_PARAM(RET_R_NULL_PTR);
-        else if (ret_is_reason(rc, RET_R_RANGE_ERR))
-            return I2C_RC_PARAM(RET_R_RANGE_ERR);
-        else
-            return I2C_RC_PARAM(RET_R_INVALID_ARG);
-    }
-    if (ret_is_class(rc, RET_CLASS_TIMEOUT)) return I2C_RC_TIMEOUT(RET_R_TIMEOUT);
-    if (ret_is_class(rc, RET_CLASS_RESOURCE)) {
-        if (ret_is_reason(rc, RET_R_NO_MEM))
-            return I2C_RC_RES(RET_R_NO_MEM);
-        else
-            return I2C_RC_RES(RET_R_NO_RESOURCE);
-    }
-    if (ret_is_class(rc, RET_CLASS_STATE)) {
-        if (ret_is_reason(rc, RET_R_BUSY))
-            return I2C_RC_STATE(RET_R_BUSY);
-        else if (ret_is_reason(rc, RET_R_NOT_READY))
-            return I2C_RC_STATE(RET_R_NOT_READY);
-        else
-            return I2C_RC_STATE(RET_R_STATE_ERR);
-    }
-    return I2C_RC_IO(RET_R_IO);
-}
-
-/**
- * @brief 规范化同步等待超时参数
- * @param wait_ms 用户输入等待时间
- * @return wait_ms=0 时返回 OSAL_WAIT_FOREVER，否则原值返回
- */
-static inline uint32_t i2c_sync_norm_wait(uint32_t wait_ms) {
-    return (wait_ms == 0u) ? OSAL_WAIT_FOREVER : wait_ms;
-}
-
-/**
- * @brief 清空同步信号量残留计数
- * @param sem 同步信号量
- */
-static void i2c_sync_sem_drain(osal_sem_t sem) {
-    if (!sem) return;
-    while (OSAL_sem_take(sem, 0u) == RET_OK) {
-        /* drain */
-    }
-}
-
-/**
- * @brief 标记进入同步等待态并清理历史完成态
- * @param b 总线句柄
- */
-static void i2c_sync_prepare_wait(hal_i2c_bus_t *b) {
-    if (!b) return;
-    if (b->sync_sem_valid) i2c_sync_sem_drain(b->sync_sem);
-
-    osal_crit_state_t cs = 0u;
-    OSAL_enter_critical_ex(&cs);
-    b->sync_waiting = 1u;
-    b->sync_done    = 0u;
-    b->sync_rc      = I2C_RC_STATE(RET_R_STATE_ERR);
-    b->sync_tx_bytes = 0u;
-    b->sync_rx_bytes = 0u;
-    OSAL_exit_critical_ex(cs);
-}
-
-/**
- * @brief 中止同步等待态（发起失败/超时等场景）
- * @param b 总线句柄
- */
-static void i2c_sync_abort_wait(hal_i2c_bus_t *b) {
-    if (!b) return;
-    osal_crit_state_t cs = 0u;
-    OSAL_enter_critical_ex(&cs);
-    b->sync_waiting = 0u;
-    b->sync_done    = 0u;
-    b->sync_rc      = I2C_RC_STATE(RET_R_STATE_ERR);
-    b->sync_tx_bytes = 0u;
-    b->sync_rx_bytes = 0u;
-    OSAL_exit_critical_ex(cs);
-}
-
-/**
- * @brief 写入同步完成态并唤醒等待方
- * @param b        总线句柄
- * @param rc_hal   完成码
- * @param tx_bytes tx 完成字节数
- * @param rx_bytes rx 完成字节数
- */
-static void i2c_sync_mark_done(hal_i2c_bus_t *b, ret_code_t rc_hal, uint32_t tx_bytes,
-                               uint32_t rx_bytes) {
-    if (!b) return;
-
-    bool need_notify     = false;
-    osal_crit_state_t cs = 0u;
-    OSAL_enter_critical_ex(&cs);
-    if (b->sync_waiting) {
-        b->sync_waiting = 0u;
-        b->sync_done    = 1u;
-        b->sync_rc      = rc_hal;
-        b->sync_tx_bytes = tx_bytes;
-        b->sync_rx_bytes = rx_bytes;
-        need_notify      = b->sync_sem_valid;
-    }
-    OSAL_exit_critical_ex(cs);
-
-    if (need_notify) {
-        if (OSAL_in_isr())
-            (void)OSAL_sem_give_from_isr(b->sync_sem);
-        else
-            (void)OSAL_sem_give(b->sync_sem);
-    }
-}
-
-/**
- * @brief 等待同步事务完成
- * @param b        总线句柄
- * @param wait_ms  等待超时（0=永久）
- * @param tx_bytes 可选输出 tx 字节数
- * @param rx_bytes 可选输出 rx 字节数
- * @return RET_OK 或错误码
- */
-static ret_code_t i2c_sync_wait_done(hal_i2c_bus_t *b, uint32_t wait_ms, uint32_t *tx_bytes,
-                                     uint32_t *rx_bytes) {
-    REQUIRE_RET(b != NULL, I2C_RC_PARAM(RET_R_NULL_PTR));
-    const uint32_t wait_eff = i2c_sync_norm_wait(wait_ms);
-
-    if (b->sync_sem_valid) {
-        const ret_code_t sem_rc = OSAL_sem_take(b->sync_sem, wait_eff);
-        if (ret_is_err(sem_rc)) {
-            i2c_sync_abort_wait(b);
-            return i2c_map_wait_rc_to_hal(sem_rc);
-        }
-    } else {
-        const uint32_t deadline_ms =
-            (wait_eff == OSAL_WAIT_FOREVER) ? 0u : (hal_get_tick_ms() + wait_eff);
-        while (1) {
-            bool done            = false;
-            osal_crit_state_t cs = 0u;
-            OSAL_enter_critical_ex(&cs);
-            done = (b->sync_done != 0u);
-            OSAL_exit_critical_ex(cs);
-            if (done) break;
-
-            if ((wait_eff != OSAL_WAIT_FOREVER) &&
-                HAL_TIME_AFTER_EQ(hal_get_tick_ms(), deadline_ms)) {
-                i2c_sync_abort_wait(b);
-                return I2C_RC_TIMEOUT(RET_R_TIMEOUT);
-            }
-            if (OSAL_kernel_is_running())
-                (void)OSAL_delay_ms(1u);
-            else
-                hal_time_delay_ms(1u);
-        }
-    }
-
-    ret_code_t rc_hal    = I2C_RC_STATE(RET_R_STATE_ERR);
-    osal_crit_state_t cs = 0u;
-    OSAL_enter_critical_ex(&cs);
-    if (b->sync_done) {
-        rc_hal = b->sync_rc;
-        if (tx_bytes) *tx_bytes = b->sync_tx_bytes;
-        if (rx_bytes) *rx_bytes = b->sync_rx_bytes;
-        b->sync_waiting = 0u;
-        b->sync_done    = 0u;
-        b->sync_tx_bytes = 0u;
-        b->sync_rx_bytes = 0u;
-    } else {
-        b->sync_waiting = 0u;
-        b->sync_done    = 0u;
-        b->sync_rc      = I2C_RC_STATE(RET_R_STATE_ERR);
-        b->sync_tx_bytes = 0u;
-        b->sync_rx_bytes = 0u;
-    }
-    OSAL_exit_critical_ex(cs);
-    return rc_hal;
-}
-
-/**
  * @brief port 层事件回调桥接
  * @param user 总线句柄
  * @param evt  port 事件
  * @note 负责：
  * 1) 释放活跃事务槽；
- * 2) 更新同步等待完成态；
- * 3) 统一向上分发 HAL 事件。
+ * 2) 统一向上分发 HAL 事件。
  */
 static void i2c_port_evt_cb(void *user, const hal_i2c_port_evt_t *evt) {
     hal_i2c_bus_t *b = (hal_i2c_bus_t *)user;
     if (!b || !b->initialized || !evt) return;
 
-    hal_i2c_dev_t *dev = NULL;
+    hal_i2c_dev_t *dev   = NULL;
     osal_crit_state_t cs = 0u;
     OSAL_enter_critical_ex(&cs);
     dev = b->active_dev;
@@ -658,28 +387,26 @@ static void i2c_port_evt_cb(void *user, const hal_i2c_port_evt_t *evt) {
         hevt.type          = HAL_I2C_EVT_DONE;
         hevt.done.tx_bytes = evt->tx_bytes;
         hevt.done.rx_bytes = evt->rx_bytes;
-        i2c_sync_mark_done(b, RET_OK, evt->tx_bytes, evt->rx_bytes);
     } else {
-        const ret_code_t rc_hal = i2c_map_port_to_hal(evt->rc_port, "i2c_port_evt_cb", evt->tx_bytes,
-                                                      evt->rx_bytes);
-        hevt.type               = HAL_I2C_EVT_ERROR;
-        hevt.err.rc             = rc_hal;
-        i2c_sync_mark_done(b, rc_hal, 0u, 0u);
+        const ret_code_t rc_hal =
+            i2c_map_port_to_hal(evt->rc_port, "i2c_port_evt_cb", evt->tx_bytes, evt->rx_bytes);
+        hevt.type   = HAL_I2C_EVT_ERROR;
+        hevt.err.rc = rc_hal;
     }
     emit_dev_evt(dev, &hevt);
 }
 
 /**
- * @brief 打开 I2C 总线并初始化 port 资源
+ * @brief 初始化 I2C 总线并初始化 port 资源
  * @details
  * 1. 参数检查与 bus_id 资源占用检查；
- * 2. 打开底层 port 并注册 port 事件回调；
- * 3. RTOS 场景按需创建 mutex 与 sync_sem。
+ * 2. 初始化底层 port 并注册 port 事件回调；
+ * 3. RTOS 场景按需创建 mutex。
  */
-ret_code_t hal_i2c_bus_open(const hal_i2c_bus_cfg_t *cfg, hal_i2c_bus_t **out_bus) {
+ret_code_t hal_i2c_bus_init(const hal_i2c_bus_cfg_t *cfg, hal_i2c_bus_t **out_bus) {
     /* 检查 接收容器 */
     REQUIRE_RET(out_bus != NULL, I2C_RC_PARAM(RET_R_NULL_PTR));
-    *out_bus = NULL;
+    *out_bus      = NULL;
     /* 检查总线配置 */
     ret_code_t rc = cfg_check_bus(cfg);
     if (ret_is_err(rc)) return rc;
@@ -691,15 +418,15 @@ ret_code_t hal_i2c_bus_open(const hal_i2c_bus_cfg_t *cfg, hal_i2c_bus_t **out_bu
     b->initialized = true;
     b->cfg         = *cfg;
     /* 填充对象 */
-    rc             = hal_i2c_port_open(cfg, &b->port);
+    rc             = hal_i2c_port_init(cfg, &b->port);
     if (ret_is_err(rc)) {
         b->initialized = false;
-        return i2c_map_port_to_hal(rc, "hal_i2c_port_open", cfg->bus_id, cfg->default_hz);
+        return i2c_map_port_to_hal(rc, "hal_i2c_port_init", cfg->bus_id, cfg->default_hz);
     }
 
     rc = hal_i2c_port_set_evt_cb(&b->port, i2c_port_evt_cb, b);
     if (ret_is_err(rc)) {
-        (void)hal_i2c_port_close(&b->port);
+        (void)hal_i2c_port_deinit(&b->port);
         b->initialized = false;
         return i2c_map_port_to_hal(rc, "hal_i2c_port_set_evt_cb", cfg->bus_id, 0u);
     }
@@ -708,36 +435,29 @@ ret_code_t hal_i2c_bus_open(const hal_i2c_bus_cfg_t *cfg, hal_i2c_bus_t **out_bu
         if (ret_is_ok(OSAL_mutex_create(&b->lock, "i2c_bus", false, true))) {
             b->lock_valid = true;
         }
-        if (ret_is_ok(OSAL_sem_create(&b->sync_sem, "i2c_sync", 0u, 1u))) {
-            b->sync_sem_valid = true;
-        }
     }
     *out_bus = b;
     return RET_OK;
 }
 
 /**
- * @brief 关闭 I2C 总线并释放同步/互斥资源
- * @note 关闭前必须满足：
+ * @brief 反初始化 I2C 总线并释放互斥资源
+ * @note 反初始化前必须满足：
  * - 当前总线无活跃事务；
  * - 无设备仍挂载在该总线上。
  */
-ret_code_t hal_i2c_bus_close(hal_i2c_bus_t *bus) {
+ret_code_t hal_i2c_bus_deinit(hal_i2c_bus_t *bus) {
     REQUIRE_RET(bus != NULL, I2C_RC_PARAM(RET_R_NULL_PTR));
     if (!bus->initialized) return I2C_RC_STATE(RET_R_NOT_READY);
     if (bus->xfer_busy) return I2C_RC_STATE(RET_R_BUSY);
     if (bus_has_attached_dev(bus)) return I2C_RC_STATE(RET_R_BUSY);
 
-    const ret_code_t rc = hal_i2c_port_close(&bus->port);
-    if (ret_is_err(rc)) return i2c_map_port_to_hal(rc, "hal_i2c_port_close", bus->cfg.bus_id, 0u);
+    const ret_code_t rc = hal_i2c_port_deinit(&bus->port);
+    if (ret_is_err(rc)) return i2c_map_port_to_hal(rc, "hal_i2c_port_deinit", bus->cfg.bus_id, 0u);
 
     if (bus->lock_valid) {
         (void)OSAL_mutex_delete(bus->lock);
         bus->lock_valid = false;
-    }
-    if (bus->sync_sem_valid) {
-        (void)OSAL_sem_delete(bus->sync_sem);
-        bus->sync_sem_valid = false;
     }
     bus->initialized = false;
     return RET_OK;
@@ -797,13 +517,23 @@ ret_code_t hal_i2c_dev_set_evt_cb(hal_i2c_dev_t *dev, hal_i2c_evt_cb_t cb, void 
 }
 
 /**
- * @brief 注册 I2C 事件分发目标（queue/thread）
- * @note target 可为 NULL，用于动态关闭 queue/task-notify 目标
+ * @brief 注册/注销同步观察者（供同步封装模块使用）
+ * @param dev 设备句柄
+ * @param cb  观察者回调，传 NULL 表示注销
+ * @param user 观察者上下文
+ * @return RET_OK 或错误码
  */
-ret_code_t hal_i2c_dev_set_evt_target(hal_i2c_dev_t *dev, void *target) {
+ret_code_t hal_i2c_dev_set_sync_observer(hal_i2c_dev_t *dev, hal_i2c_sync_observer_t cb,
+                                         void *user) {
     REQUIRE_RET(dev != NULL, I2C_RC_PARAM(RET_R_NULL_PTR));
     if (!dev->in_use) return I2C_RC_STATE(RET_R_NOT_READY);
-    dev->evt_target = target;
+
+    /* 在临界区内切换观察者指针，避免与 ISR 事件分发并发竞争。 */
+    osal_crit_state_t cs = 0u;
+    OSAL_enter_critical_ex(&cs);
+    dev->sync_obs      = cb;
+    dev->sync_obs_user = user;
+    OSAL_exit_critical_ex(cs);
     return RET_OK;
 }
 
@@ -847,96 +577,10 @@ ret_code_t hal_i2c_transceive(hal_i2c_dev_t *dev, const hal_i2c_xfer_t *xfer) {
 
     hal_i2c_bus_t *b = dev->bus;
     rc               = bus_lock(b, xfer->timeout_ms ? xfer->timeout_ms : OSAL_WAIT_FOREVER);
-    if (ret_is_err(rc)) return rc;
+    if (ret_is_err(rc)) return i2c_map_runtime_to_hal(rc);
     rc = i2c_xfer_guarded(dev, xfer);
     bus_unlock(b);
     return rc;
-}
-
-/**
- * @brief 同步事务通用实现（异步发起 + 完成等待）
- * @details
- * - 在锁保护下发起异步事务；
- * - 退出锁后等待完成事件；
- * - 同步超时独立于发起锁超时。
- */
-static ret_code_t i2c_transceive_sync_common(hal_i2c_dev_t *dev, const hal_i2c_xfer_t *xfer,
-                                             uint32_t wait_ms) {
-    REQUIRE_RET(!OSAL_in_isr(), I2C_RC_STATE(RET_R_STATE_ERR));
-
-    ret_code_t rc = validate_api_xfer_common(dev, xfer);
-    if (ret_is_err(rc)) return rc;
-    hal_i2c_bus_t *b      = dev->bus;
-    const uint32_t wait_t = i2c_sync_norm_wait(wait_ms);
-
-    uint32_t deadline_ms  = 0u;
-    if (wait_t != OSAL_WAIT_FOREVER) deadline_ms = hal_get_tick_ms() + wait_t;
-
-    rc = bus_lock(b, wait_t);
-    if (ret_is_err(rc)) return rc;
-
-    i2c_sync_prepare_wait(b);
-    rc = i2c_xfer_guarded(dev, xfer);
-    bus_unlock(b);
-
-    if (ret_is_err(rc)) {
-        i2c_sync_abort_wait(b);
-        return rc;
-    }
-
-    uint32_t remain_ms = wait_t;
-    if (wait_t != OSAL_WAIT_FOREVER) {
-        const uint32_t now_ms = hal_get_tick_ms();
-        if (HAL_TIME_AFTER_EQ(now_ms, deadline_ms))
-            remain_ms = 0u;
-        else
-            remain_ms = deadline_ms - now_ms;
-    }
-
-    return i2c_sync_wait_done(b, remain_ms, NULL, NULL);
-}
-
-/**
- * @brief 同步事务入口
- * @note xfer 参数校验由 i2c_transceive_sync_common 完成
- */
-ret_code_t hal_i2c_transceive_sync(hal_i2c_dev_t *dev, const hal_i2c_xfer_t *xfer, uint32_t wait_ms) {
-    REQUIRE_RET(xfer != NULL, I2C_RC_PARAM(RET_R_NULL_PTR));
-    return i2c_transceive_sync_common(dev, xfer, wait_ms);
-}
-
-/**
- * @brief 同步发送
- * @note 内部封装为 TX-only 事务
- */
-ret_code_t hal_i2c_send_sync(hal_i2c_dev_t *dev, const void *tx, uint32_t len, uint32_t wait_ms) {
-    REQUIRE_RET(tx != NULL, I2C_RC_PARAM(RET_R_NULL_PTR));
-    const hal_i2c_xfer_t xfer = {
-        .tx           = tx,
-        .tx_len       = len,
-        .rx           = NULL,
-        .rx_len       = 0u,
-        .timeout_ms   = wait_ms,
-        .flags        = HAL_I2C_XFER_NONE,
-    };
-    return i2c_transceive_sync_common(dev, &xfer, wait_ms);
-}
-
-/**
- * @brief 同步接收
- * @note 内部封装为 RX-only 事务
- */
-ret_code_t hal_i2c_recv_sync(hal_i2c_dev_t *dev, void *rx, uint32_t len, uint32_t wait_ms) {
-    REQUIRE_RET(rx != NULL, I2C_RC_PARAM(RET_R_NULL_PTR));
-    const hal_i2c_xfer_t xfer = {
-        .tx           = NULL,
-        .tx_len       = 0u,
-        .rx           = rx,
-        .rx_len       = len,
-        .timeout_ms   = wait_ms,
-        .flags        = HAL_I2C_XFER_NONE,
-    };
-    return i2c_transceive_sync_common(dev, &xfer, wait_ms);
 }
 
 /**
@@ -945,7 +589,7 @@ ret_code_t hal_i2c_recv_sync(hal_i2c_dev_t *dev, void *rx, uint32_t len, uint32_
  * 1. 校验当前设备是否为活跃事务设备；
  * 2. 调用 port abort；
  * 3. 释放 active 槽；
- * 4. 向同步等待方与事件回调统一上报 ABORTED 错误。
+ * 4. 向上层统一上报 ABORTED 错误。
  */
 static ret_code_t i2c_abort_guarded(hal_i2c_dev_t *d, bool disable_i2c) {
     hal_i2c_bus_t *b = d->bus;
@@ -959,11 +603,9 @@ static ret_code_t i2c_abort_guarded(hal_i2c_dev_t *d, bool disable_i2c) {
     bus_release_active_xfer(b);
 
     const ret_code_t abort_rc = I2C_RC_STATE(RET_R_ABORTED);
-    i2c_sync_mark_done(b, abort_rc, 0u, 0u);
-
-    hal_i2c_event_t evt = {0};
-    evt.type            = HAL_I2C_EVT_ERROR;
-    evt.err.rc          = abort_rc;
+    hal_i2c_event_t evt       = {0};
+    evt.type                  = HAL_I2C_EVT_ERROR;
+    evt.err.rc                = abort_rc;
     emit_dev_evt(d, &evt);
 
     return RET_OK;
@@ -980,7 +622,7 @@ ret_code_t hal_i2c_abort(hal_i2c_dev_t *dev, bool disable_i2c) {
 
     hal_i2c_bus_t *b = dev->bus;
     ret_code_t rc    = bus_lock(b, OSAL_WAIT_FOREVER);
-    if (ret_is_err(rc)) return rc;
+    if (ret_is_err(rc)) return i2c_map_runtime_to_hal(rc);
     rc = i2c_abort_guarded(dev, disable_i2c);
     bus_unlock(b);
     return rc;

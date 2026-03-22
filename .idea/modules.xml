@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/SmartClock.iml" filepath="$PROJECT_DIR$/.idea/SmartClock.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/SmartLock.iml" filepath="$PROJECT_DIR$/.idea/SmartLock.iml" />
     </modules>
   </component>
 </project>

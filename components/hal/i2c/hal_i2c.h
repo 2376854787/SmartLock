@@ -23,13 +23,10 @@ extern "C" {
  * | Slave + 任意地址模式            | 任意请求                         |   ❌ 拒绝  |   ❌ 拒绝 | 当前 HAL 仅支持主机模式，is_master 必须为 true
  * @endverbatim
  *
- * @note 事件分发语义：
+ * @note 事件语义：
  * 1. DONE 事件：done.tx_bytes / done.rx_bytes 表示本次事务完成字节数。
  * 2. ERROR 事件：err.rc 为统一 ret_code_t 错误码（已做 port->hal 映射）。
- * 3. eventbus key 布局：[31:24]bus_id [23:16]addr_mode [15:0]dev_addr。
- * 4. eventbus payload：
- *    - DONE: [31:16]=tx_bytes(低16位) [15:0]=rx_bytes(低16位)
- *    - ERROR: ret_code_t
+ * 3. HAL 只提供设备级回调；eventbus/queue/task-notify 等系统分发策略应由上层封装。
  *
  * @note API 语义补充：
  * 1. hal_i2c_transceive      : 一次异步事务，成功返回仅代表“已发起”。
@@ -41,8 +38,7 @@ extern "C" {
  * @warning 调用建议：
  * - xfer.timeout_ms 是“发起路径锁超时”，不是“事务完成等待超时”。
  * - 同步等待超时由 *_sync 的 wait_ms 控制；wait_ms=0 表示永久等待。
- * - 推荐关闭顺序：hal_i2c_abort(可选) -> hal_i2c_dev_detach -> hal_i2c_bus_close。
- * - 使用 QUEUE/TASK_NOTIFY 分发模式时，务必在事务前设置 evt_target。
+ * - 推荐关闭顺序：hal_i2c_abort(可选) -> hal_i2c_dev_detach -> hal_i2c_bus_deinit。
  * ========================================================================================= */
 /* clang-format on */
 
@@ -67,18 +63,18 @@ typedef struct {
 } hal_i2c_bus_cfg_t;
 
 typedef enum {
-    HAL_I2C_ADDR_7BIT  = 0,
-    HAL_I2C_ADDR_10BIT = 1,
+    HAL_I2C_ADDR_7BIT  = 0, /* 7 位地址 */
+    HAL_I2C_ADDR_10BIT = 1, /* 10 位地址 */
 } hal_i2c_addr_mode_t;
 
 /* 设备配置：每个逻辑设备独立维护地址和速率策略 */
 typedef struct {
-    uint16_t dev_addr;          /* 7bit 或 10bit 地址（不含 R/W bit） */
+    uint16_t dev_addr; /* 7bit 或 10bit 地址（不含 R/W bit） */
     hal_i2c_addr_mode_t addr_mode;
-    uint32_t max_hz;            /* 设备最高工作频率 */
-    bool no_stretch;            /* 时钟拉伸控制 */
-    bool general_call;          /* General Call 响应 */
-    bool is_master;             /* 当前 HAL 实现仅支持 master=true */
+    uint32_t max_hz;   /* 设备最高工作频率 */
+    bool no_stretch;   /* 时钟拉伸控制 */
+    bool general_call; /* General Call 响应 */
+    bool is_master;    /* 当前 HAL 实现仅支持 master=true */
 } hal_i2c_dev_cfg_t;
 
 typedef enum {
@@ -102,41 +98,39 @@ typedef enum {
 } hal_i2c_evt_type_t;
 
 typedef struct {
-    hal_i2c_evt_type_t type;
+    hal_i2c_evt_type_t type; /* 事件类型 */
     union {
         struct {
-            uint32_t tx_bytes;
-            uint32_t rx_bytes;
+            uint32_t tx_bytes; /* 实际发送字节数 */
+            uint32_t rx_bytes; /* 实际接收字节数 */
         } done;
         struct {
-            ret_code_t rc;
+            ret_code_t rc; /* 统一 HAL 错误码 */
         } err;
     };
 } hal_i2c_event_t;
 
 /* I2C 设备事件回调
- * @note 当 CFG_PARAM_I2C_CB_IN_ISR=0 时，ISR 上下文不会直调该回调。
- *       分发模式由 CFG_PARAM_I2C_EVT_DISPATCH_MODE 决定：
- *       eventbus / queue / task-notify。 */
+ * @note 当 CFG_PARAM_I2C_CB_IN_ISR=0 时，ISR 上下文不会直调该回调。 */
 typedef void (*hal_i2c_evt_cb_t)(void *user, const hal_i2c_event_t *evt);
 
 /**
- * @brief 打开 I2C 总线
+ * @brief 初始化 I2C 总线
  * @param cfg     总线配置（bus_id、DMA/IRQ、默认频率）
  * @param out_bus 返回总线句柄
  * @return RET_OK 或错误码
- * @note 成功后会注册 port 回调并按需创建 lock/sync_sem（RTOS场景）
+ * @note 成功后会注册 port 回调并按需创建 lock（RTOS场景）
  */
-ret_code_t hal_i2c_bus_open(const hal_i2c_bus_cfg_t *cfg, hal_i2c_bus_t **out_bus);
+ret_code_t hal_i2c_bus_init(const hal_i2c_bus_cfg_t *cfg, hal_i2c_bus_t **out_bus);
 
 /**
- * @brief 关闭 I2C 总线
+ * @brief 反初始化 I2C 总线
  * @param bus 总线句柄
  * @return RET_OK 或错误码
  * @note 若仍有设备挂载或事务进行中会返回 BUSY
- * @note 关闭后该 bus_id 可再次被 hal_i2c_bus_open 使用
+ * @note 反初始化后该 bus_id 可再次被 hal_i2c_bus_init 使用
  */
-ret_code_t hal_i2c_bus_close(hal_i2c_bus_t *bus);
+ret_code_t hal_i2c_bus_deinit(hal_i2c_bus_t *bus);
 
 /**
  * @brief 挂载 I2C 设备到总线
@@ -163,27 +157,16 @@ ret_code_t hal_i2c_dev_detach(hal_i2c_dev_t *dev);
  * @param cb   回调函数
  * @param user 用户上下文
  * @return RET_OK 或错误码
- * @note 回调与分发模式并行生效，可单独开启/关闭
+ * @note eventbus/queue/task-notify 等系统分发应在上层基于该回调自行桥接
  */
 ret_code_t hal_i2c_dev_set_evt_cb(hal_i2c_dev_t *dev, hal_i2c_evt_cb_t cb, void *user);
-
-/**
- * @brief 注册 I2C 事件分发目标句柄
- * @param dev    设备句柄
- * @param target 分发目标
- * @return RET_OK 或错误码
- * @note QUEUE 模式下 target=osal_msgq_t，item 类型为 hal_i2c_event_t
- * @note TASK_NOTIFY 模式下 target=osal_thread_t
- * @note EVENTBUS 模式下 target 不参与使用（可为 NULL）
- */
-ret_code_t hal_i2c_dev_set_evt_target(hal_i2c_dev_t *dev, void *target);
 
 /**
  * @brief 发起一次异步事务（非阻塞）
  * @param dev  设备句柄
  * @param xfer 事务参数
  * @return RET_OK 或错误码
- * @note 成功返回仅表示“发起成功”，完成结果通过事件回调/分发模式上报
+ * @note 成功返回仅表示“发起成功”，完成结果通过事件回调上报
  * @note 当前版本限制：tx/rx 不能同时非空；NO_STOP 不支持
  */
 ret_code_t hal_i2c_transceive(hal_i2c_dev_t *dev, const hal_i2c_xfer_t *xfer);
@@ -195,6 +178,7 @@ ret_code_t hal_i2c_transceive(hal_i2c_dev_t *dev, const hal_i2c_xfer_t *xfer);
  * @param wait_ms 等待完成超时（ms），0 表示永久等待
  * @return RET_OK 或错误码
  * @note 该接口内部仍走异步链路，由同步等待层收敛结果
+ * @note 实现在 hal_i2c_sync.c（与异步核心解耦）
  */
 ret_code_t hal_i2c_transceive_sync(hal_i2c_dev_t *dev, const hal_i2c_xfer_t *xfer,
                                    uint32_t wait_ms);
