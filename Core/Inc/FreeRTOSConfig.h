@@ -45,6 +45,7 @@
 
 /* USER CODE BEGIN Includes */
 /* Section where include file can be added */
+#include "SEGGER_SYSVIEW_FreeRTOS.h"
 /* USER CODE END Includes */
 
 /* Ensure definitions are only used by the compiler, and not by the assembler. */
@@ -52,6 +53,7 @@
   #include <stdint.h>
   extern uint32_t SystemCoreClock;
 /* USER CODE BEGIN 0 */
+/* 引入 SystemView 的 FreeRTOS 补丁头文件 */
 extern void configureTimerForRunTimeStats(void);
 extern unsigned long getRunTimeCounterValue(void);
 /* USER CODE END 0 */

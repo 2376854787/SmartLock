@@ -56,6 +56,12 @@ file(GLOB_RECURSE PLATFORM_SRCS CONFIGURE_DEPENDS "platform/*.c")
 
 # 5. 自动搜索 Middlewares_cus 目录下所有的 .c 文件
 file(GLOB_RECURSE MIDDLEWARES_SRCS CONFIGURE_DEPENDS "Middlewares_cus/*.c")
+
+file(GLOB_RECURSE SYSTEM_VIEW_SRCS CONFIGURE_DEPENDS
+        "SystemView/*.c"
+        "SystemView/*.S"
+        "SystemView/*.s"
+)
 # Create an executable object type
 # 定义最终生成的二进制文件对象
 add_executable(${CMAKE_PROJECT_NAME}
@@ -64,6 +70,7 @@ add_executable(${CMAKE_PROJECT_NAME}
         ${APP_SRCS}
         ${PLATFORM_SRCS}
         ${MIDDLEWARES_SRCS}
+        ${SYSTEM_VIEW_SRCS}
 
 
 )
@@ -88,24 +95,25 @@ file(GLOB_RECURSE AUTO_HEADER_FILES CONFIGURE_DEPENDS
         "platform/*.h"
         "Middlewares_cus/LVGL/port/*.h"
         "config/*.h"
+        "SystemView/*.h"
 )
 # 2. 准备一个空的小篮子，用来装目录
 set(AUTO_INCLUDE_DIRS "")
 # 3. 遍历找到的每一个 .h 文件，把它们所在的文件夹扒出来放进篮子里
-foreach(HEADER_FILE ${AUTO_HEADER_FILES})
+foreach (HEADER_FILE ${AUTO_HEADER_FILES})
     get_filename_component(HEADER_DIR ${HEADER_FILE} DIRECTORY)
     list(APPEND AUTO_INCLUDE_DIRS ${HEADER_DIR})
-endforeach()
+endforeach ()
 
 # 4. 去重并执行黑名单过滤
-if(AUTO_INCLUDE_DIRS)
+if (AUTO_INCLUDE_DIRS)
     list(REMOVE_DUPLICATES AUTO_INCLUDE_DIRS)
 
     set(BLACKLIST_KEYWORDS "tests?|docs?|simulator|nuttx|windows|wayland|sdl|x11|qnx|uefi|micropython")
 
     # 清剿
     list(FILTER AUTO_INCLUDE_DIRS EXCLUDE REGEX "${BLACKLIST_KEYWORDS}")
-endif()
+endif ()
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         # Add user defined include paths
@@ -114,7 +122,9 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 
 
 )
-
+if(TARGET FreeRTOS)
+    target_include_directories(FreeRTOS PUBLIC ${AUTO_INCLUDE_DIRS})
+endif()
 # Add project symbols (macros)
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
         # Add user defined symbols
@@ -122,6 +132,7 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
         # 若你确认当前芯片具备 MPU（如 STM32F497），开启该兜底宏即可。
         CORE_MPU_ASSUME_PRESENT=1
 )
+
 target_compile_definitions(stm32cubemx INTERFACE
         USER_VECT_TAB_ADDRESS
         VECT_TAB_OFFSET=0x20400

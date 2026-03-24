@@ -4,9 +4,9 @@
       <debugger kind="GDB" isBundled="true" />
       <env />
     </debugger>
-    <gdbserver exe="C:\Program Files\SEGGER\JLink_V842\JLinkGDBServerCL.exe" />
-    <console enabled="false" port="2334" />
-    <target reset-before="false" />
+    <gdbserver exe="C:/Program Files/SEGGER/JLink/JLinkGDBServerCL.exe" />
+    <console port="2334" />
+    <target device="STM32F407ZE" reset-before="false" frequency="16000" />
     <connection port="4444" warmup-ms="500" />
     <swo />
   </jlink-debug-target>

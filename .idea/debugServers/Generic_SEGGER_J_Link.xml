@@ -1,0 +1,14 @@
+<component name="DebugServers">
+  <generic-debug-target name="Generic SEGGER J-Link" uniqueID="b9b23c86-e28a-4ccc-89a8-4db0a57305e1" selected="true">
+    <debugger version="1">
+      <debugger kind="GDB" isBundled="true" />
+      <env />
+    </debugger>
+    <gdbserver exe="C:/Program Files/SEGGER/JLink/JLinkGDBServerCL.exe" args="-nogui -select USB -halt -device STM32F407ZE -if SWD -noir -port 4444 -speed 50000 -singlerun -RTTTelnetPort 2334" live-watches-enabled="true">
+      <env />
+    </gdbserver>
+    <console enabled="true" port="2334" />
+    <target reset-command="monitor reset 0" reset-before="false" />
+    <connection remote-string="tcp:localhost:4444" warmup-ms="500" />
+  </generic-debug-target>
+</component>

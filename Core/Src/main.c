@@ -47,7 +47,7 @@
 #include "lv_port_indev.h"
 #include "lvgl.h"
 #include "vectortable_to_ram.h"
-
+#include "SEGGER_SYSVIEW.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -174,7 +174,8 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-
+    /* 初始化 SystemView */
+    SEGGER_SYSVIEW_Conf();
   /* USER CODE END Init */
 
   /* Configure the system clock */
