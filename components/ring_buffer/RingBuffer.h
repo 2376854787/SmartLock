@@ -10,6 +10,25 @@
 #include "stdint.h"
 #define DEFAULT_ALIGNMENT 4
 
+/* ============================================================================
+ * 并发模型（重要）：同一个 RingBuffer 实例只能选用以下一种模型，禁止混用：
+ *
+ *   A. 带锁模型：使用不带 _SPSC 后缀的接口（WriteRingBuffer / ReadRingBuffer /
+ *      *FromISR / WriteReserve+Commit 等），所有接口内部用临界区互斥。
+ *
+ *   B. SPSC 无锁模型：使用带 _SPSC 后缀的接口，必须是“单生产者 + 单消费者”，
+ *      生产者只写、消费者只读，内部用内存屏障代替临界区。
+ *
+ *   C. 零拷贝单方 Reserve/Commit：Reserve 返回的窗口在 Commit 之前由调用方
+ *      独占，同一侧不能并发。
+ *
+ * 混用 A 和 B（例如 ISR 用 SPSC 写、线程用带锁读）会数据竞争，因为 SPSC 侧
+ * 无锁，看不到带锁侧临界区内的中间状态。
+ *
+ * 统计字段（high_watermark_used 等）在 SPSC 模型下仅由生产者侧更新，避免与
+ * 消费者侧的 RMW 冲突。详见 RingBuffer.c 顶部注释。
+ * ========================================================================= */
+
 typedef struct {
     const char *name;
     volatile uint32_t rear_index;   // 表示可以添加数据的头地址
@@ -100,7 +119,7 @@ ret_code_t ResetRingBufferFromISR(RingBuffer *rb);
 /**============================================================================================ */
 /*　零拷贝 写 */
 ret_code_t RingBuffer_WriteReserve(RingBuffer *rb, uint32_t want, RingBufferSpan *out,
-                                   uint32_t *granted, bool iSCompatible);
+                                   uint32_t *granted, bool isCompatible);
 
 ret_code_t RingBuffer_WriteCommit(RingBuffer *rb, uint32_t commit);
 
@@ -142,6 +161,7 @@ ret_code_t RingBuffer_ReadCommit_SPSC(RingBuffer *rb, uint32_t commit);
 bool RingBuffer_IsEmpty(const RingBuffer *rb);
 bool RingBuffer_IsFull(const RingBuffer *rb);
 uint16_t RingBuffer_GetUsedPermille(const RingBuffer *rb);
+uint16_t RingBuffer_GetUsedPermilleFromISR(const RingBuffer *rb);
 /* 阈值判定：用于“水位线事件” */
 bool RingBuffer_UsedAtLeast(const RingBuffer *rb, uint32_t used_th);
 bool RingBuffer_RemainAtMost(const RingBuffer *rb, uint32_t remain_th);
@@ -149,4 +169,18 @@ uint32_t RingBuffer_GetContigRead(const RingBuffer *rb);
 uint32_t RingBuffer_GetContigWrite(const RingBuffer *rb);
 /* 获取状态快照 */
 RingBufferStatus RingBuffer_GetStatus(const RingBuffer *rb);
+
+/**
+ * @brief 在 RB 中查找匹配 (event_id, key) 的现有 item 并就地覆盖。用于事件
+ *        队列“同键去重/最新值覆盖”场景。
+ * @param rb RB 句柄
+ * @param item 新 item 数据（item_size 字节）
+ * @param item_size 单个 item 字节数（必须能被 RB 容量整除使用）
+ * @param event_id_off item 内 event_id（uint32_t）的偏移
+ * @param key_off item 内 key（uint32_t）的偏移
+ * @return true 找到并覆盖；false 未找到
+ * @note 内部以 OSAL 临界区互斥；调用方应保证不会与其他写者并发。
+ */
+bool RingBuffer_SPSC_OverwriteIfExists(RingBuffer *rb, const uint8_t *item, uint32_t item_size,
+                                       uint32_t event_id_off, uint32_t key_off);
 #endif  // RINGBUFFER_H

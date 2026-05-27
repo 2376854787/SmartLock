@@ -1,4 +1,4 @@
-﻿#include "APP_config.h"
+#include "APP_config.h"
 
 #if (defined(CFG_FEAT_RINGBUFFER_SYSTEM) && (CFG_FEAT_RINGBUFFER_SYSTEM == 1))
 #include <stdbool.h>
@@ -9,37 +9,68 @@
 #include "assert_cus.h"
 #include "barrier.h"
 #include "rb_port.h"
+
+/* ============================================================================
+ * 并发模型约定（重要，违反会丢数据/损坏索引）：
+ *
+ * 同一个 RingBuffer 实例必须固定使用以下三种模型之一，禁止混用：
+ *
+ *   A. 带锁线程态/ISR 互斥模型：
+ *      只调用 WriteRingBuffer / ReadRingBuffer / WriteRingBufferFromISR /
+ *      ReadRingBufferFromISR / WriteReserve(...) + WriteCommit(...) / Drop(...)。
+ *      所有接口内部用 RB_ENTER_CRITICAL / FROM_ISR 互斥。
+ *
+ *   B. SPSC 无锁模型（单生产者 + 单消费者）：
+ *      生产者只调 WriteRingBuffer_SPSC / WriteReserve_SPSC + WriteCommit_SPSC，
+ *      消费者只调 ReadRingBuffer_SPSC / PeekRingBuffer_SPSC /
+ *      ReadReserve_SPSC + ReadCommit_SPSC。
+ *      内部用内存屏障，不取临界区。
+ *      禁止把 B 模型接口与 A 模型接口混用到同一个 RB（混用时 SPSC 侧无锁，
+ *      看不到 A 模型在临界区内的中间状态，会数据竞争）。
+ *
+ *   C. 零拷贝单生产者 Reserve/Commit：
+ *      Reserve/Commit 之间“窗口”由调用方持有，因此同一侧（写或读）只能
+ *      有一个并发者。
+ *
+ * 统计字段（high_watermark_used / overflow_cnt / underflow_cnt / last_used /
+ * last_remain）非原子：
+ *   - 模型 A 由临界区保护，结果准确。
+ *   - 模型 B（SPSC）下，水位线在写者侧更新（写者最有可能让 used 增大）；
+ *     消费者侧不再更新水位线，避免与生产者 RMW 撞车。
+ *     这意味着 SPSC 模型下 high_watermark_used 是“写者刚提交后的快照”，
+ *     不是“瞬时绝对最大值”——这对统计语义已经足够。
+ * ========================================================================= */
+
 /* 状态错误状态码打包宏 */
 #define RB_RET(clas_, err_) RET_MAKE(RET_MOD_RB, RET_SUB_RB_CORE, RET_CODE_MAKE((clas_), (err_)))
 
 /* 给 ret_code_t 返回函数用 */
-#define RB_CHECK_VALID_RC(rb)                                       \
-    do {                                                            \
+#define RB_CHECK_VALID_RC(rb)                                                          \
+    do {                                                                               \
         ASSERT_PARAM(((rb) != NULL) && ((rb)->buffer != NULL) && ((rb)->size >= 2u)); \
-        if ((rb) == NULL || (rb)->buffer == NULL || (rb)->size < 2) \
-            return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);      \
+        if ((rb) == NULL || (rb)->buffer == NULL || (rb)->size < 2)                    \
+            return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);                         \
     } while (0)
 
-/* 给 uint32_t 返回函数用：非法就返回 0（*/
-#define RB_CHECK_VALID_U32(rb)                                                 \
-    do {                                                                       \
+/* 给 uint32_t 返回函数用：非法就返回 0 */
+#define RB_CHECK_VALID_U32(rb)                                                         \
+    do {                                                                               \
         ASSERT_PARAM(((rb) != NULL) && ((rb)->buffer != NULL) && ((rb)->size >= 2u)); \
-        if ((rb) == NULL || (rb)->buffer == NULL || (rb)->size < 2) return 0u; \
+        if ((rb) == NULL || (rb)->buffer == NULL || (rb)->size < 2) return 0u;         \
     } while (0)
 
 /* ret_code_t 版本 */
-#define RB_CHECK_ARGS_RC(rb, ptr, size)                                                           \
-    do {                                                                                          \
-        RB_CHECK_VALID_RC(rb);                                                                    \
-        ASSERT_PARAM(((ptr) != NULL) && ((size) != NULL) && (*(size) != 0u));                    \
+#define RB_CHECK_ARGS_RC(rb, ptr, size)                                                            \
+    do {                                                                                           \
+        RB_CHECK_VALID_RC(rb);                                                                     \
+        ASSERT_PARAM(((ptr) != NULL) && ((size) != NULL) && (*(size) != 0u));                     \
         if (!(ptr) || !(size) || *(size) == 0) return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG); \
     } while (0)
 
 /**
- * @brief 内部监测RB使用情况
- * @param rb RB句柄
- * @param used 使用的字节数
- * @param remain 剩余字节数
+ * @brief 内部更新水位线/最近 used/remain。
+ *        模型 A（带锁）：调用方在临界区内调用，原子。
+ *        模型 B（SPSC）：仅写者侧调用，单写者保证 RMW 安全。
  */
 static inline void RB_UpdateWatermark(RingBuffer* rb, uint32_t used, uint32_t remain) {
     rb->last_used   = used;
@@ -70,10 +101,15 @@ static inline uint32_t RB_NextIndex(const RingBuffer* rb, uint32_t current, uint
  * @return 使用的字节数
  */
 static inline uint32_t RB_GetUsed_Core(const RingBuffer* rb) {
+    /* 用本地变量复制，避免两次读 rear/front 之间的不一致被外面看见 */
+    const uint32_t rear  = rb->rear_index;
+    const uint32_t front = rb->front_index;
+    const uint32_t size  = rb->size;
+
     if (rb->isPowerOfTwo_Size) {
-        return (rb->rear_index - rb->front_index + rb->size) & (rb->size - 1);
+        return (rear - front + size) & (size - 1u);
     }
-    return (rb->rear_index - rb->front_index + rb->size) % rb->size;
+    return (rear - front + size) % size;
 }
 
 /**
@@ -82,7 +118,7 @@ static inline uint32_t RB_GetUsed_Core(const RingBuffer* rb) {
  * @return 内部可使用的字节数
  */
 static inline uint32_t RB_GetRemain_Core(const RingBuffer* rb) {
-    return rb->size - RB_GetUsed_Core(rb) - 1;
+    return rb->size - RB_GetUsed_Core(rb) - 1u;
 }
 
 /**
@@ -97,6 +133,7 @@ static inline uint32_t RB_GetRemain_Core(const RingBuffer* rb) {
  */
 static ret_code_t RB_Write_Logic(RingBuffer* rb, const uint8_t* add, uint32_t* size, bool isForce,
                                  bool isSPSC) {
+    /* SPSC acquire：在读 front_index 之前同步对端更新 */
     if (isSPSC) {
         compiler_barrier();
         mem_barrier();
@@ -104,9 +141,9 @@ static ret_code_t RB_Write_Logic(RingBuffer* rb, const uint8_t* add, uint32_t* s
     const uint32_t remain = RB_GetRemain_Core(rb);
 
     if (remain < *size) {
-        if (isForce)
+        if (isForce) {
             *size = remain;
-        else {
+        } else {
             rb->overflow_cnt++;
             return RB_RET(RET_CLASS_RESOURCE, RET_R_NO_MEM);
         }
@@ -120,16 +157,17 @@ static ret_code_t RB_Write_Logic(RingBuffer* rb, const uint8_t* add, uint32_t* s
         memcpy(rb->buffer + rb->rear_index, add, end_size);
         memcpy(rb->buffer, add + end_size, *size - end_size);
     }
-    /* SPSC 模式 */
+    /* SPSC release：保证数据写完才更新 rear_index，否则消费者可能看到
+     * 新的 rear_index 但旧的数据。 */
     if (isSPSC) {
         compiler_barrier();
         mem_barrier();
     }
     rb->rear_index = RB_NextIndex(rb, rb->rear_index, *size);
-    /* 成功写入后：更新水位线 */
+    /* 成功写入后：更新水位线（SPSC 下也仅在写者侧更新，安全）。 */
     {
         const uint32_t used2 = RB_GetUsed_Core(rb);
-        const uint32_t rem2  = rb->size - used2 - 1;
+        const uint32_t rem2  = rb->size - used2 - 1u;
         RB_UpdateWatermark(rb, used2, rem2);
     }
 
@@ -149,16 +187,18 @@ static ret_code_t RB_Write_Logic(RingBuffer* rb, const uint8_t* add, uint32_t* s
  */
 static ret_code_t RB_Read_Logic(RingBuffer* rb, uint8_t* add, uint32_t* size, bool isForce,
                                 bool isPeek, bool isSPSC) {
-    const uint32_t used = RB_GetUsed_Core(rb);
-    /* SPSC 模式 */
+    /* SPSC acquire：在读 rear_index（间接通过 GetUsed_Core）之前同步对端更新。
+     * 旧版屏障放在 GetUsed_Core 之后，可能看到旧 rear 但新数据/反过来。 */
     if (isSPSC) {
         compiler_barrier();
         mem_barrier();
     }
+    const uint32_t used = RB_GetUsed_Core(rb);
+
     if (used < *size) {
-        if (isForce)
+        if (isForce) {
             *size = used;
-        else {
+        } else {
             rb->underflow_cnt++;
             return RB_RET(RET_CLASS_DATA, RET_R_DATA_NOT_ENOUGH);
         }
@@ -172,6 +212,8 @@ static ret_code_t RB_Read_Logic(RingBuffer* rb, uint8_t* add, uint32_t* size, bo
         memcpy(add, rb->buffer + rb->front_index, end_size);
         memcpy(add + end_size, rb->buffer, *size - end_size);
     }
+    /* SPSC release：保证 memcpy 读完才更新 front_index，否则生产者可能
+     * 看到新的 front_index 但消费者还没真的读完。 */
     if (isSPSC && !isPeek) {
         compiler_barrier();
         mem_barrier();
@@ -180,9 +222,13 @@ static ret_code_t RB_Read_Logic(RingBuffer* rb, uint8_t* add, uint32_t* size, bo
     if (!isPeek) {
         rb->front_index = RB_NextIndex(rb, rb->front_index, *size);
     }
-    {
+    /* 水位线更新策略：
+     *   - 模型 A（带锁）：消费者侧也更新，受临界区保护，安全。
+     *   - 模型 B（SPSC）：仅写者侧更新；这里跳过，避免与写者 RMW 冲突。
+     * Peek 不修改索引也跳过水位线更新（used 没变）。 */
+    if (!isSPSC && !isPeek) {
         const uint32_t used2 = RB_GetUsed_Core(rb);
-        const uint32_t rem2  = rb->size - used2 - 1;
+        const uint32_t rem2  = rb->size - used2 - 1u;
         RB_UpdateWatermark(rb, used2, rem2);
     }
     return RET_OK;
@@ -202,61 +248,65 @@ static ret_code_t RB_Reserve_Logic(const RingBuffer* rb, uint32_t want, RingBuff
                                    uint32_t* granted, bool isCompatible, bool isWrite) {
     const uint32_t limit = isWrite ? RB_GetRemain_Core(rb) : RB_GetUsed_Core(rb);
 
-    // 0请求处理
+    /* 0 请求 */
     if (want == 0) {
         out->p1 = out->p2 = NULL;
         out->n1 = out->n2 = *granted = 0;
         return RET_OK;
     }
 
-    // 空间检查
+    /* 空间检查 */
     if (want > limit) {
-        if (isCompatible)
+        if (isCompatible) {
             want = limit;
-        else
+        } else {
             return isWrite ? RB_RET(RET_CLASS_RESOURCE, RET_R_NO_MEM)
                            : RB_RET(RET_CLASS_DATA, RET_R_DATA_NOT_ENOUGH);
+        }
     }
 
-    // 兼容模式下如果限制为0
+    /* 兼容模式下如果限制为 0 */
     if (want == 0) {
         out->p1 = out->p2 = NULL;
         out->n1 = out->n2 = *granted = 0;
         return RET_OK;
     }
 
-    // 简化逻辑：直接利用索引位置计算
+    /* 复制索引到本地，避免 SPSC 下读两次 volatile 出现不一致快照。
+     * 注：模型 A 在临界区内调用，复制也无害。 */
+    const uint32_t front = rb->front_index;
+    const uint32_t rear  = rb->rear_index;
+    const uint32_t size  = rb->size;
+
     uint32_t n1 = 0, n2 = 0;
 
     if (isWrite) {
-        // 写模式
-        if (rb->rear_index < rb->front_index) {
-            // 中间空闲：rear ... front-1
-            const uint32_t seg = rb->front_index - rb->rear_index - 1;
+        if (rear < front) {
+            /* 中间空闲：rear ... front-1 */
+            const uint32_t seg = front - rear - 1u;
             n1                 = (want < seg) ? want : seg;
         } else {
-            // 两头空闲：rear ... end, 0 ... front-1
-            uint32_t tailFree = rb->size - rb->rear_index;
-            if (rb->front_index == 0) tailFree--;  // 如果front在0，rear不能写到最后
+            /* 两头空闲：rear ... end, 0 ... front-1 */
+            uint32_t tailFree = size - rear;
+            if (front == 0) tailFree--; /* front 在 0 时尾部不能写到最后一个 */
 
             n1 = (want < tailFree) ? want : tailFree;
             n2 = want - n1;
         }
-        out->p1 = (n1 > 0) ? (rb->buffer + rb->rear_index) : NULL;
-        out->p2 = (n2 > 0) ? (rb->buffer) : NULL;  // Wrap around to start
+        out->p1 = (n1 > 0) ? (rb->buffer + rear) : NULL;
+        out->p2 = (n2 > 0) ? (rb->buffer) : NULL;
     } else {
-        // 读模式
-        if (rb->front_index < rb->rear_index) {
-            // 连续数据：front ... rear
-            const uint32_t seg = rb->rear_index - rb->front_index;
+        if (front < rear) {
+            /* 连续数据：front ... rear */
+            const uint32_t seg = rear - front;
             n1                 = (want < seg) ? want : seg;
         } else {
-            // 跨尾数据：front ... end, 0 ... rear
-            const uint32_t tailAvail = rb->size - rb->front_index;
+            /* 跨尾数据：front ... end, 0 ... rear */
+            const uint32_t tailAvail = size - front;
             n1                       = (want < tailAvail) ? want : tailAvail;
             n2                       = want - n1;
         }
-        out->p1 = (n1 > 0) ? (rb->buffer + rb->front_index) : NULL;
+        out->p1 = (n1 > 0) ? (rb->buffer + front) : NULL;
         out->p2 = (n2 > 0) ? (rb->buffer) : NULL;
     }
 
@@ -265,8 +315,9 @@ static ret_code_t RB_Reserve_Logic(const RingBuffer* rb, uint32_t want, RingBuff
     *granted = n1 + n2;
     return RET_OK;
 }
+
 /**============================================================================================ */
-/**==================================      Span拷贝工具     ===================================== */
+/**==================================      Span 拷贝工具    ===================================== */
 /**============================================================================================ */
 /**
  * @brief 将线性缓冲区数据写入 span 描述的两段目标空间
@@ -375,13 +426,10 @@ void RingBuffer_SpanWriteFromCircular(const RingBufferSpan* span, const uint8_t*
     }
 }
 
-/**
- * @brief 创建指定大小的RB
- * @param rb RB句柄
- * @param name RB名称
- * @param size 容量大小 字节单位
- * @return 状态码
- */
+/**============================================================================================ */
+/**==================================         BASE        ===================================== */
+/**============================================================================================ */
+
 ret_code_t CreateRingBuffer(RingBuffer* rb, const char* name, const uint32_t size) {
     ASSERT_PARAM((rb != NULL) && (size >= 2u));
     if (rb == NULL || size < 2) return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
@@ -392,15 +440,16 @@ ret_code_t CreateRingBuffer(RingBuffer* rb, const char* name, const uint32_t siz
         return RB_RET(RET_CLASS_RESOURCE, RET_R_NO_MEM);
     }
 
-    rb->name        = name;
-    rb->front_index = rb->rear_index = 0;
-    rb->size                         = size;
-    rb->isPowerOfTwo_Size            = (size != 0) && ((size & (size - 1)) == 0);
-    rb->high_watermark_used          = 0;
-    rb->overflow_cnt                 = 0;
-    rb->underflow_cnt                = 0;
-    rb->last_remain                  = 0;
-    rb->last_used                    = 0;
+    rb->name                = name;
+    rb->front_index         = 0;
+    rb->rear_index          = 0;
+    rb->size                = size;
+    rb->isPowerOfTwo_Size   = (size != 0) && ((size & (size - 1)) == 0);
+    rb->high_watermark_used = 0;
+    rb->overflow_cnt        = 0;
+    rb->underflow_cnt       = 0;
+    rb->last_remain         = 0;
+    rb->last_used           = 0;
     return RET_OK;
 }
 
@@ -411,11 +460,13 @@ ret_code_t CreateRingBuffer(RingBuffer* rb, const char* name, const uint32_t siz
  */
 uint32_t RingBuffer_GetUsedSize(const RingBuffer* rb) {
     RB_CHECK_VALID_U32(rb);
-    RB_ENTER_CRITICAL();
+    rb_isr_state_t s;
+    RB_ENTER_CRITICAL(s);
     const uint32_t ret = RB_GetUsed_Core(rb);
-    RB_EXIT_CRITICAL();
+    RB_EXIT_CRITICAL(s);
     return ret;
 }
+
 /**
  * @brief 中断版获取使用的容量字节数
  * @param rb RB句柄
@@ -437,11 +488,13 @@ uint32_t RingBuffer_GetUsedSizeFromISR(const RingBuffer* rb) {
  */
 uint32_t RingBuffer_GetRemainSize(const RingBuffer* rb) {
     RB_CHECK_VALID_U32(rb);
-    RB_ENTER_CRITICAL();
+    rb_isr_state_t s;
+    RB_ENTER_CRITICAL(s);
     const uint32_t ret = RB_GetRemain_Core(rb);
-    RB_EXIT_CRITICAL();
+    RB_EXIT_CRITICAL(s);
     return ret;
 }
+
 /**
  * @brief 中断版获取剩余容量字节数
  * @param rb RB句柄
@@ -467,11 +520,13 @@ uint32_t RingBuffer_GetRemainSizeFromISR(const RingBuffer* rb) {
 ret_code_t WriteRingBuffer(RingBuffer* rb, const uint8_t* add, uint32_t* size,
                            const uint8_t isForceWrite) {
     RB_CHECK_ARGS_RC(rb, add, size);
-    RB_ENTER_CRITICAL();
+    rb_isr_state_t s;
+    RB_ENTER_CRITICAL(s);
     const ret_code_t ret = RB_Write_Logic(rb, add, size, isForceWrite, false);
-    RB_EXIT_CRITICAL();
+    RB_EXIT_CRITICAL(s);
     return ret;
 }
+
 /**
  * @brief 中断版 写入数据到 RB
  * @param rb RB句柄
@@ -500,11 +555,13 @@ ret_code_t WriteRingBufferFromISR(RingBuffer* rb, const uint8_t* add, uint32_t* 
  */
 ret_code_t ReadRingBuffer(RingBuffer* rb, uint8_t* add, uint32_t* size, const uint8_t isForceRead) {
     RB_CHECK_ARGS_RC(rb, add, size);
-    RB_ENTER_CRITICAL();
+    rb_isr_state_t s;
+    RB_ENTER_CRITICAL(s);
     const ret_code_t ret = RB_Read_Logic(rb, add, size, isForceRead, false, false);
-    RB_EXIT_CRITICAL();
+    RB_EXIT_CRITICAL(s);
     return ret;
 }
+
 /**
  * @brief 中断版 读取 RB 数据
  * @param rb RB句柄
@@ -535,9 +592,10 @@ ret_code_t PeekRingBuffer(const RingBuffer* rb, uint8_t* add, uint32_t* size,
                           const uint8_t isForcePeek) {
     RB_CHECK_ARGS_RC(rb, add, size);
     RingBuffer* rb_mut = (RingBuffer*)rb;
-    RB_ENTER_CRITICAL();
+    rb_isr_state_t s;
+    RB_ENTER_CRITICAL(s);
     const ret_code_t ret = RB_Read_Logic(rb_mut, add, size, isForcePeek, true, false);
-    RB_EXIT_CRITICAL();
+    RB_EXIT_CRITICAL(s);
     return ret;
 }
 
@@ -548,11 +606,14 @@ ret_code_t PeekRingBuffer(const RingBuffer* rb, uint8_t* add, uint32_t* size,
  */
 ret_code_t ResetRingBuffer(RingBuffer* rb) {
     RB_CHECK_VALID_RC(rb);
-    RB_ENTER_CRITICAL();
-    rb->front_index = rb->rear_index = 0;
-    RB_EXIT_CRITICAL();
+    rb_isr_state_t s;
+    RB_ENTER_CRITICAL(s);
+    rb->front_index = 0;
+    rb->rear_index  = 0;
+    RB_EXIT_CRITICAL(s);
     return RET_OK;
 }
+
 /**
  * @beief 中断版 重置 RB 空间
  * @param rb RB句柄
@@ -562,10 +623,15 @@ ret_code_t ResetRingBufferFromISR(RingBuffer* rb) {
     RB_CHECK_VALID_RC(rb);
     rb_isr_state_t saved;
     RB_ENTER_CRITICAL_FROM_ISR(saved);
-    rb->front_index = rb->rear_index = 0;
+    rb->front_index = 0;
+    rb->rear_index  = 0;
     RB_EXIT_CRITICAL_FROM_ISR(saved);
     return RET_OK;
 }
+
+/**============================================================================================ */
+/**==================================         零拷贝         ==================================== */
+/**============================================================================================ */
 
 /**
  * @brief 线程版 获取可写空间
@@ -581,9 +647,10 @@ ret_code_t RingBuffer_WriteReserve(RingBuffer* rb, uint32_t want, RingBufferSpan
                                    uint32_t* granted, bool isCompatible) {
     if (!rb || !out || !granted || !rb->buffer || rb->size < 2)
         return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
-    RB_ENTER_CRITICAL();
+    rb_isr_state_t s;
+    RB_ENTER_CRITICAL(s);
     const ret_code_t ret = RB_Reserve_Logic(rb, want, out, granted, isCompatible, true);
-    RB_EXIT_CRITICAL();
+    RB_EXIT_CRITICAL(s);
     return ret;
 }
 
@@ -622,12 +689,13 @@ static inline ret_code_t RB_Commit_Write_Logic(RingBuffer* rb, uint32_t commit) 
     /* 成功写入后：更新水位线 */
     {
         const uint32_t used2 = RB_GetUsed_Core(rb);
-        const uint32_t rem2  = rb->size - used2 - 1;
+        const uint32_t rem2  = rb->size - used2 - 1u;
         RB_UpdateWatermark(rb, used2, rem2);
     }
 
     return RET_OK;
 }
+
 /**
  * @brief 线程版 提交实际写入的大小
  * @param rb RB 句柄
@@ -636,12 +704,13 @@ static inline ret_code_t RB_Commit_Write_Logic(RingBuffer* rb, uint32_t commit) 
  */
 ret_code_t RingBuffer_WriteCommit(RingBuffer* rb, uint32_t commit) {
     RB_CHECK_VALID_RC(rb);
-    RB_ENTER_CRITICAL();
+    rb_isr_state_t s;
+    RB_ENTER_CRITICAL(s);
     const ret_code_t ret = RB_Commit_Write_Logic(rb, commit);
-
-    RB_EXIT_CRITICAL();
+    RB_EXIT_CRITICAL(s);
     return ret;
 }
+
 /**
  * @brief 中断版 提交实际写入的大小
  * @param rb RB 句柄
@@ -670,11 +739,13 @@ ret_code_t RingBuffer_ReadReserve(RingBuffer* rb, uint32_t want, RingBufferSpan*
                                   uint32_t* granted, bool isCompatible) {
     if (!rb || !out || !granted || !rb->buffer || rb->size < 2)
         return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
-    RB_ENTER_CRITICAL();
+    rb_isr_state_t s;
+    RB_ENTER_CRITICAL(s);
     const ret_code_t ret = RB_Reserve_Logic(rb, want, out, granted, isCompatible, false);
-    RB_EXIT_CRITICAL();
+    RB_EXIT_CRITICAL(s);
     return ret;
 }
+
 /**
  * @brief 中断版 获取可读空间
  * @param rb RB句柄
@@ -711,10 +782,11 @@ static inline ret_code_t RB_Commit_Read_Logic(RingBuffer* rb, uint32_t commit,
     uint32_t g          = commit;
 
     if (g > used) {
-        if (isCompatible)
+        if (isCompatible) {
             g = used;
-        else
+        } else {
             return RB_RET(RET_CLASS_DATA, RET_R_DATA_NOT_ENOUGH);
+        }
     }
 
     if (actual_drop) *actual_drop = g;
@@ -723,7 +795,7 @@ static inline ret_code_t RB_Commit_Read_Logic(RingBuffer* rb, uint32_t commit,
         /* 成功读取：更新水位线 */
         {
             const uint32_t used2 = RB_GetUsed_Core(rb);
-            const uint32_t rem2  = rb->size - used2 - 1;
+            const uint32_t rem2  = rb->size - used2 - 1u;
             RB_UpdateWatermark(rb, used2, rem2);
         }
     }
@@ -738,11 +810,13 @@ static inline ret_code_t RB_Commit_Read_Logic(RingBuffer* rb, uint32_t commit,
  */
 ret_code_t RingBuffer_ReadCommit(RingBuffer* rb, uint32_t commit) {
     RB_CHECK_VALID_RC(rb);
-    RB_ENTER_CRITICAL();
+    rb_isr_state_t s;
+    RB_ENTER_CRITICAL(s);
     const ret_code_t ret = RB_Commit_Read_Logic(rb, commit, NULL, false);
-    RB_EXIT_CRITICAL();
+    RB_EXIT_CRITICAL(s);
     return ret;
 }
+
 /**
  * @brief 中断版零拷贝 获取可读空间的信息
  * @param rb RB 句柄
@@ -768,11 +842,13 @@ ret_code_t RingBuffer_ReadCommitFromISR(RingBuffer* rb, uint32_t commit) {
  */
 ret_code_t RingBuffer_Drop(RingBuffer* rb, uint32_t drop, uint32_t* dropped, bool isCompatible) {
     RB_CHECK_VALID_RC(rb);
-    RB_ENTER_CRITICAL();
+    rb_isr_state_t s;
+    RB_ENTER_CRITICAL(s);
     const ret_code_t ret = RB_Commit_Read_Logic(rb, drop, dropped, isCompatible);
-    RB_EXIT_CRITICAL();
+    RB_EXIT_CRITICAL(s);
     return ret;
 }
+
 /**
  * @brief 中断版零拷贝 丢弃指定数组
  * @param rb RB 句柄
@@ -845,8 +921,9 @@ ret_code_t RingBuffer_WriteReserve_SPSC(RingBuffer* rb, uint32_t want, RingBuffe
                                         uint32_t* granted, bool isCompatible) {
     if (!rb || !out || !granted || !rb->buffer || rb->size < 2)
         return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    /* acquire：读 front 之前同步消费者更新 */
     compiler_barrier();
-    mem_barrier();  // 对于跨核通信，读取对方更新的索引前需要DMB
+    mem_barrier();
     return RB_Reserve_Logic(rb, want, out, granted, isCompatible, true);
 }
 
@@ -857,18 +934,17 @@ ret_code_t RingBuffer_WriteReserve_SPSC(RingBuffer* rb, uint32_t want, RingBuffe
  * @return 32位状态码
  */
 ret_code_t RingBuffer_WriteCommit_SPSC(RingBuffer* rb, uint32_t commit) {
-    compiler_barrier();
-    mem_barrier();
     const uint32_t remain = RB_GetRemain_Core(rb);
     if (commit > remain) return RB_RET(RET_CLASS_RESOURCE, RET_R_NO_MEM);
+    /* release：保证 Reserve 后用户写入的数据先落盘，再发布 rear_index */
+    compiler_barrier();
+    mem_barrier();
     rb->rear_index = RB_NextIndex(rb, rb->rear_index, commit);
-    /* 成功写入后：更新水位线 */
     {
         const uint32_t used2 = RB_GetUsed_Core(rb);
-        const uint32_t rem2  = rb->size - used2 - 1;
+        const uint32_t rem2  = rb->size - used2 - 1u;
         RB_UpdateWatermark(rb, used2, rem2);
     }
-
     return RET_OK;
 }
 
@@ -885,6 +961,7 @@ ret_code_t RingBuffer_ReadReserve_SPSC(RingBuffer* rb, uint32_t want, RingBuffer
                                        uint32_t* granted, bool isCompatible) {
     if (!rb || !out || !granted || !rb->buffer || rb->size < 2)
         return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    /* acquire：读 rear 之前同步生产者更新（确保读到完整数据） */
     compiler_barrier();
     mem_barrier();
     return RB_Reserve_Logic(rb, want, out, granted, isCompatible, false);
@@ -897,17 +974,13 @@ ret_code_t RingBuffer_ReadReserve_SPSC(RingBuffer* rb, uint32_t want, RingBuffer
  * @return 32位状态码
  */
 ret_code_t RingBuffer_ReadCommit_SPSC(RingBuffer* rb, uint32_t commit) {
-    compiler_barrier();
-    mem_barrier();
     const uint32_t used = RB_GetUsed_Core(rb);
     if (commit > used) return RB_RET(RET_CLASS_DATA, RET_R_DATA_NOT_ENOUGH);
+    /* release：保证用户对窗口的读取已经完成，再发布 front_index */
+    compiler_barrier();
+    mem_barrier();
     rb->front_index = RB_NextIndex(rb, rb->front_index, commit);
-    /* 成功读取：更新水位线 */
-    {
-        const uint32_t used2 = RB_GetUsed_Core(rb);
-        const uint32_t rem2  = rb->size - used2 - 1;
-        RB_UpdateWatermark(rb, used2, rem2);
-    }
+    /* 消费者侧不更新水位线（参见文件顶部说明） */
     return RET_OK;
 }
 
@@ -984,18 +1057,16 @@ bool RingBuffer_RemainAtMost(const RingBuffer* rb, uint32_t remain_th) {
 uint32_t RingBuffer_GetContigRead(const RingBuffer* rb) {
     if (!rb || !rb->buffer || rb->size < 2) return 0;
 
-    // 逻辑复用 RB_Reserve_Logic 的读部分计算 n1
-    // 读模式: front ... rear (或 end)
-
-    uint32_t n1          = 0;
+    /* 复制索引到本地，避免两次读 volatile 出现不一致快照 */
     const uint32_t front = rb->front_index;
     const uint32_t rear  = rb->rear_index;
+    uint32_t n1          = 0;
 
     if (front <= rear) {
-        // 连续数据：front ... rear
+        /* 连续数据：front ... rear */
         n1 = rear - front;
     } else {
-        // 跨尾数据：front ... end
+        /* 跨尾数据：front ... end */
         n1 = rb->size - front;
     }
 
@@ -1009,21 +1080,20 @@ uint32_t RingBuffer_GetContigRead(const RingBuffer* rb) {
  */
 uint32_t RingBuffer_GetContigWrite(const RingBuffer* rb) {
     if (!rb || !rb->buffer || rb->size < 2) return 0;
-    // 逻辑复用 RB_Reserve_Logic 的写部分计算 n1
-    // 写模式: rear ... front-1 (或 end)
-    uint32_t n1          = 0;
     const uint32_t front = rb->front_index;
     const uint32_t rear  = rb->rear_index;
     const uint32_t size  = rb->size;
+    uint32_t n1          = 0;
 
     if (rear < front) {
-        // 中间空闲：rear ... front-1
-        n1 = front - rear - 1;
+        /* 中间空闲：rear ... front-1 */
+        n1 = front - rear - 1u;
     } else {
-        // 两头空闲：rear ... end
+        /* 两头空闲：rear ... end */
         n1 = size - rear;
         if (front == 0) {
-            n1--;  // 如果front在0，rear不能写到最后的一个字节，必须保留一个空位
+            /* front 在 0 时尾部不能写到最后一个字节 */
+            n1--;
         }
     }
 
@@ -1041,24 +1111,53 @@ RingBufferStatus RingBuffer_GetStatus(const RingBuffer* rb) {
         const RingBufferStatus empty = {0};
         return empty;
     }
-    RB_ENTER_CRITICAL();
+
+    rb_isr_state_t s;
+    RB_ENTER_CRITICAL(s);
+
+    const uint32_t used   = RB_GetUsed_Core(rb);
+    const uint32_t remain = (rb->size > 0u) ? (rb->size - used - 1u) : 0u;
+    const uint32_t cap    = (rb->size > 1u) ? (rb->size - 1u) : 1u;
+    uint32_t permille     = (used * 1000u) / cap;
+    if (permille > 1000u) permille = 1000u;
+
+    /* contig 直接展开 Core 计算，避免再次进入会取锁的接口 */
+    const uint32_t front = rb->front_index;
+    const uint32_t rear  = rb->rear_index;
+    uint32_t contig_r    = 0;
+    uint32_t contig_w    = 0;
+    if (front <= rear) {
+        contig_r = rear - front;
+    } else {
+        contig_r = rb->size - front;
+    }
+    if (rear < front) {
+        contig_w = front - rear - 1u;
+    } else {
+        contig_w = rb->size - rear;
+        if (front == 0 && contig_w > 0u) contig_w--;
+    }
+
     const RingBufferStatus status = {
-        .used                = RingBuffer_GetUsedSize(rb),
-        .remain              = RingBuffer_GetRemainSize(rb),
+        .used                = used,
+        .remain              = remain,
         .size                = rb->size,
-        .empty               = RingBuffer_IsEmpty(rb),
-        .full                = RingBuffer_IsFull(rb),
-        .contig_read         = RingBuffer_GetContigRead(rb),
-        .contig_write        = RingBuffer_GetContigWrite(rb),
+        .used_permille       = (uint16_t)permille,
+        .empty               = (used == 0u),
+        .full                = (remain == 0u),
+        .contig_read         = contig_r,
+        .contig_write        = contig_w,
         .high_watermark_used = rb->high_watermark_used,
         .overflow_cnt        = rb->overflow_cnt,
         .underflow_cnt       = rb->underflow_cnt,
         .last_remain         = rb->last_remain,
         .last_used           = rb->last_used,
     };
-    RB_EXIT_CRITICAL();
+
+    RB_EXIT_CRITICAL(s);
     return status;
 }
+
 static inline uint32_t rb_mod(uint32_t x, uint32_t m) {
     return (m == 0u) ? 0u : (x % m);
 }
@@ -1075,25 +1174,29 @@ bool RingBuffer_SPSC_OverwriteIfExists(RingBuffer* rb, const uint8_t* item, uint
     memcpy(&target_event_id, item + event_id_off, 4u);
     memcpy(&target_key, item + key_off, 4u);
 
-    uint32_t pm;
+    osal_crit_state_t pm;
     OSAL_enter_critical_ex(&pm);
 
-    const uint32_t used = RingBuffer_GetUsedSize(rb);
-    const uint32_t cnt  = used / item_size;
+    /* 在临界区里直接调 Core 函数，避免嵌套取锁。 */
+    const uint32_t used        = RB_GetUsed_Core(rb);
+    const uint32_t cnt         = used / item_size;
+    const uint32_t front_local = rb->front_index;
+    const uint32_t size        = rb->size;
+
     if (cnt == 0u) {
         OSAL_exit_critical_ex(pm);
         return false;
     }
 
     for (uint32_t i = 0; i < cnt; i++) {
-        const uint32_t pos = rb_mod(rb->front_index + i * item_size, rb->size);
+        const uint32_t pos = rb_mod(front_local + i * item_size, size);
 
         uint8_t tmp[8];
         for (uint32_t k = 0; k < 4u; k++) {
-            tmp[k] = rb->buffer[rb_mod(pos + event_id_off + k, rb->size)];
+            tmp[k] = rb->buffer[rb_mod(pos + event_id_off + k, size)];
         }
         for (uint32_t k = 0; k < 4u; k++) {
-            tmp[4u + k] = rb->buffer[rb_mod(pos + key_off + k, rb->size)];
+            tmp[4u + k] = rb->buffer[rb_mod(pos + key_off + k, size)];
         }
 
         uint32_t cur_event_id, cur_key;
@@ -1101,7 +1204,7 @@ bool RingBuffer_SPSC_OverwriteIfExists(RingBuffer* rb, const uint8_t* item, uint
         memcpy(&cur_key, tmp + 4u, 4u);
 
         if (cur_event_id == target_event_id && cur_key == target_key) {
-            const uint32_t tail  = rb->size - pos;
+            const uint32_t tail  = size - pos;
             const uint32_t first = (item_size <= tail) ? item_size : tail;
             memcpy(rb->buffer + pos, item, first);
             if (first < item_size) {
@@ -1116,5 +1219,3 @@ bool RingBuffer_SPSC_OverwriteIfExists(RingBuffer* rb, const uint8_t* item, uint
     return false;
 }
 #endif
-
-
