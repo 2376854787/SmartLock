@@ -62,6 +62,9 @@ file(GLOB_RECURSE SYSTEM_VIEW_SRCS CONFIGURE_DEPENDS
         "SystemView/*.S"
         "SystemView/*.s"
 )
+list(REMOVE_ITEM SYSTEM_VIEW_SRCS
+        "${CMAKE_CURRENT_SOURCE_DIR}/SystemView/RTT/Syscalls/SEGGER_RTT_Syscalls_GCC.c"
+)
 # Create an executable object type
 # 定义最终生成的二进制文件对象
 add_executable(${CMAKE_PROJECT_NAME}

@@ -36,6 +36,8 @@
 
 #include "ESP01S.h"
 #include "KEY.h"
+#include "SEGGER_RTT.h"
+#include "SEGGER_SYSVIEW.h"
 #include "Usart1_manage.h"
 #include "auto_init.h"
 #include "bh1750.h"
@@ -47,7 +49,6 @@
 #include "lv_port_indev.h"
 #include "lvgl.h"
 #include "vectortable_to_ram.h"
-#include "SEGGER_SYSVIEW.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -147,10 +148,18 @@ void MX_FREERTOS_Init(void);
 #endif
 PUTCHAR_PROTOTYPE {
     HAL_UART_Transmit(&huart1, (uint8_t*)&ch, 1,
-                      HAL_MAX_DELAY);  // 修改为你的UART句柄，例如 huart1
+                      HAL_MAX_DELAY);
     return ch;
 }
-
+int _write(int file, char *ptr, int len)
+{
+    /* file 参数通常用于区分 stdout(1) 和 stderr(2)，在这里可以直接忽略 */
+    (void)file;
+    SEGGER_RTT_Write(0, ptr, len);
+    HAL_UART_Transmit(&huart1, (uint8_t*)&ptr, len,
+                       HAL_MAX_DELAY);
+    return len; /* 必须返回实际发送的字节数 */
+}
 /* USER CODE END 0 */
 
 /**
@@ -174,8 +183,7 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-    /* 初始化 SystemView */
-    SEGGER_SYSVIEW_Conf();
+
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -183,6 +191,8 @@ int main(void)
 
   /* USER CODE BEGIN SysInit */
     hal_time_init();
+    /* 初始化 SystemView */
+    SEGGER_SYSVIEW_Conf();
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
