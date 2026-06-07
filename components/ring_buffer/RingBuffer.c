@@ -67,18 +67,31 @@
         if (!(ptr) || !(size) || *(size) == 0) return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG); \
     } while (0)
 
+/* 前向声明：RB_UpdateWatermark 在统计开启时要重算 used，而 RB_GetUsed_Core
+ * 定义在后面。 */
+static inline uint32_t RB_GetUsed_Core(const RingBuffer* rb);
+
 /**
  * @brief 内部更新水位线/最近 used/remain。
  *        模型 A（带锁）：调用方在临界区内调用，原子。
  *        模型 B（SPSC）：仅写者侧调用，单写者保证 RMW 安全。
  */
-static inline void RB_UpdateWatermark(RingBuffer* rb, uint32_t used, uint32_t remain) {
+static inline void RB_UpdateWatermark(RingBuffer* rb) {
+#if RB_ENABLE_STATS
+    /* used/remain 在函数内部重算：统计关闭时整段消失，调用点无需任何 #if，
+     * 也不会在热路径上留下「算了又不用」的死代码。 */
+    const uint32_t used   = RB_GetUsed_Core(rb);
+    const uint32_t remain = rb->size - used - 1u;
+
     rb->last_used   = used;
     rb->last_remain = remain;
 
     if (used > rb->high_watermark_used) {
         rb->high_watermark_used = used;
     }
+#else
+    (void)rb; /* 统计关闭：空操作 */
+#endif
 }
 
 /**
@@ -135,8 +148,7 @@ static ret_code_t RB_Write_Logic(RingBuffer* rb, const uint8_t* add, uint32_t* s
                                  bool isSPSC) {
     /* SPSC acquire：在读 front_index 之前同步对端更新 */
     if (isSPSC) {
-        compiler_barrier();
-        mem_barrier();
+        smp_mem_barrier();
     }
     const uint32_t remain = RB_GetRemain_Core(rb);
 
@@ -144,7 +156,9 @@ static ret_code_t RB_Write_Logic(RingBuffer* rb, const uint8_t* add, uint32_t* s
         if (isForce) {
             *size = remain;
         } else {
+#if RB_ENABLE_STATS
             rb->overflow_cnt++;
+#endif
             return RB_RET(RET_CLASS_RESOURCE, RET_R_NO_MEM);
         }
     }
@@ -160,16 +174,11 @@ static ret_code_t RB_Write_Logic(RingBuffer* rb, const uint8_t* add, uint32_t* s
     /* SPSC release：保证数据写完才更新 rear_index，否则消费者可能看到
      * 新的 rear_index 但旧的数据。 */
     if (isSPSC) {
-        compiler_barrier();
-        mem_barrier();
+        smp_mem_barrier();
     }
     rb->rear_index = RB_NextIndex(rb, rb->rear_index, *size);
     /* 成功写入后：更新水位线（SPSC 下也仅在写者侧更新，安全）。 */
-    {
-        const uint32_t used2 = RB_GetUsed_Core(rb);
-        const uint32_t rem2  = rb->size - used2 - 1u;
-        RB_UpdateWatermark(rb, used2, rem2);
-    }
+    RB_UpdateWatermark(rb);
 
     return RET_OK;
 }
@@ -190,8 +199,7 @@ static ret_code_t RB_Read_Logic(RingBuffer* rb, uint8_t* add, uint32_t* size, bo
     /* SPSC acquire：在读 rear_index（间接通过 GetUsed_Core）之前同步对端更新。
      * 旧版屏障放在 GetUsed_Core 之后，可能看到旧 rear 但新数据/反过来。 */
     if (isSPSC) {
-        compiler_barrier();
-        mem_barrier();
+        smp_mem_barrier();
     }
     const uint32_t used = RB_GetUsed_Core(rb);
 
@@ -199,7 +207,9 @@ static ret_code_t RB_Read_Logic(RingBuffer* rb, uint8_t* add, uint32_t* size, bo
         if (isForce) {
             *size = used;
         } else {
+#if RB_ENABLE_STATS
             rb->underflow_cnt++;
+#endif
             return RB_RET(RET_CLASS_DATA, RET_R_DATA_NOT_ENOUGH);
         }
     }
@@ -215,8 +225,7 @@ static ret_code_t RB_Read_Logic(RingBuffer* rb, uint8_t* add, uint32_t* size, bo
     /* SPSC release：保证 memcpy 读完才更新 front_index，否则生产者可能
      * 看到新的 front_index 但消费者还没真的读完。 */
     if (isSPSC && !isPeek) {
-        compiler_barrier();
-        mem_barrier();
+        smp_mem_barrier();
     }
 
     if (!isPeek) {
@@ -227,9 +236,7 @@ static ret_code_t RB_Read_Logic(RingBuffer* rb, uint8_t* add, uint32_t* size, bo
      *   - 模型 B（SPSC）：仅写者侧更新；这里跳过，避免与写者 RMW 冲突。
      * Peek 不修改索引也跳过水位线更新（used 没变）。 */
     if (!isSPSC && !isPeek) {
-        const uint32_t used2 = RB_GetUsed_Core(rb);
-        const uint32_t rem2  = rb->size - used2 - 1u;
-        RB_UpdateWatermark(rb, used2, rem2);
+        RB_UpdateWatermark(rb);
     }
     return RET_OK;
 }
@@ -445,11 +452,13 @@ ret_code_t CreateRingBuffer(RingBuffer* rb, const char* name, const uint32_t siz
     rb->rear_index          = 0;
     rb->size                = size;
     rb->isPowerOfTwo_Size   = (size != 0) && ((size & (size - 1)) == 0);
+#if RB_ENABLE_STATS
     rb->high_watermark_used = 0;
     rb->overflow_cnt        = 0;
     rb->underflow_cnt       = 0;
     rb->last_remain         = 0;
     rb->last_used           = 0;
+#endif
     return RET_OK;
 }
 
@@ -687,11 +696,7 @@ static inline ret_code_t RB_Commit_Write_Logic(RingBuffer* rb, uint32_t commit) 
     if (commit > remain) return RB_RET(RET_CLASS_RESOURCE, RET_R_NO_MEM);
     rb->rear_index = RB_NextIndex(rb, rb->rear_index, commit);
     /* 成功写入后：更新水位线 */
-    {
-        const uint32_t used2 = RB_GetUsed_Core(rb);
-        const uint32_t rem2  = rb->size - used2 - 1u;
-        RB_UpdateWatermark(rb, used2, rem2);
-    }
+    RB_UpdateWatermark(rb);
 
     return RET_OK;
 }
@@ -793,11 +798,7 @@ static inline ret_code_t RB_Commit_Read_Logic(RingBuffer* rb, uint32_t commit,
     if (g > 0) {
         rb->front_index = RB_NextIndex(rb, rb->front_index, g);
         /* 成功读取：更新水位线 */
-        {
-            const uint32_t used2 = RB_GetUsed_Core(rb);
-            const uint32_t rem2  = rb->size - used2 - 1u;
-            RB_UpdateWatermark(rb, used2, rem2);
-        }
+        RB_UpdateWatermark(rb);
     }
     return RET_OK;
 }
@@ -922,8 +923,7 @@ ret_code_t RingBuffer_WriteReserve_SPSC(RingBuffer* rb, uint32_t want, RingBuffe
     if (!rb || !out || !granted || !rb->buffer || rb->size < 2)
         return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     /* acquire：读 front 之前同步消费者更新 */
-    compiler_barrier();
-    mem_barrier();
+    smp_mem_barrier();
     return RB_Reserve_Logic(rb, want, out, granted, isCompatible, true);
 }
 
@@ -937,14 +937,9 @@ ret_code_t RingBuffer_WriteCommit_SPSC(RingBuffer* rb, uint32_t commit) {
     const uint32_t remain = RB_GetRemain_Core(rb);
     if (commit > remain) return RB_RET(RET_CLASS_RESOURCE, RET_R_NO_MEM);
     /* release：保证 Reserve 后用户写入的数据先落盘，再发布 rear_index */
-    compiler_barrier();
-    mem_barrier();
+    smp_mem_barrier();
     rb->rear_index = RB_NextIndex(rb, rb->rear_index, commit);
-    {
-        const uint32_t used2 = RB_GetUsed_Core(rb);
-        const uint32_t rem2  = rb->size - used2 - 1u;
-        RB_UpdateWatermark(rb, used2, rem2);
-    }
+    RB_UpdateWatermark(rb);
     return RET_OK;
 }
 
@@ -962,8 +957,7 @@ ret_code_t RingBuffer_ReadReserve_SPSC(RingBuffer* rb, uint32_t want, RingBuffer
     if (!rb || !out || !granted || !rb->buffer || rb->size < 2)
         return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     /* acquire：读 rear 之前同步生产者更新（确保读到完整数据） */
-    compiler_barrier();
-    mem_barrier();
+    smp_mem_barrier();
     return RB_Reserve_Logic(rb, want, out, granted, isCompatible, false);
 }
 
@@ -977,8 +971,7 @@ ret_code_t RingBuffer_ReadCommit_SPSC(RingBuffer* rb, uint32_t commit) {
     const uint32_t used = RB_GetUsed_Core(rb);
     if (commit > used) return RB_RET(RET_CLASS_DATA, RET_R_DATA_NOT_ENOUGH);
     /* release：保证用户对窗口的读取已经完成，再发布 front_index */
-    compiler_barrier();
-    mem_barrier();
+    smp_mem_barrier();
     rb->front_index = RB_NextIndex(rb, rb->front_index, commit);
     /* 消费者侧不更新水位线（参见文件顶部说明） */
     return RET_OK;
@@ -1147,75 +1140,17 @@ RingBufferStatus RingBuffer_GetStatus(const RingBuffer* rb) {
         .full                = (remain == 0u),
         .contig_read         = contig_r,
         .contig_write        = contig_w,
+#if RB_ENABLE_STATS
         .high_watermark_used = rb->high_watermark_used,
         .overflow_cnt        = rb->overflow_cnt,
         .underflow_cnt       = rb->underflow_cnt,
         .last_remain         = rb->last_remain,
         .last_used           = rb->last_used,
+#endif
     };
 
     RB_EXIT_CRITICAL(s);
     return status;
 }
 
-static inline uint32_t rb_mod(uint32_t x, uint32_t m) {
-    return (m == 0u) ? 0u : (x % m);
-}
-
-bool RingBuffer_SPSC_OverwriteIfExists(RingBuffer* rb, const uint8_t* item, uint32_t item_size,
-                                       uint32_t event_id_off, uint32_t key_off) {
-    ASSERT_PARAM((rb != NULL) && (item != NULL) && (item_size != 0u));
-    ASSERT_PARAM((event_id_off + 4u <= item_size) && (key_off + 4u <= item_size));
-    if (!rb || !item || item_size == 0u) return false;
-    if (event_id_off + 4u > item_size) return false;
-    if (key_off + 4u > item_size) return false;
-
-    uint32_t target_event_id, target_key;
-    memcpy(&target_event_id, item + event_id_off, 4u);
-    memcpy(&target_key, item + key_off, 4u);
-
-    osal_crit_state_t pm;
-    OSAL_enter_critical_ex(&pm);
-
-    /* 在临界区里直接调 Core 函数，避免嵌套取锁。 */
-    const uint32_t used        = RB_GetUsed_Core(rb);
-    const uint32_t cnt         = used / item_size;
-    const uint32_t front_local = rb->front_index;
-    const uint32_t size        = rb->size;
-
-    if (cnt == 0u) {
-        OSAL_exit_critical_ex(pm);
-        return false;
-    }
-
-    for (uint32_t i = 0; i < cnt; i++) {
-        const uint32_t pos = rb_mod(front_local + i * item_size, size);
-
-        uint8_t tmp[8];
-        for (uint32_t k = 0; k < 4u; k++) {
-            tmp[k] = rb->buffer[rb_mod(pos + event_id_off + k, size)];
-        }
-        for (uint32_t k = 0; k < 4u; k++) {
-            tmp[4u + k] = rb->buffer[rb_mod(pos + key_off + k, size)];
-        }
-
-        uint32_t cur_event_id, cur_key;
-        memcpy(&cur_event_id, tmp, 4u);
-        memcpy(&cur_key, tmp + 4u, 4u);
-
-        if (cur_event_id == target_event_id && cur_key == target_key) {
-            const uint32_t tail  = size - pos;
-            const uint32_t first = (item_size <= tail) ? item_size : tail;
-            memcpy(rb->buffer + pos, item, first);
-            if (first < item_size) {
-                memcpy(rb->buffer, item + first, item_size - first);
-            }
-            OSAL_exit_critical_ex(pm);
-            return true;
-        }
-    }
-
-    OSAL_exit_critical_ex(pm);
-    return false;
-}
 #endif

@@ -10,6 +10,16 @@
 #include "stdint.h"
 #define DEFAULT_ALIGNMENT 4
 
+/* 运行时统计开关（水位线 / overflow / underflow / last_used / last_remain）。
+ * 默认开启。关闭（编译时定义 RB_ENABLE_STATS=0）后：
+ *   - RingBuffer / RingBufferStatus 不再保留这些字段，省 RAM；
+ *   - 每次 Push/Pop/Commit 的热路径不再做水位线计算，少一次 used 重算和几次
+ *     volatile 写——对标 lwrb 的零开销热路径。
+ * 统计只是可观测性，关掉不影响队列功能。 */
+#ifndef RB_ENABLE_STATS
+#define RB_ENABLE_STATS 1
+#endif
+
 /* ============================================================================
  * 并发模型（重要）：同一个 RingBuffer 实例只能选用以下一种模型，禁止混用：
  *
@@ -36,11 +46,13 @@ typedef struct {
     uint32_t size;                  // 缓冲区大小 实际可用-1
     uint8_t *buffer;                // 缓冲区头地址
     bool isPowerOfTwo_Size;
+#if RB_ENABLE_STATS
     volatile uint32_t high_watermark_used; /* 历史最大 used 字节数 */
     volatile uint32_t overflow_cnt;        /* 写入空间不足次数（非 force 或 reserve 失败等） */
     volatile uint32_t underflow_cnt;       /* 读取数据不足次数（非 force 等） */
     volatile uint32_t last_used;           /* 最近一次计算到的 used */
     volatile uint32_t last_remain;         /* 最近一次计算到的 remain */
+#endif
 } RingBuffer;
 /* RB 运行时快照 */
 typedef struct {
@@ -55,12 +67,14 @@ typedef struct {
     uint32_t contig_read;  /* 从 front 到尾部连续可读 */
     uint32_t contig_write; /* 从 rear  到尾部连续可写（含 wrap 约束） */
 
+#if RB_ENABLE_STATS
     /* 统计/水位线 */
     uint32_t high_watermark_used;
     uint32_t overflow_cnt;
     uint32_t underflow_cnt;
     uint32_t last_used;
     uint32_t last_remain;
+#endif
 } RingBufferStatus;
 
 typedef struct {
@@ -170,17 +184,4 @@ uint32_t RingBuffer_GetContigWrite(const RingBuffer *rb);
 /* 获取状态快照 */
 RingBufferStatus RingBuffer_GetStatus(const RingBuffer *rb);
 
-/**
- * @brief 在 RB 中查找匹配 (event_id, key) 的现有 item 并就地覆盖。用于事件
- *        队列“同键去重/最新值覆盖”场景。
- * @param rb RB 句柄
- * @param item 新 item 数据（item_size 字节）
- * @param item_size 单个 item 字节数（必须能被 RB 容量整除使用）
- * @param event_id_off item 内 event_id（uint32_t）的偏移
- * @param key_off item 内 key（uint32_t）的偏移
- * @return true 找到并覆盖；false 未找到
- * @note 内部以 OSAL 临界区互斥；调用方应保证不会与其他写者并发。
- */
-bool RingBuffer_SPSC_OverwriteIfExists(RingBuffer *rb, const uint8_t *item, uint32_t item_size,
-                                       uint32_t event_id_off, uint32_t key_off);
 #endif  // RINGBUFFER_H
