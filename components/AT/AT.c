@@ -37,13 +37,14 @@ static ret_code_t AT_RbWriteSpscFromIsr(RingBuffer* rb, const uint8_t* src, uint
     RingBufferSpan span = {0};
     uint32_t granted    = 0u;
     /* 获取写入数据信息 */
-    const ret_code_t rc = RingBuffer_WriteReserve_SPSC(rb, want, &span, &granted, isCompatible);
+    const ret_code_t rc =
+        RingBuffer_WriteReserve_SPSC(rb, want, &span, &granted, isCompatible, RB_SYNC_SMP);
     if (ret_is_err(rc)) return rc;
     if (granted > 0u) {
         /* 指定数组数据 写入RB */
         RingBuffer_SpanWriteFromLinear(&span, src, granted);
         /* 提交实际写入的大小更改索引 */
-        const ret_code_t commit_rc = RingBuffer_WriteCommit_SPSC(rb, granted);
+        const ret_code_t commit_rc = RingBuffer_WriteCommit_SPSC(rb, granted, RB_SYNC_SMP);
         if (ret_is_err(commit_rc)) return commit_rc;
     }
     *written = granted;
@@ -341,14 +342,14 @@ void AT_Core_Process(AT_Manager_t* at_manager) {
         RingBufferSpan len_span = {0};
         uint32_t len_granted    = 0u;
         ret_code_t rc = RingBuffer_ReadReserve_SPSC(&at_manager->msg_len_rb, sizeof(uint16_t),
-                                                    &len_span, &len_granted, false);
+                                                    &len_span, &len_granted, false, RB_SYNC_SMP);
         if (ret_is_err(rc) || len_granted != sizeof(uint16_t)) {
             LOG_E("AT", "行读失败 rc=%d granted=%u", (int)rc, len_granted);
             break;
         }
         uint8_t len_size_t[2];
         RingBuffer_SpanReadToLinear(&len_span, len_size_t, sizeof(len_size_t));
-        rc = RingBuffer_ReadCommit_SPSC(&at_manager->msg_len_rb, sizeof(uint16_t));
+        rc = RingBuffer_ReadCommit_SPSC(&at_manager->msg_len_rb, sizeof(uint16_t), RB_SYNC_SMP);
         if (ret_is_err(rc)) {
             LOG_E("AT", "行提交失败 rc=%d", (int)rc);
             break;
@@ -366,13 +367,14 @@ void AT_Core_Process(AT_Manager_t* at_manager) {
         /* 5、读取数据帧 */
         RingBufferSpan frame_span = {0};
         uint32_t to_read          = 0u;
-        rc = RingBuffer_ReadReserve_SPSC(&at_manager->rx_rb, actual, &frame_span, &to_read, false);
+        rc = RingBuffer_ReadReserve_SPSC(&at_manager->rx_rb, actual, &frame_span, &to_read, false,
+                                         RB_SYNC_SMP);
         if (ret_is_err(rc) || (to_read != actual)) {
             LOG_E("AT", "数据帧读取失败/不同步 (need=%u got=%u rc=%d)", actual, to_read, (int)rc);
             break; /* 待实现重置策略 */
         }
         RingBuffer_SpanReadToLinear(&frame_span, at_manager->line_buf, actual);
-        rc = RingBuffer_ReadCommit_SPSC(&at_manager->rx_rb, actual);
+        rc = RingBuffer_ReadCommit_SPSC(&at_manager->rx_rb, actual, RB_SYNC_SMP);
         if (ret_is_err(rc)) {
             LOG_E("AT", "数据帧提交失败 rc=%d", (int)rc);
             break; /* 待实现重置策略 */
@@ -382,7 +384,7 @@ void AT_Core_Process(AT_Manager_t* at_manager) {
         if (frame_len > actual) {
             LOG_E("AT", "数据帧过长尝试丢弃数据 (can=%u fact=%u)", actual, frame_len);
             const uint16_t drop = frame_len - actual;
-            if (ret_is_err(RingBuffer_ReadCommit_SPSC(&at_manager->rx_rb, drop))) {
+            if (ret_is_err(RingBuffer_ReadCommit_SPSC(&at_manager->rx_rb, drop, RB_SYNC_SMP))) {
                 LOG_E("AT", "超长帧丢弃失败，数据可能已不同步");
             }
         }

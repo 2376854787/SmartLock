@@ -45,24 +45,24 @@
 #define RB_RET(clas_, err_) RET_MAKE(RET_MOD_RB, RET_SUB_RB_CORE, RET_CODE_MAKE((clas_), (err_)))
 
 /* 给 ret_code_t 返回函数用 */
-#define RB_CHECK_VALID_RC(rb)                                                          \
-    do {                                                                               \
+#define RB_CHECK_VALID_RC(rb)                                                         \
+    do {                                                                              \
         ASSERT_PARAM(((rb) != NULL) && ((rb)->buffer != NULL) && ((rb)->size >= 2u)); \
-        if ((rb) == NULL || (rb)->buffer == NULL || (rb)->size < 2)                    \
-            return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);                         \
+        if ((rb) == NULL || (rb)->buffer == NULL || (rb)->size < 2)                   \
+            return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);                        \
     } while (0)
 
 /* 给 uint32_t 返回函数用：非法就返回 0 */
-#define RB_CHECK_VALID_U32(rb)                                                         \
-    do {                                                                               \
+#define RB_CHECK_VALID_U32(rb)                                                        \
+    do {                                                                              \
         ASSERT_PARAM(((rb) != NULL) && ((rb)->buffer != NULL) && ((rb)->size >= 2u)); \
-        if ((rb) == NULL || (rb)->buffer == NULL || (rb)->size < 2) return 0u;         \
+        if ((rb) == NULL || (rb)->buffer == NULL || (rb)->size < 2) return 0u;        \
     } while (0)
 
 /* ret_code_t 版本 */
-#define RB_CHECK_ARGS_RC(rb, ptr, size)                                                            \
-    do {                                                                                           \
-        RB_CHECK_VALID_RC(rb);                                                                     \
+#define RB_CHECK_ARGS_RC(rb, ptr, size)                                                           \
+    do {                                                                                          \
+        RB_CHECK_VALID_RC(rb);                                                                    \
         ASSERT_PARAM(((ptr) != NULL) && ((size) != NULL) && (*(size) != 0u));                     \
         if (!(ptr) || !(size) || *(size) == 0) return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG); \
     } while (0)
@@ -70,6 +70,20 @@
 /* 前向声明：RB_UpdateWatermark 在统计开启时要重算 used，而 RB_GetUsed_Core
  * 定义在后面。 */
 static inline uint32_t RB_GetUsed_Core(const RingBuffer* rb);
+
+/* rb_sync_t（RB_SYNC_SMP / RB_SYNC_DMA）是公开类型，定义在 RingBuffer.h。
+ * 带锁模型内部还需要一个「不发任何屏障」的取值，用 0 表示，仅在本文件内使用，
+ * 不暴露给调用方（SPSC 接口只接受 SMP / DMA）。 */
+#define RB_SYNC_NONE ((rb_sync_t)0)
+
+/* 按 sync 种类发屏障。RB_SYNC_NONE 完全不展开任何指令。 */
+static inline void RB_Barrier(rb_sync_t sync) {
+    if (sync == RB_SYNC_SMP) {
+        smp_mem_barrier();
+    } else if (sync == RB_SYNC_DMA) {
+        dma_mem_barrier();
+    }
+}
 
 /**
  * @brief 内部更新水位线/最近 used/remain。
@@ -83,8 +97,8 @@ static inline void RB_UpdateWatermark(RingBuffer* rb) {
     const uint32_t used   = RB_GetUsed_Core(rb);
     const uint32_t remain = rb->size - used - 1u;
 
-    rb->last_used   = used;
-    rb->last_remain = remain;
+    rb->last_used         = used;
+    rb->last_remain       = remain;
 
     if (used > rb->high_watermark_used) {
         rb->high_watermark_used = used;
@@ -140,16 +154,15 @@ static inline uint32_t RB_GetRemain_Core(const RingBuffer* rb) {
  * @param add 数据源
  * @param size 输入： 需要写多少字节数 输出：实际上写入的字节数
  * @param isForce true 有多少空间写多少 false 必须能全部写入才写入
- * @param isSPSC true SPSC模式 内部函数使用内存屏障保护 外部函数不能使用临界区 false 普通RB
- * 需要外部函数加临界区
+ * @param sync   屏障种类：RB_SYNC_NONE（带锁，外部已互斥）/ RB_SYNC_SMP（SPSC 对端
+ *               是软件执行流）/ RB_SYNC_DMA（SPSC 对端是 DMA/外设）。非 NONE 时外部
+ *               不能再加临界区。
  * @return 状态码
  */
 static ret_code_t RB_Write_Logic(RingBuffer* rb, const uint8_t* add, uint32_t* size, bool isForce,
-                                 bool isSPSC) {
+                                 rb_sync_t sync) {
     /* SPSC acquire：在读 front_index 之前同步对端更新 */
-    if (isSPSC) {
-        smp_mem_barrier();
-    }
+    RB_Barrier(sync);
     const uint32_t remain = RB_GetRemain_Core(rb);
 
     if (remain < *size) {
@@ -173,9 +186,7 @@ static ret_code_t RB_Write_Logic(RingBuffer* rb, const uint8_t* add, uint32_t* s
     }
     /* SPSC release：保证数据写完才更新 rear_index，否则消费者可能看到
      * 新的 rear_index 但旧的数据。 */
-    if (isSPSC) {
-        smp_mem_barrier();
-    }
+    RB_Barrier(sync);
     rb->rear_index = RB_NextIndex(rb, rb->rear_index, *size);
     /* 成功写入后：更新水位线（SPSC 下也仅在写者侧更新，安全）。 */
     RB_UpdateWatermark(rb);
@@ -190,17 +201,16 @@ static ret_code_t RB_Write_Logic(RingBuffer* rb, const uint8_t* add, uint32_t* s
  * @param size 输入： 需要写多少字节数 输出：实际上写入的字节数
  * @param isForce true 有多少读多少 false 在有想要的数据大小数才读取
  * @param isPeek  true 读取后但是不消耗数据 false 读取后消耗数据
- * @param isSPSC  true SPSC模式 内部函数使用内存屏障保护 外部函数不能使用临界区 false 普通RB
- * 需要外部函数加临界区
+ * @param sync   屏障种类：RB_SYNC_NONE（带锁，外部已互斥）/ RB_SYNC_SMP（SPSC 对端
+ *               是软件执行流）/ RB_SYNC_DMA（SPSC 对端是 DMA/外设）。非 NONE 时外部
+ *               不能再加临界区。
  * @return 状态码
  */
 static ret_code_t RB_Read_Logic(RingBuffer* rb, uint8_t* add, uint32_t* size, bool isForce,
-                                bool isPeek, bool isSPSC) {
+                                bool isPeek, rb_sync_t sync) {
     /* SPSC acquire：在读 rear_index（间接通过 GetUsed_Core）之前同步对端更新。
      * 旧版屏障放在 GetUsed_Core 之后，可能看到旧 rear 但新数据/反过来。 */
-    if (isSPSC) {
-        smp_mem_barrier();
-    }
+    RB_Barrier(sync);
     const uint32_t used = RB_GetUsed_Core(rb);
 
     if (used < *size) {
@@ -224,18 +234,18 @@ static ret_code_t RB_Read_Logic(RingBuffer* rb, uint8_t* add, uint32_t* size, bo
     }
     /* SPSC release：保证 memcpy 读完才更新 front_index，否则生产者可能
      * 看到新的 front_index 但消费者还没真的读完。 */
-    if (isSPSC && !isPeek) {
-        smp_mem_barrier();
+    if (!isPeek) {
+        RB_Barrier(sync);
     }
 
     if (!isPeek) {
         rb->front_index = RB_NextIndex(rb, rb->front_index, *size);
     }
     /* 水位线更新策略：
-     *   - 模型 A（带锁）：消费者侧也更新，受临界区保护，安全。
+     *   - 模型 A（带锁，RB_SYNC_NONE）：消费者侧也更新，受临界区保护，安全。
      *   - 模型 B（SPSC）：仅写者侧更新；这里跳过，避免与写者 RMW 冲突。
      * Peek 不修改索引也跳过水位线更新（used 没变）。 */
-    if (!isSPSC && !isPeek) {
+    if (sync == RB_SYNC_NONE && !isPeek) {
         RB_UpdateWatermark(rb);
     }
     return RET_OK;
@@ -377,18 +387,25 @@ void RingBuffer_SpanReadToLinear(const RingBufferSpan* span, uint8_t* dst, uint3
 }
 
 /**
- * @brief 从环形源缓冲区拷贝数据到 span 目标窗口（支持源端回绕）
+ * @brief 从环形源缓冲区拷贝数据到 span 目标窗口（支持源端回绕一次）
  * @param span         目标窗口（通常由 WriteReserve 返回）
  * @param src_ring     环形源缓冲区首地址（如 DMA circular buffer）
  * @param src_ring_len 环形源缓冲区长度（字节）
  * @param src_pos      源端起始索引
  * @param len          想要拷贝的字节数
- * @note 实际写入字节数 = min(len, span->n1 + span->n2)
+ * @note 实际写入字节数 = min(len, src_ring_len, span->n1 + span->n2)
+ * @note 源端是「一段长度 <= src_ring_len 的逻辑数据、最多绕环尾一次」。len 超过
+ *       src_ring_len 没有意义（再多就要重复读同一批源字节），且若不夹住会让
+ *       回绕分支的第二段 memcpy 读越界——这里把 len 夹到 src_ring_len 兜底。
  */
 void RingBuffer_SpanWriteFromCircular(const RingBufferSpan* span, const uint8_t* src_ring,
                                       uint32_t src_ring_len, uint32_t src_pos, uint32_t len) {
     ASSERT_PARAM((span != NULL) && (src_ring != NULL) && (src_ring_len != 0u) && (len != 0u));
     if (!span || !src_ring || src_ring_len == 0u || len == 0u) return;
+
+    /* 夹住 len：源环最多提供 src_ring_len 个不同字节，超过会让下面回绕分支的
+     * 「n - tail」大于源环长而读越界。 */
+    if (len > src_ring_len) len = src_ring_len;
 
     /* 规范化源端起点，避免 src_pos 超过环长 */
     uint32_t pos = src_pos % src_ring_len;
@@ -447,11 +464,11 @@ ret_code_t CreateRingBuffer(RingBuffer* rb, const char* name, const uint32_t siz
         return RB_RET(RET_CLASS_RESOURCE, RET_R_NO_MEM);
     }
 
-    rb->name                = name;
-    rb->front_index         = 0;
-    rb->rear_index          = 0;
-    rb->size                = size;
-    rb->isPowerOfTwo_Size   = (size != 0) && ((size & (size - 1)) == 0);
+    rb->name              = name;
+    rb->front_index       = 0;
+    rb->rear_index        = 0;
+    rb->size              = size;
+    rb->isPowerOfTwo_Size = (size != 0) && ((size & (size - 1)) == 0);
 #if RB_ENABLE_STATS
     rb->high_watermark_used = 0;
     rb->overflow_cnt        = 0;
@@ -531,7 +548,7 @@ ret_code_t WriteRingBuffer(RingBuffer* rb, const uint8_t* add, uint32_t* size,
     RB_CHECK_ARGS_RC(rb, add, size);
     rb_isr_state_t s;
     RB_ENTER_CRITICAL(s);
-    const ret_code_t ret = RB_Write_Logic(rb, add, size, isForceWrite, false);
+    const ret_code_t ret = RB_Write_Logic(rb, add, size, isForceWrite, RB_SYNC_NONE);
     RB_EXIT_CRITICAL(s);
     return ret;
 }
@@ -549,7 +566,7 @@ ret_code_t WriteRingBufferFromISR(RingBuffer* rb, const uint8_t* add, uint32_t* 
     RB_CHECK_ARGS_RC(rb, add, size);
     rb_isr_state_t saved;
     RB_ENTER_CRITICAL_FROM_ISR(saved);
-    const ret_code_t ret = RB_Write_Logic(rb, add, size, isForceWrite, false);
+    const ret_code_t ret = RB_Write_Logic(rb, add, size, isForceWrite, RB_SYNC_NONE);
     RB_EXIT_CRITICAL_FROM_ISR(saved);
     return ret;
 }
@@ -566,7 +583,7 @@ ret_code_t ReadRingBuffer(RingBuffer* rb, uint8_t* add, uint32_t* size, const ui
     RB_CHECK_ARGS_RC(rb, add, size);
     rb_isr_state_t s;
     RB_ENTER_CRITICAL(s);
-    const ret_code_t ret = RB_Read_Logic(rb, add, size, isForceRead, false, false);
+    const ret_code_t ret = RB_Read_Logic(rb, add, size, isForceRead, false, RB_SYNC_NONE);
     RB_EXIT_CRITICAL(s);
     return ret;
 }
@@ -584,7 +601,7 @@ ret_code_t ReadRingBufferFromISR(RingBuffer* rb, uint8_t* add, uint32_t* size,
     RB_CHECK_ARGS_RC(rb, add, size);
     rb_isr_state_t saved;
     RB_ENTER_CRITICAL_FROM_ISR(saved);
-    const ret_code_t ret = RB_Read_Logic(rb, add, size, isForceRead, false, false);
+    const ret_code_t ret = RB_Read_Logic(rb, add, size, isForceRead, false, RB_SYNC_NONE);
     RB_EXIT_CRITICAL_FROM_ISR(saved);
     return ret;
 }
@@ -603,15 +620,15 @@ ret_code_t PeekRingBuffer(const RingBuffer* rb, uint8_t* add, uint32_t* size,
     RingBuffer* rb_mut = (RingBuffer*)rb;
     rb_isr_state_t s;
     RB_ENTER_CRITICAL(s);
-    const ret_code_t ret = RB_Read_Logic(rb_mut, add, size, isForcePeek, true, false);
+    const ret_code_t ret = RB_Read_Logic(rb_mut, add, size, isForcePeek, true, RB_SYNC_NONE);
     RB_EXIT_CRITICAL(s);
     return ret;
 }
 
 /**
- * @beief 线程版 重置 RB 空间
+ * @brief 线程版 重置 RB 空间
  * @param rb RB句柄
- * @return 状体码
+ * @return 状态码
  */
 ret_code_t ResetRingBuffer(RingBuffer* rb) {
     RB_CHECK_VALID_RC(rb);
@@ -624,9 +641,9 @@ ret_code_t ResetRingBuffer(RingBuffer* rb) {
 }
 
 /**
- * @beief 中断版 重置 RB 空间
+ * @brief 中断版 重置 RB 空间
  * @param rb RB句柄
- * @return 状体码
+ * @return 状态码
  */
 ret_code_t ResetRingBufferFromISR(RingBuffer* rb) {
     RB_CHECK_VALID_RC(rb);
@@ -880,9 +897,9 @@ ret_code_t RingBuffer_DropFromISR(RingBuffer* rb, uint32_t drop, uint32_t* dropp
  * @return 32位分段状态码
  */
 ret_code_t WriteRingBuffer_SPSC(RingBuffer* rb, const uint8_t* add, uint32_t* size,
-                                uint8_t isForceWrite) {
+                                uint8_t isForceWrite, rb_sync_t sync) {
     RB_CHECK_ARGS_RC(rb, add, size);
-    return RB_Write_Logic(rb, add, size, isForceWrite, true);
+    return RB_Write_Logic(rb, add, size, isForceWrite, sync);
 }
 /**
  * @brief SPSC版 从RB 读取数据到 add
@@ -892,9 +909,10 @@ ret_code_t WriteRingBuffer_SPSC(RingBuffer* rb, const uint8_t* add, uint32_t* si
  * @param isForceRead  true 有多少空间就写多少数据 false 必须全部能够装下才能写入
  * @return 32位分段状态码
  */
-ret_code_t ReadRingBuffer_SPSC(RingBuffer* rb, uint8_t* add, uint32_t* size, uint8_t isForceRead) {
+ret_code_t ReadRingBuffer_SPSC(RingBuffer* rb, uint8_t* add, uint32_t* size, uint8_t isForceRead,
+                               rb_sync_t sync) {
     RB_CHECK_ARGS_RC(rb, add, size);
-    return RB_Read_Logic(rb, add, size, isForceRead, false, true);
+    return RB_Read_Logic(rb, add, size, isForceRead, false, sync);
 }
 /**
  * @brief SPSC版 从RB 读取数据到 add
@@ -905,9 +923,9 @@ ret_code_t ReadRingBuffer_SPSC(RingBuffer* rb, uint8_t* add, uint32_t* size, uin
  * @return 32位分段状态码
  */
 ret_code_t PeekRingBuffer_SPSC(const RingBuffer* rb, uint8_t* add, uint32_t* size,
-                               uint8_t isForcePeek) {
+                               uint8_t isForcePeek, rb_sync_t sync) {
     RB_CHECK_ARGS_RC(rb, add, size);
-    return RB_Read_Logic((RingBuffer*)rb, add, size, isForcePeek, true, true);
+    return RB_Read_Logic((RingBuffer*)rb, add, size, isForcePeek, true, sync);
 }
 /**
  * @brief 获取所需空间大小的 相干信息
@@ -919,28 +937,50 @@ ret_code_t PeekRingBuffer_SPSC(const RingBuffer* rb, uint8_t* add, uint32_t* siz
  * @return 32位分段状态码
  */
 ret_code_t RingBuffer_WriteReserve_SPSC(RingBuffer* rb, uint32_t want, RingBufferSpan* out,
-                                        uint32_t* granted, bool isCompatible) {
+                                        uint32_t* granted, bool isCompatible, rb_sync_t sync) {
     if (!rb || !out || !granted || !rb->buffer || rb->size < 2)
         return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
-    /* acquire：读 front 之前同步消费者更新 */
-    smp_mem_barrier();
+    /* acquire：读 front 之前同步消费者更新。对端是 DMA 消费者时传 RB_SYNC_DMA，
+     * 单核也发真屏障，确保看到 DMA 最新搬走后的 front。 */
+    RB_Barrier(sync);
     return RB_Reserve_Logic(rb, want, out, granted, isCompatible, true);
 }
 
 /**
- * @brief 将写入的字节数 索引移动
+ * @brief SPSC 写提交内核：发布 rear_index，release 屏障由 sync 决定。
  * @param rb RB 句柄
- * @param commit 需要提交的字节数
- * @return 32位状态码
+ * @param commit 需要提交的字节数（必须 <= Reserve 批准的窗口，调用方保证）
+ * @param sync RB_SYNC_SMP：消费者是软件执行流；RB_SYNC_DMA：窗口由 DMA 填充
  */
-ret_code_t RingBuffer_WriteCommit_SPSC(RingBuffer* rb, uint32_t commit) {
-    const uint32_t remain = RB_GetRemain_Core(rb);
-    if (commit > remain) return RB_RET(RET_CLASS_RESOURCE, RET_R_NO_MEM);
-    /* release：保证 Reserve 后用户写入的数据先落盘，再发布 rear_index */
-    smp_mem_barrier();
+static inline ret_code_t RB_WriteCommit_SPSC_Core(RingBuffer* rb, uint32_t commit, rb_sync_t sync) {
+    ASSERT_PARAM((rb != NULL) && (rb->buffer != NULL) && (rb->size >= 2u));
+    if (rb == NULL || rb->buffer == NULL || rb->size < 2u || commit >= rb->size) {
+        return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    }
+
+    /* SPSC 契约：commit 必须 <= 之前 WriteReserve_SPSC 批准（granted）的窗口，由
+     * 调用方保证。这里不再重新读消费者侧的 front_index 去算 remain 做精确校验——
+     * 那次读没有前置 acquire 屏障，在多核下是对对端变量的无保护读（data race），
+     * 且 lwrb / rte_ring 的 commit 都是无条件推进。
+     *
+     * release：保证 Reserve 后写入窗口的数据先对消费者可见，再发布 rear_index，
+     * 否则消费者（或 DMA）可能看到新的 rear 但旧的数据。 */
+    RB_Barrier(sync);
     rb->rear_index = RB_NextIndex(rb, rb->rear_index, commit);
     RB_UpdateWatermark(rb);
     return RET_OK;
+}
+
+/**
+ * @brief SPSC 写提交：发布 rear_index
+ * @param rb RB 句柄
+ * @param commit 需要提交的字节数（必须 <= Reserve 批准的窗口）
+ * @param sync 对端类型：RB_SYNC_SMP 消费者是软件执行流；RB_SYNC_DMA 窗口由 DMA
+ *             填充（单核也发 full-system 屏障，保证数据先落地再发布 rear）
+ * @return 32位状态码
+ */
+ret_code_t RingBuffer_WriteCommit_SPSC(RingBuffer* rb, uint32_t commit, rb_sync_t sync) {
+    return RB_WriteCommit_SPSC_Core(rb, commit, sync);
 }
 
 /**
@@ -953,28 +993,49 @@ ret_code_t RingBuffer_WriteCommit_SPSC(RingBuffer* rb, uint32_t commit) {
  * @return 32位分段状态码
  */
 ret_code_t RingBuffer_ReadReserve_SPSC(RingBuffer* rb, uint32_t want, RingBufferSpan* out,
-                                       uint32_t* granted, bool isCompatible) {
+                                       uint32_t* granted, bool isCompatible, rb_sync_t sync) {
     if (!rb || !out || !granted || !rb->buffer || rb->size < 2)
         return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
-    /* acquire：读 rear 之前同步生产者更新（确保读到完整数据） */
-    smp_mem_barrier();
+    /* acquire：读 rear 之前同步生产者更新（确保读到完整数据）。对端是 DMA 生产者
+     * 时传 RB_SYNC_DMA，单核也发真屏障，确保看到 DMA 填完后的 rear。 */
+    RB_Barrier(sync);
     return RB_Reserve_Logic(rb, want, out, granted, isCompatible, false);
 }
 
 /**
- * @brief 将读取的字节数 索引移动
+ * @brief SPSC 读提交内核：发布 front_index，release 屏障由 sync 决定。
  * @param rb RB 句柄
- * @param commit 需要提交的字节数
- * @return 32位状态码
+ * @param commit 需要提交的字节数（必须 <= Reserve 批准的窗口，调用方保证）
+ * @param sync RB_SYNC_SMP：生产者是软件执行流；RB_SYNC_DMA：窗口由 DMA 读走
  */
-ret_code_t RingBuffer_ReadCommit_SPSC(RingBuffer* rb, uint32_t commit) {
-    const uint32_t used = RB_GetUsed_Core(rb);
-    if (commit > used) return RB_RET(RET_CLASS_DATA, RET_R_DATA_NOT_ENOUGH);
-    /* release：保证用户对窗口的读取已经完成，再发布 front_index */
-    smp_mem_barrier();
+static inline ret_code_t RB_ReadCommit_SPSC_Core(RingBuffer* rb, uint32_t commit, rb_sync_t sync) {
+    ASSERT_PARAM((rb != NULL) && (rb->buffer != NULL) && (rb->size >= 2u));
+    if (rb == NULL || rb->buffer == NULL || rb->size < 2u || commit >= rb->size) {
+        return RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    }
+
+    /* SPSC 契约：commit 必须 <= 之前 ReadReserve_SPSC 批准（granted）的窗口，由
+     * 调用方保证。这里不再重新读生产者侧的 rear_index 去算 used 做精确校验——
+     * 那次读没有前置 acquire 屏障，多核下是对对端变量的无保护读（data race）。
+     *
+     * release：保证对窗口的读取已经完成，再发布 front_index，否则生产者（或
+     * DMA）可能看到新的 front 就去覆盖一个还没读完的槽。 */
+    RB_Barrier(sync);
     rb->front_index = RB_NextIndex(rb, rb->front_index, commit);
     /* 消费者侧不更新水位线（参见文件顶部说明） */
     return RET_OK;
+}
+
+/**
+ * @brief SPSC 读提交：发布 front_index
+ * @param rb RB 句柄
+ * @param commit 需要提交的字节数（必须 <= Reserve 批准的窗口）
+ * @param sync 对端类型：RB_SYNC_SMP 生产者是软件执行流；RB_SYNC_DMA 窗口由 DMA
+ *             读走（单核也发 full-system 屏障，保证 DMA 读完再发布 front）
+ * @return 32位状态码
+ */
+ret_code_t RingBuffer_ReadCommit_SPSC(RingBuffer* rb, uint32_t commit, rb_sync_t sync) {
+    return RB_ReadCommit_SPSC_Core(rb, commit, sync);
 }
 
 /**============================================================================================ */
@@ -1007,12 +1068,14 @@ uint16_t RingBuffer_GetUsedPermille(const RingBuffer* rb) {
     RB_CHECK_VALID_U32(rb);
     const uint32_t used = RingBuffer_GetUsedSize(rb);
     const uint32_t cap  = (rb->size > 1u) ? (rb->size - 1u) : 1u;
-    uint32_t p          = (used * 1000u) / cap;
+    /* 用 uint64_t 中间量：used*1000 在 used>~4.29M 时会溢出 uint32_t，
+     * 大环（>4MB）下会算错。 */
+    uint32_t p          = (uint32_t)(((uint64_t)used * 1000u) / cap);
     if (p > 1000u) p = 1000u;
     return (uint16_t)p;
 }
 /**
- * @brief 当前的空间占用情况 终端的版
+ * @brief 当前的空间占用情况 中断版
  * @param rb RB 句柄
  * @return 当前的空间占用千分比
  */
@@ -1020,7 +1083,7 @@ uint16_t RingBuffer_GetUsedPermilleFromISR(const RingBuffer* rb) {
     RB_CHECK_VALID_U32(rb);
     const uint32_t used = RingBuffer_GetUsedSizeFromISR(rb);
     const uint32_t cap  = (rb->size > 1u) ? (rb->size - 1u) : 1u;
-    uint32_t p          = (used * 1000u) / cap;
+    uint32_t p          = (uint32_t)(((uint64_t)used * 1000u) / cap);
     if (p > 1000u) p = 1000u;
     return (uint16_t)p;
 }
@@ -1050,20 +1113,22 @@ bool RingBuffer_RemainAtMost(const RingBuffer* rb, uint32_t remain_th) {
 uint32_t RingBuffer_GetContigRead(const RingBuffer* rb) {
     if (!rb || !rb->buffer || rb->size < 2) return 0;
 
-    /* 复制索引到本地，避免两次读 volatile 出现不一致快照 */
+    /* 必须在临界区内一次性取 front/rear 的一致快照：仅把它们各复制到本地变量
+     * 只能防「同一变量读两次」，防不住「front 和 rear 来自不同瞬间」——并发写入
+     * 时算出的连续段可能越过真实边界，调用方拿去喂 DMA 长度就会越界/漏读。 */
+    rb_isr_state_t s;
+    RB_ENTER_CRITICAL(s);
     const uint32_t front = rb->front_index;
     const uint32_t rear  = rb->rear_index;
-    uint32_t n1          = 0;
+    const uint32_t size  = rb->size;
+    RB_EXIT_CRITICAL(s);
 
     if (front <= rear) {
         /* 连续数据：front ... rear */
-        n1 = rear - front;
-    } else {
-        /* 跨尾数据：front ... end */
-        n1 = rb->size - front;
+        return rear - front;
     }
-
-    return n1;
+    /* 跨尾数据：front ... end */
+    return size - front;
 }
 
 /**
@@ -1073,11 +1138,17 @@ uint32_t RingBuffer_GetContigRead(const RingBuffer* rb) {
  */
 uint32_t RingBuffer_GetContigWrite(const RingBuffer* rb) {
     if (!rb || !rb->buffer || rb->size < 2) return 0;
+
+    /* 同 GetContigRead：临界区内取 front/rear 一致快照，避免撕裂导致返回的
+     * 连续可写长度越过真实边界。 */
+    rb_isr_state_t s;
+    RB_ENTER_CRITICAL(s);
     const uint32_t front = rb->front_index;
     const uint32_t rear  = rb->rear_index;
     const uint32_t size  = rb->size;
-    uint32_t n1          = 0;
+    RB_EXIT_CRITICAL(s);
 
+    uint32_t n1 = 0;
     if (rear < front) {
         /* 中间空闲：rear ... front-1 */
         n1 = front - rear - 1u;
@@ -1111,7 +1182,7 @@ RingBufferStatus RingBuffer_GetStatus(const RingBuffer* rb) {
     const uint32_t used   = RB_GetUsed_Core(rb);
     const uint32_t remain = (rb->size > 0u) ? (rb->size - used - 1u) : 0u;
     const uint32_t cap    = (rb->size > 1u) ? (rb->size - 1u) : 1u;
-    uint32_t permille     = (used * 1000u) / cap;
+    uint32_t permille     = (uint32_t)(((uint64_t)used * 1000u) / cap);
     if (permille > 1000u) permille = 1000u;
 
     /* contig 直接展开 Core 计算，避免再次进入会取锁的接口 */
@@ -1132,14 +1203,14 @@ RingBufferStatus RingBuffer_GetStatus(const RingBuffer* rb) {
     }
 
     const RingBufferStatus status = {
-        .used                = used,
-        .remain              = remain,
-        .size                = rb->size,
-        .used_permille       = (uint16_t)permille,
-        .empty               = (used == 0u),
-        .full                = (remain == 0u),
-        .contig_read         = contig_r,
-        .contig_write        = contig_w,
+        .used          = used,
+        .remain        = remain,
+        .size          = rb->size,
+        .used_permille = (uint16_t)permille,
+        .empty         = (used == 0u),
+        .full          = (remain == 0u),
+        .contig_read   = contig_r,
+        .contig_write  = contig_w,
 #if RB_ENABLE_STATS
         .high_watermark_used = rb->high_watermark_used,
         .overflow_cnt        = rb->overflow_cnt,

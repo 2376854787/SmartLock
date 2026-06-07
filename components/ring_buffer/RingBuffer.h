@@ -39,6 +39,17 @@
  * 消费者侧的 RMW 冲突。详见 RingBuffer.c 顶部注释。
  * ========================================================================= */
 
+/* SPSC 路径的「对端类型」——决定发布/同步用哪种内存屏障。SPSC 接口把它作为
+ * 显式参数，不再写死，调用方按自己的对端如实填：
+ *   RB_SYNC_SMP：对端是另一个软件执行流（线程 / ISR）。单核退化为编译器屏障
+ *                （同核访存天然保序，发 CPU 屏障是浪费）；多核（-DRB_SMP=1）发
+ *                轻量 inner-shareable 屏障。绝大多数场景用它。
+ *   RB_SYNC_DMA：对端是 DMA / 外设。无论单核多核都发 full-system 内存屏障，
+ *                因为 store buffer 会让「写数据 / 发布索引」对 DMA 乱序可见，
+ *                单核也不能退化。配合 Reserve/Commit 做零拷贝 DMA 时用它。
+ * （RB_SYNC_NONE 仅供带锁模型内部使用，临界区已提供顺序，不在 SPSC 接口出现。） */
+typedef enum { RB_SYNC_SMP = 1, RB_SYNC_DMA = 2 } rb_sync_t;
+
 typedef struct {
     const char *name;
     volatile uint32_t rear_index;   // 表示可以添加数据的头地址
@@ -156,17 +167,22 @@ ret_code_t RingBuffer_ReadCommitFromISR(RingBuffer *rb, uint32_t commit);
 /**============================================================================================ */
 /**==================================       SPSC          ===================================== */
 /**============================================================================================ */
+/* 所有 SPSC 接口都把「对端类型」作为显式 sync 参数（rb_sync_t）：
+ *   - 对端是软件线程/ISR  → 传 RB_SYNC_SMP（最常见）
+ *   - 对端是 DMA/外设     → 传 RB_SYNC_DMA（零拷贝 Reserve/Commit 配合 DMA 时）
+ * 同一个 RB 的生产者侧与消费者侧各自按自己的对端如实填，不要求两侧一致。 */
 ret_code_t WriteRingBuffer_SPSC(RingBuffer *rb, const uint8_t *add, uint32_t *size,
-                                uint8_t isForceWrite);
-ret_code_t ReadRingBuffer_SPSC(RingBuffer *rb, uint8_t *add, uint32_t *size, uint8_t isForceRead);
+                                uint8_t isForceWrite, rb_sync_t sync);
+ret_code_t ReadRingBuffer_SPSC(RingBuffer *rb, uint8_t *add, uint32_t *size, uint8_t isForceRead,
+                               rb_sync_t sync);
 ret_code_t PeekRingBuffer_SPSC(const RingBuffer *rb, uint8_t *add, uint32_t *size,
-                               uint8_t isForcePeek);
+                               uint8_t isForcePeek, rb_sync_t sync);
 ret_code_t RingBuffer_WriteReserve_SPSC(RingBuffer *rb, uint32_t want, RingBufferSpan *out,
-                                        uint32_t *granted, bool isCompatible);
-ret_code_t RingBuffer_WriteCommit_SPSC(RingBuffer *rb, uint32_t commit);
+                                        uint32_t *granted, bool isCompatible, rb_sync_t sync);
+ret_code_t RingBuffer_WriteCommit_SPSC(RingBuffer *rb, uint32_t commit, rb_sync_t sync);
 ret_code_t RingBuffer_ReadReserve_SPSC(RingBuffer *rb, uint32_t want, RingBufferSpan *out,
-                                       uint32_t *granted, bool isCompatible);
-ret_code_t RingBuffer_ReadCommit_SPSC(RingBuffer *rb, uint32_t commit);
+                                       uint32_t *granted, bool isCompatible, rb_sync_t sync);
+ret_code_t RingBuffer_ReadCommit_SPSC(RingBuffer *rb, uint32_t commit, rb_sync_t sync);
 /**============================================================================================ */
 /**==================================       状态监测          =================================== */
 /**============================================================================================ */

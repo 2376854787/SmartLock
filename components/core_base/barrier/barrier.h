@@ -90,22 +90,8 @@ __attribute__((unused)) static inline void compiler_barrier(void) {
 
 /* -----------------------------------------------------------------------------
  * SPSC（单生产者单消费者）专用屏障：smp_mem_barrier()
- *
- * 为什么单独搞一个，而不是直接用 mem_barrier()：
- *   mem_barrier() 是 full-system DMB（dmb 0xF / SY），用于和「另一个观察者」
- *   同步——外设、DMA、跨核。代价最重。而 SPSC 队列的生产者/消费者只是两个
- *   线程/中断，它们之间的可见性需求取决于这两端有没有真的跑在不同的核上：
- *     - 单核（Cortex-M 常态）：同一个核先后执行，硬件天然保序，根本不需要
- *       任何 CPU 屏障指令，只要拦住「编译器」乱序即可。此时 DMB 是纯浪费，
- *       而 SPSC 卖点就是「无锁更快」，被一条 DMB SY 吃掉就本末倒置了。
- *     - 多核（如 M7+M4 双核）：两端可能真并行，才需要一条屏障保证跨核可见，
- *       且用 inner-shareable（ISH）即可，比 SY 轻。
- *
- * 所以这里按 RB_SMP 在「编译期」二选一，零运行时分支、零函数指针：
  *   - RB_SMP==0（默认，单核）：编译成 compiler_barrier()，展开后 0 条 CPU 指令
  *   - RB_SMP==1（多核）      ：编译成架构对应的轻量内存屏障
- *
- * 将来上双核，只需在编译选项里 -DRB_SMP=1，源码一行不用动。
  * --------------------------------------------------------------------------- */
 #ifndef RB_SMP
 #define RB_SMP 0 /* 默认单核：SPSC 屏障退化为编译器屏障，零指令 */
@@ -142,5 +128,43 @@ __attribute__((unused)) static inline void smp_mem_barrier(void) {
 #endif
 
 #endif /* RB_SMP */
+
+/* -----------------------------------------------------------------------------
+ * DMA / 外设专用屏障：dma_mem_barrier()
+ *
+ * 和 smp_mem_barrier() 的关键区别：smp_ 版本在单核（RB_SMP==0）退化为纯编译器
+ * 屏障，因为单核上「软件↔软件」两端共享同一个核的访存顺序，硬件天然保序。但
+ * 当 SPSC 队列的「对端」不是另一个软件执行流、而是 DMA 控制器或外设时，这个前提
+ * 不成立：
+ *   - Cortex-M7 等核有 store buffer / 写合并，CPU 写到 SRAM 的「全局可见顺序」
+ *     不保证等于程序序；DMA 主控经总线看到的顺序可能与 CPU 期望不一致。
+ *   - 于是即使单核，「先写数据、再发布索引」也必须用真正的 DMB 强制顺序，
+ *     否则 DMA 可能搬走一个索引已更新但数据还没落地的槽。
+ *
+ * 因此 dma_mem_barrier() 不看 RB_SMP，只要架构存在 DMA/外设这类内存观察者就发
+ * 真正的内存屏障指令（ARM 用 full-system DMB，覆盖 device + normal memory）。
+ * 用于「环的一端是 DMA」的 SPSC 路径（见 RingBuffer 的 *_SPSC_DMA 接口）。
+ * --------------------------------------------------------------------------- */
+#if defined(__arm__) || defined(__aarch64__)
+__attribute__((unused)) static inline void dma_mem_barrier(void) {
+    /* full-system DMB：同时覆盖 device 内存（外设寄存器）与 normal 内存，
+     * 保证 CPU 对缓冲区的写在索引发布前对 DMA 可见 */
+    __asm volatile("dmb 0xF" ::: "memory");
+}
+#elif defined(__riscv)
+__attribute__((unused)) static inline void dma_mem_barrier(void) {
+    /* 覆盖外设 I/O 与内存的完整 fence */
+    __asm volatile("fence iorw, iorw" ::: "memory");
+}
+#elif defined(__x86_64__) || defined(__i386__)
+__attribute__((unused)) static inline void dma_mem_barrier(void) {
+    __asm volatile("mfence" ::: "memory");
+}
+#else
+__attribute__((unused)) static inline void dma_mem_barrier(void) {
+    /* 未知架构兜底：发最强屏障 */
+    sync_barrier();
+}
+#endif
 
 #endif  // ARCH_BARRIER_H

@@ -167,12 +167,14 @@ static ret_code_t uart_rb_write_linear(hal_uart_t* h, const uint8_t* src, uint32
         return UART_HAL_PARAM(RET_R_INVALID_ARG);
     }
 
-    rc = RingBuffer_WriteReserve_SPSC(&h->rx_rb, len, &span, &granted, true);
+    /* 生产者是 CPU（SpanWriteFromLinear 由 CPU memcpy 入环），对端消费者是软件，
+     * 故用 RB_SYNC_SMP。 */
+    rc = RingBuffer_WriteReserve_SPSC(&h->rx_rb, len, &span, &granted, true, RB_SYNC_SMP);
     if (ret_is_err(rc)) return rc;
 
     if (granted > 0u) {
         RingBuffer_SpanWriteFromLinear(&span, src, granted);
-        rc = RingBuffer_WriteCommit_SPSC(&h->rx_rb, granted);
+        rc = RingBuffer_WriteCommit_SPSC(&h->rx_rb, granted, RB_SYNC_SMP);
         if (ret_is_err(rc)) return rc;
     }
 
@@ -459,7 +461,8 @@ ret_code_t hal_uart_read_reserve(hal_uart_t* h, uint32_t want, hal_uart_read_spa
         }
     }
 
-    rc = RingBuffer_ReadReserve_SPSC(&h->rx_rb, want_local, &span, &granted, true);
+    /* 对端生产者是软件（CPU 写入），故 RB_SYNC_SMP。 */
+    rc = RingBuffer_ReadReserve_SPSC(&h->rx_rb, want_local, &span, &granted, true, RB_SYNC_SMP);
     if (ret_is_err(rc)) return UART_HAL_STATE(RET_R_STATE_ERR);
 
     out->p1 = span.p1;
@@ -484,7 +487,7 @@ ret_code_t hal_uart_read_commit(hal_uart_t* h, uint32_t nread) {
     REQUIRE_RET(h->initialized, UART_HAL_STATE(RET_R_NOT_READY));
     if (nread == 0u) return RET_OK;
 
-    rc = RingBuffer_ReadCommit_SPSC(&h->rx_rb, nread);
+    rc = RingBuffer_ReadCommit_SPSC(&h->rx_rb, nread, RB_SYNC_SMP);
     if (ret_is_err(rc)) return UART_HAL_STATE(RET_R_STATE_ERR);
     return RET_OK;
 }
