@@ -6,7 +6,8 @@
 
 #if defined(CFG_TARGET_PLATFORM_STM32_HAL) && defined(CFG_FEAT_HAL_SPI) && (CFG_FEAT_HAL_SPI == 1)
 #include <stdint.h>
-#include "ret_code.h"
+
+#include "ret_code_t.h"
 #include "stm32_hal.h"
 
 /* BSP：把 bus_id 绑定到真实硬件句柄/中断/DMA */

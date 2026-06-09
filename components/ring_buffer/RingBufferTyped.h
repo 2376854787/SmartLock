@@ -29,7 +29,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "ret_code.h"
+#include "ret_code_t.h"
 
 /* 定长元素队列句柄（槽索引）。
  * slots 是 count 个槽的连续数组；head/tail 是元素序号，访问槽时 & mask。

@@ -9,7 +9,7 @@
 #include <stdint.h>
 
 #include "hal_i2c.h"
-#include "ret_code.h"
+#include "ret_code_t.h"
 #include "stm32_i2c_bsp.h"
 
 #ifndef CFG_PARAM_I2C_PORT_USE_LOCAL_HAL_CALLBACKS

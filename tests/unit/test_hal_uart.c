@@ -81,8 +81,9 @@ uint32_t RingBuffer_GetUsedSizeFromISR(const RingBuffer* rb) {
 }
 
 ret_code_t RingBuffer_WriteReserve_SPSC(RingBuffer* rb, uint32_t want, RingBufferSpan* out,
-                                        uint32_t* granted, bool isCompatible) {
+                                        uint32_t* granted, bool isCompatible, rb_sync_t sync) {
     uint32_t remain = 0u;
+    (void)sync;
 
     if ((rb == NULL) || (out == NULL) || (granted == NULL) || (want == 0u)) {
         return TEST_RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
@@ -98,7 +99,8 @@ ret_code_t RingBuffer_WriteReserve_SPSC(RingBuffer* rb, uint32_t want, RingBuffe
     return RET_OK;
 }
 
-ret_code_t RingBuffer_WriteCommit_SPSC(RingBuffer* rb, uint32_t commit) {
+ret_code_t RingBuffer_WriteCommit_SPSC(RingBuffer* rb, uint32_t commit, rb_sync_t sync) {
+    (void)sync;
     if ((rb == NULL) || (rb->buffer == NULL) || (commit > rb_remain(rb))) {
         return TEST_RB_RET(RET_CLASS_STATE, RET_R_STATE_ERR);
     }
@@ -107,8 +109,9 @@ ret_code_t RingBuffer_WriteCommit_SPSC(RingBuffer* rb, uint32_t commit) {
 }
 
 ret_code_t RingBuffer_ReadReserve_SPSC(RingBuffer* rb, uint32_t want, RingBufferSpan* out,
-                                       uint32_t* granted, bool isCompatible) {
+                                       uint32_t* granted, bool isCompatible, rb_sync_t sync) {
     uint32_t used = 0u;
+    (void)sync;
 
     if ((rb == NULL) || (out == NULL) || (granted == NULL) || (want == 0u)) {
         return TEST_RB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
@@ -124,7 +127,8 @@ ret_code_t RingBuffer_ReadReserve_SPSC(RingBuffer* rb, uint32_t want, RingBuffer
     return RET_OK;
 }
 
-ret_code_t RingBuffer_ReadCommit_SPSC(RingBuffer* rb, uint32_t commit) {
+ret_code_t RingBuffer_ReadCommit_SPSC(RingBuffer* rb, uint32_t commit, rb_sync_t sync) {
+    (void)sync;
     if ((rb == NULL) || (rb->buffer == NULL) || (commit > rb_used(rb))) {
         return TEST_RB_RET(RET_CLASS_STATE, RET_R_STATE_ERR);
     }

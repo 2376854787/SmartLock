@@ -19,7 +19,7 @@
 
 #include "hal_gpio.h"
 #include "osal.h"
-#include "ret_code.h"
+#include "ret_code_t.h"
 
 #ifdef __cplusplus
 extern "C" {

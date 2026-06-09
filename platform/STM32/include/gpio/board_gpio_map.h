@@ -2,7 +2,8 @@
 #define SMARTLOCK_BOARD_GPIO_MAP_H
 
 #include <stdint.h>
-#include "ret_code.h"
+
+#include "ret_code_t.h"
 #ifdef __cplusplus
 extern "C" {
 #endif

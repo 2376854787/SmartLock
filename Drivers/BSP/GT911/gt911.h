@@ -19,7 +19,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "ret_code.h"
+#include "ret_code_t.h"
 #include "soft_i2c.h"
 
 #ifdef __cplusplus

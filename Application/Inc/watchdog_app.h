@@ -1,7 +1,7 @@
 #ifndef SMARTCLOCK_WATCHDOG_APP_H
 #define SMARTCLOCK_WATCHDOG_APP_H
 
-#include "ret_code.h"
+#include "ret_code_t.h"
 
 #ifdef __cplusplus
 extern "C" {

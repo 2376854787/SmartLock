@@ -95,12 +95,25 @@ $tests = @(
             (Join-Path $PSScriptRoot "test_hal_flash.c"),
             (Join-Path $repoRoot "components\hal\flash\hal_flash.c")
         )
+    },
+    @{
+        Name = "test_ring_buffer"
+        Sources = @(
+            (Join-Path $PSScriptRoot "test_ring_buffer.c"),
+            (Join-Path $repoRoot "components\ring_buffer\RingBuffer.c"),
+            (Join-Path $repoRoot "components\ring_buffer\RingBufferTyped.c")
+        )
+        # 真实 ring_buffer 头必须排在 stubs 之前，否则 stubs/RingBuffer.h（给其它
+        # 模块用的精简桩）会把真头盖掉。ExtraArgs 在 commonArgs 之前生效。
+        ExtraArgs = @("-I$(Join-Path $repoRoot 'components\ring_buffer')")
     }
 )
 
 foreach ($test in $tests) {
     $outFile = Join-Path $binDir ($test.Name + ".exe")
-    & gcc @commonArgs $test.Sources "-o" $outFile
+    $extra = @()
+    if ($test.ContainsKey("ExtraArgs")) { $extra = $test.ExtraArgs }
+    & gcc @extra @commonArgs $test.Sources "-o" $outFile
     if ($LASTEXITCODE -ne 0) { throw "compile failed: $($test.Name)" }
     & $outFile
     if ($LASTEXITCODE -ne 0) { throw "test failed: $($test.Name)" }

@@ -2,7 +2,7 @@
 #define HAL_WDG_PORT_H
 
 #include "hal_wdg.h"
-#include "ret_code.h"
+#include "ret_code_t.h"
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -7,7 +7,7 @@
 #include "MemoryAllocation.h"
 #include "assert_cus.h"
 #include "log.h"
-#include "ret_code.h"
+#include "ret_code_t.h"
 
 static void AT_OnLine(AT_Manager_t* mgr, const char* line);
 

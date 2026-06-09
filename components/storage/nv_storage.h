@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 #include "flash_partition.h"
-#include "ret_code.h"
+#include "ret_code_t.h"
 
 #ifdef __cplusplus
 extern "C" {

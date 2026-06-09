@@ -6,7 +6,7 @@
 #define RINGBUFFER_H
 #include <stdbool.h>
 
-#include "ret_code.h"
+#include "ret_code_t.h"
 #include "stdint.h"
 #define DEFAULT_ALIGNMENT 4
 
@@ -39,15 +39,8 @@
  * 消费者侧的 RMW 冲突。详见 RingBuffer.c 顶部注释。
  * ========================================================================= */
 
-/* SPSC 路径的「对端类型」——决定发布/同步用哪种内存屏障。SPSC 接口把它作为
- * 显式参数，不再写死，调用方按自己的对端如实填：
- *   RB_SYNC_SMP：对端是另一个软件执行流（线程 / ISR）。单核退化为编译器屏障
- *                （同核访存天然保序，发 CPU 屏障是浪费）；多核（-DRB_SMP=1）发
- *                轻量 inner-shareable 屏障。绝大多数场景用它。
- *   RB_SYNC_DMA：对端是 DMA / 外设。无论单核多核都发 full-system 内存屏障，
- *                因为 store buffer 会让「写数据 / 发布索引」对 DMA 乱序可见，
- *                单核也不能退化。配合 Reserve/Commit 做零拷贝 DMA 时用它。
- * （RB_SYNC_NONE 仅供带锁模型内部使用，临界区已提供顺序，不在 SPSC 接口出现。） */
+/* SPSC 路径的「对端类型」——决定发布/同步用哪种内存屏障 */
+
 typedef enum { RB_SYNC_SMP = 1, RB_SYNC_DMA = 2 } rb_sync_t;
 
 typedef struct {

@@ -3,7 +3,7 @@
 #include <stdio.h>
 
 #include "hal_uart.h"
-#include "ret_code.h"
+#include "ret_code_t.h"
 static hal_uart_t* s_uart1_hal = NULL;
 
 #ifndef USART1_HAL_PORT_ID

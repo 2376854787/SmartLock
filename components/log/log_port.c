@@ -4,7 +4,7 @@
 
 #include "assert_cus.h"
 #include "log.h"
-#include "ret_code.h"
+#include "ret_code_t.h"
 
 static volatile uint8_t s_uart_tx_busy = 0u;
 static hal_uart_t* s_log_uart          = NULL;

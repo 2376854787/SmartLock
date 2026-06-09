@@ -7,7 +7,7 @@
 #if defined(CFG_TARGET_PLATFORM_STM32_HAL) && defined(CFG_FEAT_HAL_I2C) && (CFG_FEAT_HAL_I2C == 1)
 #include <stdint.h>
 
-#include "ret_code.h"
+#include "ret_code_t.h"
 #include "stm32_hal.h"
 
 typedef struct {

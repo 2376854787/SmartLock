@@ -11,9 +11,9 @@
 #include "MemoryAllocation.h"
 #include "RingBuffer.h"
 #include "assert_cus.h"
-#include "osal.h"
-#include "ret_code.h"
 #include "hal_time.h"
+#include "osal.h"
+#include "ret_code_t.h"
 
 #define snprintf_my  sniprintf
 #define vsnprintf_my vsniprintf

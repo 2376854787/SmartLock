@@ -4,7 +4,7 @@
 
 #include "APP_config.h"
 #include "assert_cus.h"
-#include "ret_code.h"
+#include "ret_code_t.h"
 #if (defined(CFG_FEAT_CRC16) && (CFG_FEAT_CRC16 == 1))
 #define RET_MOD_UTIL(clas_, err_) \
     RET_MAKE(RET_MOD_TOOLS, RET_SUB_TOOLS_CRC, RET_CODE_MAKE((clas_), (err_)))

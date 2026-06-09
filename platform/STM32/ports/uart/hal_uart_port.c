@@ -10,7 +10,7 @@
 #include "hal_uart.h"
 #include "hal_uart_port.h"
 #include "osal.h"
-#include "ret_code.h"
+#include "ret_code_t.h"
 #include "stm32_hal.h"
 #include "stm32_uart_bsp.h"
 #include "stm32_uart_series.h"
