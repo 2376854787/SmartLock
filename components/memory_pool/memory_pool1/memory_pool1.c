@@ -65,6 +65,7 @@ CORE_INLINE void *blk_payload(const mp_pool1_t *p, uint8_t *blk) {
 #if MP_CFG_CANARY
     return (void *)(blk + p->blk_head_offset);
 #else
+    (void)p;
     return (void *)blk;
 #endif
 }
@@ -78,6 +79,7 @@ CORE_INLINE uint8_t *payload_to_blk(const mp_pool1_t *p, void *payload) {
 #if MP_CFG_CANARY
     return ((uint8_t *)payload) - p->blk_head_offset;
 #else
+    (void)p;
     return (uint8_t *)payload;
 #endif
 }
@@ -209,9 +211,13 @@ CORE_INLINE bool q_pop_one_to_freelist(mp_pool1_t *p) {
 ret_code_t mp_init(mp_pool1_t *p, const mp_config_t *cfg) {
     /* 1. 基础指针校验 */
     ASSERT_PARAM((p != NULL) && (cfg != NULL) && (cfg->pool_mem != NULL) &&
-                 (cfg->free_stack != NULL) && (cfg->alloc_bm != NULL));
+                 (cfg->free_stack != NULL) && (cfg->alloc_bm != NULL) &&
+                 (cfg->lock != NULL) && (cfg->lock->lock != NULL) &&
+                 (cfg->lock->unlock != NULL) && (cfg->lock->handle != NULL));
     REQUIRE_RET((p != NULL) && (cfg != NULL) && (cfg->pool_mem != NULL) &&
-                    (cfg->free_stack != NULL) && (cfg->alloc_bm != NULL),
+                    (cfg->free_stack != NULL) && (cfg->alloc_bm != NULL) &&
+                    (cfg->lock != NULL) && (cfg->lock->lock != NULL) &&
+                    (cfg->lock->unlock != NULL) && (cfg->lock->handle != NULL),
                 RET_MEM_CODE(RET_CLASS_PARAM, RET_R_NULL_PTR));
 #if MP_CFG_QUARANTINE
     /* 隔离队列地址错误 但是隔离间数量大于 0*/
@@ -317,7 +323,10 @@ void *mp_alloc(mp_pool1_t *p) {
     p->lock.lock(p->lock.handle, &flags);
 
 #if MP_CFG_QUARANTINE
-    (void)q_pop_one_to_freelist(p);
+    /* 仅当普通空闲栈耗尽时才从隔离区释放一块，避免刚释放的块被立即复用。 */
+    if (p->top == 0u) {
+        (void)q_pop_one_to_freelist(p);
+    }
 #endif
     /* 空闲块不足 */
     if (p->top == 0) {
@@ -403,6 +412,7 @@ ret_code_t mp_free(mp_pool1_t *p, void *payload_ptr) {
         /* 解锁 */
         p->lock.unlock(p->lock.handle, &flags);
         MP_ASSERT(rc == RET_OK);
+        return rc;
     }
     /* 标记释放 */
     bm_clear(p->alloc_bm, id);
