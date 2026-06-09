@@ -6,8 +6,12 @@
 #include "ret_code_t.h"
 /* ===================== 配置 ===================== */
 
-/* cacheline 的大小 */
-#ifndef MP_CFG_CACHE_LINE_SIZE
+/* cacheline 的大小。
+ * 外部可用 MP_CFG_CACHE_LINE_SIZE 覆盖；最终生效的是 MP_CACHE_LINE_SIZE。 */
+#ifdef MP_CFG_CACHE_LINE_SIZE
+#define MP_CACHE_LINE_SIZE MP_CFG_CACHE_LINE_SIZE
+#endif
+#ifndef MP_CACHE_LINE_SIZE
 #define MP_CACHE_LINE_SIZE 16 /* 无缓存芯片建议 8或16 , 有则 32或64 */
 #endif
 /* cpu 字长 */
@@ -80,15 +84,19 @@ typedef struct __attribute__((aligned(MP_CACHE_LINE_SIZE))) {
     uint32_t canary_tail;
 #endif
 
-    /* 统计数据区 */
+    /* 统计数据区
+     * 全部字段仅在 lock 临界区内更新（写侧互斥安全）。标 volatile 是为了让
+     * 不持锁的读侧（调试器 / 监控任务）每次都读到最新值、不被编译器缓存进寄存器。
+     * 单核 Cortex-M 上对齐的 32/16 位单字读本身原子，故读侧无需加锁即可一致。 */
     struct {
-        uint32_t alloc_ok;
-        uint32_t alloc_fail;
-        uint32_t free_ok;
-        uint32_t free_fail;
-        uint32_t free_double;
-        uint16_t inuse;
-        uint16_t max_inuse;
+        volatile uint32_t alloc_ok;
+        volatile uint32_t alloc_fail;
+        volatile uint32_t free_ok;
+        volatile uint32_t free_fail;
+        volatile uint32_t free_double;
+        volatile uint32_t poison_cnt; /* canary 损坏被永久隔离（漏出池外）的块数 */
+        volatile uint16_t inuse;
+        volatile uint16_t max_inuse;
     } stats;
 } mp_pool1_t;
 

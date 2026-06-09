@@ -210,14 +210,17 @@ CORE_INLINE bool q_pop_one_to_freelist(mp_pool1_t *p) {
  */
 ret_code_t mp_init(mp_pool1_t *p, const mp_config_t *cfg) {
     /* 1. 基础指针校验 */
+    /* lock/unlock 函数指针必须有效；handle 允许为 NULL：
+     * 裸机纯关中断实现不需要句柄，由 lock/unlock 兼容函数自行忽略 ctx。
+     * 故此处不强制 handle != NULL，避免限制裸机场景。 */
     ASSERT_PARAM((p != NULL) && (cfg != NULL) && (cfg->pool_mem != NULL) &&
                  (cfg->free_stack != NULL) && (cfg->alloc_bm != NULL) &&
                  (cfg->lock != NULL) && (cfg->lock->lock != NULL) &&
-                 (cfg->lock->unlock != NULL) && (cfg->lock->handle != NULL));
+                 (cfg->lock->unlock != NULL));
     REQUIRE_RET((p != NULL) && (cfg != NULL) && (cfg->pool_mem != NULL) &&
                     (cfg->free_stack != NULL) && (cfg->alloc_bm != NULL) &&
                     (cfg->lock != NULL) && (cfg->lock->lock != NULL) &&
-                    (cfg->lock->unlock != NULL) && (cfg->lock->handle != NULL),
+                    (cfg->lock->unlock != NULL),
                 RET_MEM_CODE(RET_CLASS_PARAM, RET_R_NULL_PTR));
 #if MP_CFG_QUARANTINE
     /* 隔离队列地址错误 但是隔离间数量大于 0*/
@@ -257,6 +260,11 @@ ret_code_t mp_init(mp_pool1_t *p, const mp_config_t *cfg) {
 
     /* 块步长向上对齐到 CacheLine */
     const uint32_t block_stride    = MP_ALIGN_UP(content_size, MP_CACHE_LINE_SIZE);
+    /* blk_total_size 是 uint16_t：步长超过 0xFFFF 会被截断，导致 blk_ptr 地址算错、
+     * 块互相重叠。payload 过大时必须在此拒绝，而不是静默截断。 */
+    if (block_stride > 0xFFFFu) {
+        return RET_MEM_CODE(RET_CLASS_PARAM, RET_R_RANGE_ERR);
+    }
     /* 计算剩下的空间，实际能切出多少个完整的块 */
 
     const uint32_t actual_capacity = available_bytes / block_stride;
@@ -318,7 +326,7 @@ void *mp_alloc(mp_pool1_t *p) {
     ASSERT_PARAM(p != NULL);
     if (!p) return NULL;
     /* 上锁 */
-    MP_ASSERT(p->lock.unlock && p->lock.handle && p->lock.lock);
+    MP_ASSERT(p->lock.unlock && p->lock.lock); /* handle 允许为 NULL（裸机纯关中断） */
     uint32_t flags = 0;
     p->lock.lock(p->lock.handle, &flags);
 
@@ -347,6 +355,10 @@ void *mp_alloc(mp_pool1_t *p) {
     /* 检测魔数是否还在 内存是否安全 */
     if (check_canary(p, blk) != RET_OK) {
         p->stats.alloc_fail++;
+        /* 坏块已从 free_stack 弹出，且不重新入栈、不标记 bm：
+         * 即把它永久隔离在池外，不再分发，避免把损坏内存交给调用方。
+         * poison_cnt 让“漏出池外的块数”可观测。 */
+        p->stats.poison_cnt++;
         /* 解锁 */
         p->lock.unlock(p->lock.handle, &flags);
         return NULL;
@@ -386,7 +398,7 @@ ret_code_t mp_free(mp_pool1_t *p, void *payload_ptr) {
     REQUIRE_RET((p != NULL) && (payload_ptr != NULL),
                 RET_MEM_CODE(RET_CLASS_PARAM, RET_R_NULL_PTR));
     /* 上锁 */
-    MP_ASSERT(p->lock.unlock && p->lock.handle && p->lock.lock);
+    MP_ASSERT(p->lock.unlock && p->lock.lock); /* handle 允许为 NULL（裸机纯关中断） */
     uint32_t flags = 0;
     p->lock.lock(p->lock.handle, &flags);
 
@@ -409,6 +421,10 @@ ret_code_t mp_free(mp_pool1_t *p, void *payload_ptr) {
     /* 防止内存践踏 */
     if (rc != RET_OK) {
         p->stats.free_fail++;
+        /* 块已损坏：保持 bm 仍为 set、不回收到 free_stack/quarantine，
+         * 即永久隔离该块，避免把被践踏的内存放回流通链。
+         * 代价是该块从池中漏出（inuse 不减），poison_cnt 记录漏出数量。 */
+        p->stats.poison_cnt++;
         /* 解锁 */
         p->lock.unlock(p->lock.handle, &flags);
         MP_ASSERT(rc == RET_OK);
@@ -440,11 +456,18 @@ ret_code_t mp_check_pool(mp_pool1_t *p) {
     ASSERT_PARAM(p != NULL);
     REQUIRE_RET(p != NULL, RET_MEM_CODE(RET_CLASS_PARAM, RET_R_NULL_PTR));
 #if MP_CFG_CANARY
+    /* 全池扫描必须与 alloc/free 互斥，否则会读到正在被改写的中间态。
+     * 持锁遍历；任一块 canary 损坏即提前解锁返回。 */
+    MP_ASSERT(p->lock.unlock && p->lock.lock); /* handle 允许为 NULL（裸机纯关中断） */
+    uint32_t flags = 0;
+    p->lock.lock(p->lock.handle, &flags);
     for (uint16_t i = 0; i < p->n_blks; i++) {
         if (check_canary(p, blk_ptr(p, i)) != RET_OK) {
+            p->lock.unlock(p->lock.handle, &flags);
             return RET_MEM_CODE(RET_CLASS_DATA, RET_R_CHECKSUM);
         }
     }
+    p->lock.unlock(p->lock.handle, &flags);
 #endif
     return RET_OK;
 }
