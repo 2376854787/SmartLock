@@ -45,11 +45,20 @@ typedef enum { RB_SYNC_SMP = 1, RB_SYNC_DMA = 2 } rb_sync_t;
 
 typedef struct {
     const char *name;
-    volatile uint32_t rear_index;   // 表示可以添加数据的头地址
-    volatile uint32_t front_index;  // 表示可以被删除的头地址
-    uint32_t size;                  // 缓冲区大小 实际可用-1
+    /* rear_index/front_index 是「自由递增」的写/读字节序号（和 DPDK rte_ring 的
+     * head/tail 同构）：它们不在 [0,size) 内回绕，而是用 uint32 一直增长、自然
+     * 绕过 UINT32_MAX。定位物理槽时用 index & mask，已用字节数用无符号减法
+     * rear-front 直接得到（即使 rear 绕过 0 也正确）。
+     *
+     * 为什么必须 2 的幂：自由递增方案只在 size 是 2 的幂时正确。rear/front 在
+     * UINT32_MAX 处回绕，只有当 size 是 2 的幂、mask=size-1 时，(index & mask)
+     * 才能在回绕点（UINT32_MAX -> 0）保持物理槽连续；非 2 的幂会在回绕处错位。
+     * CreateRingBuffer 强制把请求的 size 向上取整到 2 的幂来保证这一点。 */
+    volatile uint32_t rear_index;   // 写序号（自由递增），物理槽 = rear_index & mask
+    volatile uint32_t front_index;  // 读序号（自由递增），物理槽 = front_index & mask
+    uint32_t size;                  // 缓冲区字节数（2 的幂），即满容量（无哨兵，可全用）
     uint8_t *buffer;                // 缓冲区头地址
-    bool isPowerOfTwo_Size;
+    uint32_t mask;                  // = size - 1，用于 & mask 定位物理槽
 #if RB_ENABLE_STATS
     volatile uint32_t high_watermark_used; /* 历史最大 used 字节数 */
     volatile uint32_t overflow_cnt;        /* 写入空间不足次数（非 force 或 reserve 失败等） */
@@ -68,8 +77,8 @@ typedef struct {
     bool full;
 
     /* 连续段：适配 DMA / 零拷贝调度 */
-    uint32_t contig_read;  /* 从 front 到尾部连续可读 */
-    uint32_t contig_write; /* 从 rear  到尾部连续可写（含 wrap 约束） */
+    uint32_t contig_read;  /* 从 front 物理槽到尾部连续可读 */
+    uint32_t contig_write; /* 从 rear  物理槽到尾部连续可写（受 remain 约束，无哨兵） */
 
 #if RB_ENABLE_STATS
     /* 统计/水位线 */
@@ -101,6 +110,8 @@ void RingBuffer_SpanWriteFromCircular(const RingBufferSpan *span, const uint8_t 
 /**============================================================================================ */
 /**==================================       BASE          ===================================== */
 /**============================================================================================ */
+/* 注意：实际分配的缓冲区是把 size 向上取整到 2 的幂后的大小（如请求 1000 → 1024），
+ * 取整后的容量可全部使用（无哨兵）。用 rb->size 读回实际容量。 */
 ret_code_t CreateRingBuffer(RingBuffer *rb, const char *name, uint32_t size);
 
 uint32_t RingBuffer_GetUsedSize(const RingBuffer *rb);
@@ -123,7 +134,14 @@ ret_code_t WriteRingBufferFromISR(RingBuffer *rb, const uint8_t *add, uint32_t *
 
 ret_code_t ReadRingBufferFromISR(RingBuffer *rb, uint8_t *add, uint32_t *size, uint8_t isForceRead);
 
+/* 全量复位（front/rear 同时清零）。仅当生产者与消费者都已停止时可调——
+ * 它是两个索引的"第二写者"，SPSC 下临界区挡不住无锁对端/另一核/DMA。
+ * 运行期丢弃积压数据请用 RingBuffer_ResetByConsumer()。 */
 ret_code_t ResetRingBuffer(RingBuffer *rb);
+
+/* 消费者侧安全清空（front 追平 rear，对标 kfifo_reset_out）：只写消费者自己的
+ * 索引，生产者/DMA 运行中也可安全调用。仅限消费者上下文。 */
+ret_code_t RingBuffer_ResetByConsumer(RingBuffer *rb);
 
 /* 丢掉N字节 */
 ret_code_t RingBuffer_Drop(RingBuffer *rb, uint32_t drop, uint32_t *dropped, bool isCompatible);

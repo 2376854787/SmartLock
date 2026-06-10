@@ -84,17 +84,15 @@ ret_code_t TypedRB_Create(TypedRB *t, const char *name, uint32_t count, uint32_t
         return TRB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     }
 
-    /* 要装 count 个，得多留 1 个哨兵槽区分空/满，再向上取整到 2 的幂让 &mask
-     * 成立。例如 count=10 → 至少 11 槽 → 取 16 槽。
+    /* 向上取整到 2 的幂让 &mask 成立。head/tail 是自由递增序号：空（head==tail）
+     * 与满（head-tail==count）天然无歧义，因此不需要哨兵槽——count 个槽全部可用。
+     * 例如 count=10 → 取 16 槽（可装 16）；count=8 → 8 槽（可装 8，不再因哨兵
+     * 多取整翻倍）。
      *
      * 全程防整数溢出，否则会算出偏小的分配量、之后按错误的 mask 越界写：
-     *   1) count+1 不能回绕（count==UINT32_MAX 时 +1 变 0）；
-     *   2) 向上取整到 2 的幂不能超过 0x80000000（trb_round_up_pow2 返回 0 表示溢出）；
-     *   3) slots*elem_size 这次字节数乘法不能溢出 uint32（用 64 位中间量比较）。 */
-    if (count == 0xFFFFFFFFu) {
-        return TRB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
-    }
-    const uint32_t slots = trb_round_up_pow2(count + 1u);
+     *   1) 向上取整到 2 的幂不能超过 0x80000000（trb_round_up_pow2 返回 0 表示溢出）；
+     *   2) slots*elem_size 这次字节数乘法不能溢出 uint32（用 64 位中间量比较）。 */
+    const uint32_t slots = trb_round_up_pow2(count);
     if (slots == 0u) {
         return TRB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     }
@@ -122,6 +120,9 @@ ret_code_t TypedRB_Create(TypedRB *t, const char *name, uint32_t count, uint32_t
  * @brief 线程版 复位队列（清空所有元素）
  * @param t RB句柄
  * @return 状态码
+ * @warning 同时写 head/tail 两个索引，违反 SPSC 单写者铁律；临界区只能挡住本核
+ *          中断，挡不住无锁对端/另一核。仅当生产者与消费者都已停止时才允许调用。
+ *          运行期丢弃积压数据请用 TypedRB_ResetByConsumer()。
  */
 ret_code_t TypedRB_Reset(TypedRB *t) {
     ASSERT_PARAM(t != NULL);
@@ -138,6 +139,7 @@ ret_code_t TypedRB_Reset(TypedRB *t) {
  * @brief 中断版 复位队列（清空所有元素）
  * @param t RB句柄
  * @return 状态码
+ * @warning 同 TypedRB_Reset：仅当生产者与消费者都已停止时才允许调用。
  */
 ret_code_t TypedRB_ResetFromISR(TypedRB *t) {
     ASSERT_PARAM(t != NULL);
@@ -147,6 +149,22 @@ ret_code_t TypedRB_ResetFromISR(TypedRB *t) {
     t->head = 0u;
     t->tail = 0u;
     RB_EXIT_CRITICAL_FROM_ISR(s);
+    return RET_OK;
+}
+
+/**
+ * @brief 消费者侧安全清空：丢弃当前所有已入队元素（tail 追平 head）
+ * @param t RB句柄
+ * @return 状态码
+ * @note 对标 Linux kfifo_reset_out()。只写消费者自己的 tail、只读生产者的 head，
+ *       保持 SPSC「每个索引只有一个写者」铁律——生产者仍在运行时也可安全调用。
+ *       读到的 head 若是旧值，则只丢弃「已看到」的元素，之后新入队的保留。
+ *       仅限消费者上下文调用；带锁模型下亦可用（语义同 Drop 全部）。
+ */
+ret_code_t TypedRB_ResetByConsumer(TypedRB *t) {
+    ASSERT_PARAM(t != NULL);
+    if (t == NULL) return TRB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
+    t->tail = t->head;
     return RET_OK;
 }
 
@@ -173,8 +191,8 @@ uint32_t TypedRB_Count(const TypedRB *t) {
 uint32_t TypedRB_RemainCount(const TypedRB *t) {
     ASSERT_PARAM(t != NULL);
     if (t == NULL) return 0u;
-    /* 可用槽是 count-1（留 1 哨兵），减去已占用的。 */
-    return (t->count - 1u) - trb_count(t);
+    /* 去哨兵：count 个槽全部可用，剩余 = count - 已占用。 */
+    return t->count - trb_count(t);
 }
 
 /**
@@ -185,7 +203,7 @@ uint32_t TypedRB_RemainCount(const TypedRB *t) {
 bool TypedRB_IsFull(const TypedRB *t) {
     ASSERT_PARAM(t != NULL);
     if (t == NULL) return false;
-    return trb_count(t) == (t->count - 1u);
+    return trb_count(t) == t->count; /* 去哨兵：装满 count 个才算满 */
 }
 
 /**
@@ -230,7 +248,7 @@ bool TypedRB_Push(TypedRB *t, const void *elem) {
     rb_isr_state_t s;
     RB_ENTER_CRITICAL(s);
     bool ok = false;
-    if (trb_count(t) < (t->count - 1u)) {
+    if (trb_count(t) < t->count) { /* 去哨兵：count 个槽全部可用 */
         trb_put_at_head(t, elem);
         t->head++;
         ok = true;
@@ -317,7 +335,7 @@ bool TypedRB_PushOverwriteOldest(TypedRB *t, const void *elem) {
     rb_isr_state_t s;
     RB_ENTER_CRITICAL(s);
     /* 满了就先丢最旧一个，腾出位置。带锁下同时动 head/tail 是安全的。 */
-    if (trb_count(t) == (t->count - 1u)) {
+    if (trb_count(t) == t->count) { /* 去哨兵：装满 count 个才算满 */
         t->tail++;
     }
     trb_put_at_head(t, elem);
@@ -385,7 +403,7 @@ bool TypedRB_PushFromISR(TypedRB *t, const void *elem) {
     rb_isr_state_t s;
     RB_ENTER_CRITICAL_FROM_ISR(s);
     bool ok = false;
-    if (trb_count(t) < (t->count - 1u)) {
+    if (trb_count(t) < t->count) { /* 去哨兵：count 个槽全部可用 */
         trb_put_at_head(t, elem);
         t->head++;
         ok = true;
@@ -452,10 +470,11 @@ bool TypedRB_Push_SPSC(TypedRB *t, const void *elem) {
     ASSERT_PARAM((t != NULL) && (elem != NULL));
     if (t == NULL || elem == NULL) return false;
 
-    /* acquire：读 tail 之前同步消费者更新 */
-    smp_mem_barrier();
-    if (trb_count(t) >= (t->count - 1u)) {
-        return false; /* 满 */
+    /* 生产者侧读 tail（经 trb_count）不需要前置屏障：tail 读到旧值只会让
+     * 剩余空间偏小——少写，保守安全；且下面对槽的 store 不会被硬件投机提交到
+     * 这次 load 之前（CPU 不投机提交写）。与 Linux kfifo __kfifo_in 一致。 */
+    if (trb_count(t) >= t->count) { /* 去哨兵：count 个槽全部可用 */
+        return false;               /* 满 */
     }
     trb_put_at_head(t, elem);
     /* release：数据写完才发布 head，否则消费者可能看到新 head 但旧数据 */
@@ -474,11 +493,14 @@ bool TypedRB_Pop_SPSC(TypedRB *t, void *out) {
     ASSERT_PARAM((t != NULL) && (out != NULL));
     if (t == NULL || out == NULL) return false;
 
-    /* acquire：读 head 之前同步生产者更新（确保读到完整数据） */
-    smp_mem_barrier();
     if (t->head == t->tail) {
         return false; /* 空 */
     }
+    /* SPSC acquire：屏障必须在「装载 head」之后、「读槽数据」之前——与 Linux
+     * kfifo __kfifo_out 的 smp_rmb 同位置。控制依赖不约束 load-load 顺序：
+     * M7 这类核可对 Normal 内存投机预取，屏障若放在装载 head 之前，会出现
+     * 「看到新 head、却读到屏障前已投机预取的旧槽数据」。 */
+    smp_mem_barrier();
     trb_get_at_tail(t, out);
     /* release：数据读完才发布 tail，否则生产者可能覆盖还没读完的槽 */
     smp_mem_barrier();
@@ -496,12 +518,14 @@ bool TypedRB_Peek_SPSC(const TypedRB *t, void *out) {
     ASSERT_PARAM((t != NULL) && (out != NULL));
     if (t == NULL || out == NULL) return false;
 
-    smp_mem_barrier();
     if (t->head == t->tail) {
         return false;
     }
+    /* acquire：同 Pop_SPSC——装载 head 之后、读槽数据之前。Peek 虽不动 tail
+     * （无需 release），但同样读数据，acquire 不可省。 */
+    smp_mem_barrier();
     trb_get_at_tail(t, out);
-    return true; /* Peek 不动 tail，无需 release */
+    return true;
 }
 
 /**============================================================================================ */
@@ -565,7 +589,7 @@ ret_code_t TypedRB_WriteReserve(TypedRB *t, uint32_t want_elems, TypedRBSpan *ou
     if (!t || !out || !granted_elems) return TRB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     rb_isr_state_t s;
     RB_ENTER_CRITICAL(s);
-    const uint32_t free = (t->count - 1u) - trb_count(t);
+    const uint32_t free = t->count - trb_count(t); /* 去哨兵：count 全可用 */
     const ret_code_t rc =
         trb_reserve_core(t, t->head, free, want_elems, out, granted_elems, isCompatible, true);
     RB_EXIT_CRITICAL(s);
@@ -583,7 +607,7 @@ ret_code_t TypedRB_WriteCommit(TypedRB *t, uint32_t commit_elems) {
     if (!t) return TRB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     rb_isr_state_t s;
     RB_ENTER_CRITICAL(s);
-    if (commit_elems > (t->count - 1u) - trb_count(t)) {
+    if (commit_elems > t->count - trb_count(t)) { /* 去哨兵：count 全可用 */
         RB_EXIT_CRITICAL(s);
         return TRB_RET(RET_CLASS_RESOURCE, RET_R_NO_MEM);
     }
@@ -652,7 +676,7 @@ ret_code_t TypedRB_WriteReserveFromISR(TypedRB *t, uint32_t want_elems, TypedRBS
     if (!t || !out || !granted_elems) return TRB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     rb_isr_state_t s;
     RB_ENTER_CRITICAL_FROM_ISR(s);
-    const uint32_t free = (t->count - 1u) - trb_count(t);
+    const uint32_t free = t->count - trb_count(t); /* 去哨兵：count 全可用 */
     const ret_code_t rc =
         trb_reserve_core(t, t->head, free, want_elems, out, granted_elems, isCompatible, true);
     RB_EXIT_CRITICAL_FROM_ISR(s);
@@ -670,7 +694,7 @@ ret_code_t TypedRB_WriteCommitFromISR(TypedRB *t, uint32_t commit_elems) {
     if (!t) return TRB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     rb_isr_state_t s;
     RB_ENTER_CRITICAL_FROM_ISR(s);
-    if (commit_elems > (t->count - 1u) - trb_count(t)) {
+    if (commit_elems > t->count - trb_count(t)) { /* 去哨兵：count 全可用 */
         RB_EXIT_CRITICAL_FROM_ISR(s);
         return TRB_RET(RET_CLASS_RESOURCE, RET_R_NO_MEM);
     }
@@ -737,8 +761,9 @@ ret_code_t TypedRB_WriteReserve_SPSC(TypedRB *t, uint32_t want_elems, TypedRBSpa
                                      uint32_t *granted_elems, bool isCompatible) {
     ASSERT_PARAM((t != NULL) && (out != NULL) && (granted_elems != NULL));
     if (!t || !out || !granted_elems) return TRB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
-    smp_mem_barrier(); /* acquire：读 tail 之前同步消费者 */
-    const uint32_t free = (t->count - 1u) - trb_count(t);
+    /* 生产者侧无需前置屏障：tail 读旧只会让窗口偏小（保守安全），调用方对
+     * 窗口的 store 不会被投机提交。发布顺序由 WriteCommit_SPSC 的 release 保证。 */
+    const uint32_t free = t->count - trb_count(t); /* 去哨兵：count 全可用 */
     return trb_reserve_core(t, t->head, free, want_elems, out, granted_elems, isCompatible, true);
 }
 
@@ -749,10 +774,11 @@ ret_code_t TypedRB_WriteReserve_SPSC(TypedRB *t, uint32_t want_elems, TypedRBSpa
  * @return 状态码
  */
 ret_code_t TypedRB_WriteCommit_SPSC(TypedRB *t, uint32_t commit_elems) {
-    /* 句柄 + 上界的便宜无竞争校验：commit_elems 不可能 >= count（容量上限 count-1），
-     * count 在 Create 后只读、对端不写，所以不重新引入对 tail 的无保护读。 */
+    /* 句柄 + 上界的便宜无竞争校验：commit_elems 不可能 > count（去哨兵后容量
+     * 上限就是 count，空队列时 Reserve 可批准整 count 个，对应 commit==count
+     * 必须合法）。count 在 Create 后只读、对端不写，不引入对 tail 的无保护读。 */
     ASSERT_PARAM((t != NULL) && (t->slots != NULL));
-    if (!t || t->slots == NULL || commit_elems >= t->count) {
+    if (!t || t->slots == NULL || commit_elems > t->count) {
         return TRB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     }
     /* SPSC 契约：commit_elems <= 之前 WriteReserve_SPSC 批准的窗口，由调用方
@@ -776,9 +802,12 @@ ret_code_t TypedRB_ReadReserve_SPSC(TypedRB *t, uint32_t want_elems, TypedRBSpan
                                     uint32_t *granted_elems, bool isCompatible) {
     ASSERT_PARAM((t != NULL) && (out != NULL) && (granted_elems != NULL));
     if (!t || !out || !granted_elems) return TRB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
-    smp_mem_barrier(); /* acquire：读 head 之前同步生产者 */
-    return trb_reserve_core(t, t->tail, trb_count(t), want_elems, out, granted_elems, isCompatible,
-                            false);
+    const ret_code_t rc = trb_reserve_core(t, t->tail, trb_count(t), want_elems, out, granted_elems,
+                                           isCompatible, false);
+    /* SPSC acquire：屏障在「装载 head」之后、调用方读取窗口数据之前（kfifo
+     * smp_rmb 同位置）。放在装载 head 之前挡不住窗口数据被投机预取。 */
+    smp_mem_barrier();
+    return rc;
 }
 
 /**
@@ -788,9 +817,10 @@ ret_code_t TypedRB_ReadReserve_SPSC(TypedRB *t, uint32_t want_elems, TypedRBSpan
  * @return 状态码
  */
 ret_code_t TypedRB_ReadCommit_SPSC(TypedRB *t, uint32_t commit_elems) {
-    /* 句柄 + 上界的便宜无竞争校验，理由同 WriteCommit_SPSC。 */
+    /* 句柄 + 上界的便宜无竞争校验，理由同 WriteCommit_SPSC（容量上限 count，
+     * 整队列读完后 commit==count 必须合法）。 */
     ASSERT_PARAM((t != NULL) && (t->slots != NULL));
-    if (!t || t->slots == NULL || commit_elems >= t->count) {
+    if (!t || t->slots == NULL || commit_elems > t->count) {
         return TRB_RET(RET_CLASS_PARAM, RET_R_INVALID_ARG);
     }
     /* SPSC 契约：commit_elems <= 之前 ReadReserve_SPSC 批准的窗口，由调用方

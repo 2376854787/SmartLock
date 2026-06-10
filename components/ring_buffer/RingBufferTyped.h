@@ -32,14 +32,15 @@
 #include "ret_code_t.h"
 
 /* 定长元素队列句柄（槽索引）。
- * slots 是 count 个槽的连续数组；head/tail 是元素序号，访问槽时 & mask。
- * 留一个空槽区分空与满：head==tail 为空，(head-tail)==count 为满。
- * count 为 2 的幂，mask=count-1，所有定位走位运算。 */
+ * slots 是 count 个槽的连续数组；head/tail 是「自由递增」的元素序号，访问槽时
+ * & mask。自由递增下空/满天然无歧义：head==tail 为空，(head-tail)==count 为满，
+ * 不留哨兵槽——count 个槽全部可用。
+ * count 为 2 的幂（Create 把请求量向上取整），mask=count-1，所有定位走位运算。 */
 typedef struct {
     const char *name;
     uint8_t *slots;         /* 槽数组首地址，count*elem_size 字节 */
     uint32_t elem_size;     /* 单个元素字节数 */
-    uint32_t count;         /* 槽数（2 的幂，含 1 个哨兵槽） */
+    uint32_t count;         /* 槽数（2 的幂，全部可用，无哨兵） */
     uint32_t mask;          /* count - 1 */
     volatile uint32_t head; /* 生产者写位置（元素序号） */
     volatile uint32_t tail; /* 消费者读位置（元素序号） */
@@ -60,9 +61,16 @@ typedef struct {
 
 ret_code_t TypedRB_Create(TypedRB *t, const char *name, uint32_t count, uint32_t elem_size);
 
+/* 全量复位（head/tail 同时清零）。仅当生产者与消费者都已停止时可调——
+ * 它是两个索引的"第二写者"，SPSC 下临界区挡不住无锁对端。
+ * 运行期丢弃积压数据请用 TypedRB_ResetByConsumer()。 */
 ret_code_t TypedRB_Reset(TypedRB *t);
 
 ret_code_t TypedRB_ResetFromISR(TypedRB *t);
+
+/* 消费者侧安全清空（tail 追平 head，对标 kfifo_reset_out）：只写消费者自己的
+ * 索引，生产者运行中也可安全调用。仅限消费者上下文。 */
+ret_code_t TypedRB_ResetByConsumer(TypedRB *t);
 
 /**============================================================================================ */
 /**==================================        状态查询        ==================================== */
