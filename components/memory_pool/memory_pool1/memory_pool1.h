@@ -38,7 +38,15 @@
 /* 位图和栈大小计算 辅助宏 */
 #define MP_CALC_BITMAP_SIZE(n_blks) ((((n_blks) + 31) / 32) * 4)
 #define MP_CALC_STACK_SIZE(n_blks)  ((n_blks) * 2)
-/* 锁 或者 临界区 */
+/* 锁 或者 临界区
+ *
+ * 并发契约（重要）：本池所有共享状态（free_stack/bitmap/quarantine/stats）只在
+ * lock/unlock 之间访问，池内部不再有任何无锁路径，因此正确性完全归结为锁实现：
+ *   - 单核（线程+ISR）：关中断临界区即可，天然含完整内存序；
+ *   - 多核（如 AURIX/双核 M7 共享一个池）：关中断挡不住另一个核！锁必须是
+ *     真正的跨核互斥（原子指令自旋锁 / 硬件信号量），且实现必须自带
+ *     acquire（取锁后）/ release（放锁前）内存序，否则锁内的写可能迟于
+ *     解锁对另一核可见。多核场景更推荐每核独立池（AMP 隔离），根本不共享。 */
 typedef struct {
     void (*lock)(void *ctx,
                  uint32_t *flags);              /* RTOS 互斥锁锁 返回值无效

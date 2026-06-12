@@ -294,7 +294,9 @@ ret_code_t hal_uart_init(hal_uart_id_t id, const hal_uart_cfg_t* cfg, hal_uart_t
         }
         h->rb_ready = true;
     } else {
-        if (h->rx_rb.size != rx_buffer_len) {
+        /* CreateRingBuffer 会把请求 size 向上取整到 2 的幂（如 1000→1024），
+         * rb.size 是取整后的实际容量，不能再与请求值判等——只需保证容量足够。 */
+        if (h->rx_rb.size < rx_buffer_len) {
             (void)hal_uart_port_deinit(port);
             return UART_HAL_STATE(RET_R_STATE_ERR);
         }
